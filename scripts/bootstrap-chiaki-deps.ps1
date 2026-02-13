@@ -41,6 +41,22 @@ try {
         exit 1
     }
 
+    # Ensure qt6 ports are present; if not, re-clone vcpkg without shallow options
+    $qtPort = Join-Path $VcpkgDir 'ports\qt6-base'
+    if (-not (Test-Path $qtPort)) {
+        Write-Host 'qt6-base port not found in vcpkg ports; re-cloning vcpkg to ensure ports are available...' -ForegroundColor Yellow
+        Pop-Location
+        Remove-Item -Recurse -Force -LiteralPath $VcpkgDir
+        git clone https://github.com/microsoft/vcpkg.git $VcpkgDir
+        Push-Location $VcpkgDir
+        & .\bootstrap-vcpkg.bat
+        $vcpkgExe = Join-Path $VcpkgDir 'vcpkg.exe'
+        if (-not (Test-Path $vcpkgExe)) {
+            Write-Host 'ERROR: vcpkg.exe not found after re-clone bootstrap.' -ForegroundColor Red
+            exit 1
+        }
+    }
+
     Write-Host "Installing packages for triplet: $Triplet" -ForegroundColor White
     $packages = @( 'qt6-base', 'ffmpeg', 'openssl', 'sdl2', 'libopus' )
     foreach ($p in $packages) {
