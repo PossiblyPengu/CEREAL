@@ -96,14 +96,32 @@ if (-not $Name) { $Name = $Tag }
 
 function Use-Gh { return $null -ne (Get-Command gh -ErrorAction SilentlyContinue) }
 
+# Run npm in a way that avoids unsigned PowerShell stub script issues on Windows
+function Run-Npm {
+  param([string]$Args)
+  $npmExe = 'npm'
+  # prefer npm.cmd when available to avoid running npm.ps1
+  try {
+    if (Get-Command npm.cmd -ErrorAction SilentlyContinue) { $npmExe = 'npm.cmd' }
+  } catch { }
+  try {
+    & $npmExe $Args
+    return $LASTEXITCODE
+  } catch {
+    Write-Host "npm failed: $_" -ForegroundColor Yellow
+    return 1
+  }
+}
+
 Push-Location $RepoRoot
 try {
   if (-not $SkipBuild) {
     Write-Host 'Running setup:chiaki (best-effort)...' -ForegroundColor White
-    npm run setup:chiaki 2>$null | Write-Host
+    # Call npm via Run-Npm to avoid execution policy issues on Windows
+    try { Run-Npm 'run setup:chiaki' 2>$null | Write-Host } catch { }
 
     Write-Host 'Running npm run build...' -ForegroundColor White
-    npm run build
+    Run-Npm 'run build'
   } else {
     Write-Host 'Skipping build as requested.' -ForegroundColor Yellow
   }

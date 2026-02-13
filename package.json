@@ -13,9 +13,7 @@
     "build:app": "electron-builder",
     "setup:chiaki": "powershell -ExecutionPolicy Bypass -File scripts/setup-chiaki.ps1",
     "setup:chiaki:force": "powershell -ExecutionPolicy Bypass -File scripts/setup-chiaki.ps1 -Force",
-    "build:chiaki": "powershell -ExecutionPolicy Bypass -File scripts/build-chiaki.ps1",
-    "build:chiaki:deps": "powershell -ExecutionPolicy Bypass -File scripts/bootstrap-chiaki-deps.ps1",
-    "release:chiaki": "powershell -ExecutionPolicy Bypass -File scripts/publish-chiaki-release.ps1",
+    
     "release": "powershell -ExecutionPolicy Bypass -File scripts/publish-release.ps1",
     "pack": "electron-builder --dir"
   },

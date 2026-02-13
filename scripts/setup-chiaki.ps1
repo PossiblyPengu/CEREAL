@@ -26,14 +26,14 @@ if ((Test-Path $ChiakiExe) -and -not $Force) {
     exit 0
 }
 
-# ── Fetch latest release metadata ─────────────────────────────────────────────
+# ── Fetch latest release metadata and select platform-specific asset ────────
 Write-Host "  Fetching latest chiaki-ng release info..." -ForegroundColor White
 
 try {
     $headers = @{ "User-Agent" = "cereal-launcher" }
-    $release = Invoke-RestMethod `
-        -Uri "https://api.github.com/repos/streetpea/chiaki-ng/releases/latest" `
-        -Headers $headers
+    $repo = $env:CHIAKI_RELEASE_REPO
+    if (-not $repo) { $repo = 'streetpea/chiaki-ng' }
+    $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/latest" -Headers $headers
 } catch {
     Write-Host "ERROR: Could not reach GitHub API: $_" -ForegroundColor Red
     exit 1
@@ -41,27 +41,57 @@ try {
 
 Write-Host "  Latest release: $($release.tag_name)" -ForegroundColor Gray
 
-# ── Find Windows x64 portable asset ──────────────────────────────────────────
-# Prefer: chiaki-ng-win_x64-MSYS2-portable-*.zip  (portable, not installer)
-$asset = $release.assets | Where-Object {
-    $_.name -match 'win_x64' -and $_.name -match 'portable' -and $_.name -match '\.zip$'
-} | Select-Object -First 1
+# Determine platform candidates
+Add-Type -AssemblyName System.Runtime
+$isWindows = [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)
+$isLinux = [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Linux)
+$isMac = [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::OSX)
 
-# Fallback: any win_x64 zip
-if (-not $asset) {
-    $asset = $release.assets | Where-Object {
-        $_.name -match 'win_x64' -and $_.name -match '\.zip$'
-    } | Select-Object -First 1
+$candidates = @()
+if ($isWindows) {
+    $candidates += 'win_x64','win-x64','win64','windows_x64'
+} elseif ($isLinux) {
+    $candidates += 'linux','linux_x64','linux-x64','x86_64-linux'
+} elseif ($isMac) {
+    $candidates += 'macos','macos_x64','darwin','osx'
+} else {
+    $candidates += 'win_x64'
 }
 
-if (-not $asset) {
-    Write-Host "ERROR: No Windows x64 .zip asset found in release $($release.tag_name)" -ForegroundColor Red
-    Write-Host "  Available assets:" -ForegroundColor Gray
-    $release.assets | ForEach-Object { Write-Host "    $($_.name)" -ForegroundColor Gray }
-    exit 1
-}
+# Allow env var override for direct URL (skip GitHub API)
+if ($env:CHIAKI_PREBUILT_URL) {
+    $directUrl = $env:CHIAKI_PREBUILT_URL
+    Write-Host "  Using direct prebuilt URL from CHIAKI_PREBUILT_URL" -ForegroundColor Gray
+    $asset = @{ browser_download_url = $directUrl; name = [System.IO.Path]::GetFileName($directUrl); size = 0 }
+} else {
+    # Allow override of asset regex
+    $assetRegexOverride = $env:CHIAKI_ASSET_REGEX
+    if ($assetRegexOverride) { Write-Host "  Using asset regex override: $assetRegexOverride" -ForegroundColor Gray }
 
-Write-Host "  Asset: $($asset.name) ($([math]::Round($asset.size / 1MB, 1)) MB)" -ForegroundColor Gray
+    $asset = $null
+    foreach ($cand in $candidates) {
+        if ($assetRegexOverride) {
+            $asset = $release.assets | Where-Object { $_.name -match $assetRegexOverride } | Select-Object -First 1
+        } else {
+            $asset = $release.assets | Where-Object { $_.name -match $cand -and $_.name -match '\.zip$' } | Select-Object -First 1
+        }
+        if ($asset) { break }
+    }
+
+    # Fallback: any zip asset
+    if (-not $asset) {
+        $asset = $release.assets | Where-Object { $_.name -match '\.zip$' } | Select-Object -First 1
+    }
+
+    if (-not $asset) {
+        Write-Host "ERROR: No suitable .zip asset found in release $($release.tag_name) for platform candidates: $($candidates -join ', ')" -ForegroundColor Red
+        Write-Host "  Available assets:" -ForegroundColor Gray
+        $release.assets | ForEach-Object { Write-Host "    $($_.name)" -ForegroundColor Gray }
+        exit 1
+    }
+
+    Write-Host "  Asset: $($asset.name) ($([math]::Round($asset.size / 1MB, 1)) MB)" -ForegroundColor Gray
+}
 
 # ── Download ──────────────────────────────────────────────────────────────────
 $TempZip = Join-Path $env:TEMP "chiaki-ng-download.zip"
