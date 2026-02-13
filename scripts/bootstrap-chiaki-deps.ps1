@@ -11,20 +11,13 @@ Write-Host ""; Write-Host '=====================================================
 Write-Host '  Cereal - bootstrap vcpkg and install chiaki deps (Windows)' -ForegroundColor Cyan
 Write-Host '============================================================' -ForegroundColor Cyan
 
-if (-not (Test-Path $VcpkgDir)) {
-    Write-Host 'Cloning vcpkg into vendor/vcpkg...' -ForegroundColor White
-    git clone https://github.com/microsoft/vcpkg.git $VcpkgDir
-} else {
-    Write-Host 'vcpkg directory exists — attempting to update to latest master...' -ForegroundColor White
-    try {
-        git -C $VcpkgDir fetch origin --depth=1
-        git -C $VcpkgDir checkout master 2>$null | Out-Null
-        git -C $VcpkgDir pull origin master
-    } catch {
-        Write-Host 'Warning: failed to update existing vendor/vcpkg — continuing with existing copy.' -ForegroundColor Yellow
-    }
+if (Test-Path $VcpkgDir) {
+    Write-Host 'Removing existing vendor/vcpkg to ensure a clean full clone...' -ForegroundColor Yellow
+    Remove-Item -Recurse -Force -LiteralPath $VcpkgDir
 }
 
+Write-Host 'Cloning fresh vcpkg into vendor/vcpkg (full clone)...' -ForegroundColor White
+git clone https://github.com/microsoft/vcpkg.git $VcpkgDir
 Push-Location $VcpkgDir
 try {
     if (-not (Test-Path "bootstrap-vcpkg.bat")) {
