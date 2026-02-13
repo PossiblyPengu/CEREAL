@@ -53,15 +53,63 @@ elseif ($Bump) { switch ($Bump.ToLower()) { 'major' { $parts = $currentVersion -
 elseif ($Major) { $parts = $currentVersion -split '\.'; $newVersion = "$([int]$parts[0] + 1).0.0" }
 elseif ($Minor) { $parts = $currentVersion -split '\.'; $newVersion = "$($parts[0]).$([int]$parts[1] + 1).0" }
 elseif ($Patch) { $parts = $currentVersion -split '\.'; $newVersion = "$($parts[0]).$($parts[1]).$([int]$parts[2] + 1)" }
-else { Write-Host 'No bump specified; use -Patch/-Minor/-Major/-Version or -Bump' -ForegroundColor Red; exit 1 }
+else {
+  # Interactive mode: ask user which bump to perform
+  if ($Host -and $Host.UI -and $Host.UI.SupportsUserInteraction) {
+    Write-Host ""; Write-Host 'Select version bump:' -ForegroundColor Yellow
+    $parts = $currentVersion -split '\.'
+    $majorNum = [int]$parts[0]; $minorNum = [int]$parts[1]; $patchNum = [int]$parts[2]
+    Write-Host "  [1] Patch  ($majorNum.$minorNum.$($patchNum + 1))"
+    Write-Host "  [2] Minor  ($majorNum.$($minorNum + 1).0)"
+    Write-Host "  [3] Major  ($($majorNum + 1).0.0)"
+    Write-Host "  [4] Custom (enter full version like 5.0.0 or 5.0.0-beta.1)"
+    Write-Host "  [Q] Quit"
+    Write-Host ""
+    $choice = Read-Host 'Choice'
+    switch ($choice) {
+      '1' { $newVersion = "$majorNum.$minorNum.$($patchNum + 1)" }
+      '2' { $newVersion = "$majorNum.$($minorNum + 1).0" }
+      '3' { $newVersion = "$($majorNum + 1).0.0" }
+      '4' {
+        $inputVer = Read-Host 'Enter version (X.Y.Z or X.Y.Z-prerelease)'
+        if ($inputVer -match '^\d+\.\d+\.\d+(-[A-Za-z0-9\.-]+)?$') { $newVersion = $inputVer } else { Write-Host 'Invalid version format' -ForegroundColor Red; exit 1 }
+      }
+      'q' { exit 0 }
+      'Q' { exit 0 }
+      default { Write-Host 'Invalid choice' -ForegroundColor Red; exit 1 }
+    }
+  } else {
+    Write-Host 'No bump specified; use -Patch/-Minor/-Major/-Version or -Bump' -ForegroundColor Red
+    exit 1
+  }
+}
 
 Write-Host "New version: v$newVersion" -ForegroundColor Green
 $tagName = "v$newVersion"
+
+# Collect release notes: prefer -Notes param, otherwise prompt interactively
+$releaseNotes = @()
+if ($Notes) { $releaseNotes = @($Notes) } else {
+  if ($Host -and $Host.UI -and $Host.UI.SupportsUserInteraction) {
+    Write-Host ""; Write-Host '[Release Notes] Enter changes (empty line to finish):' -ForegroundColor Yellow
+    while ($true) {
+      $line = Read-Host '  >'
+      if ([string]::IsNullOrWhiteSpace($line)) { break }
+      $releaseNotes += $line
+    }
+  }
+}
+# Flatten notes into $Notes for use later
+if ($releaseNotes.Count -gt 0) { $Notes = ($releaseNotes -join "`n") }
 
 if ($DryRun) {
   Write-Host 'DRY RUN - no changes will be made' -ForegroundColor Yellow
   Write-Host "Would update package.json version $currentVersion -> $newVersion" -ForegroundColor Gray
   Write-Host "Would create tag: $tagName and push to origin" -ForegroundColor Gray
+  if ($releaseNotes.Count -gt 0) {
+    Write-Host 'Release notes:' -ForegroundColor Gray
+    $releaseNotes | ForEach-Object { Write-Host "  - $_" -ForegroundColor Gray }
+  }
   Write-Host "Would run build unless -SkipBuild was passed" -ForegroundColor Gray
   exit 0
 }
