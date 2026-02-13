@@ -2,3 +2,8 @@
 	path = vendor/chiaki-ng
 	url = https://github.com/streetpea/chiaki-ng.git
 	branch = main
+
+[submodule "vendor/vcpkg"]
+	path = vendor/vcpkg
+	url = https://github.com/microsoft/vcpkg.git
+	branch = master
