@@ -1,0 +1,1526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cereal</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    html,body,#root{width:100%;height:100%;overflow:hidden}
+    body{font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,sans-serif;background:#07070d;color:#e8e4de;-webkit-font-smoothing:antialiased;user-select:none}
+    :root{
+      --void:#07070d;--surface:#0d0d16;--card:#101018;--card-up:#16161f;
+      --glass:rgba(255,255,255,0.03);--glass-border:rgba(255,255,255,0.06);--glow:rgba(255,255,255,0.08);
+      --accent:#d4a853;--accent-soft:rgba(212,168,83,0.12);--accent-border:rgba(212,168,83,0.3);
+      --blue:#4a9eff;--green:#34d399;--red:#f87171;
+      --text:#e8e4de;--text-2:#b0aaa0;--text-3:#706b63;--text-4:#3d3a35;
+    }
+    body::before{content:'';position:fixed;inset:0;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");pointer-events:none;z-index:9998;opacity:0.3}
+    body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,0.012) 3px,rgba(0,0,0,0.012) 6px);pointer-events:none;z-index:9999}
+
+    .void-layer{position:fixed;inset:0;z-index:0;overflow:hidden;pointer-events:none}
+    .nebula{position:absolute;border-radius:50%;filter:blur(100px);opacity:0.045;pointer-events:none;transform:translate(-50%,-50%)}
+    .orbit-ring{position:absolute;border-radius:50%;border:1px solid rgba(255,255,255,0.015);pointer-events:none;transform:translate(-50%,-50%)}
+    .cluster-label{position:absolute;font-size:52px;font-weight:100;letter-spacing:8px;text-transform:uppercase;color:rgba(255,255,255,0.022);pointer-events:none;transform:translate(-50%,-50%);white-space:nowrap}
+
+    .drag-bar{position:fixed;top:0;left:0;right:0;height:32px;-webkit-app-region:drag;z-index:40}
+    .win-ctrls{position:fixed;top:0;right:0;z-index:10000;display:flex;-webkit-app-region:no-drag;pointer-events:auto}
+    .win-ctrls button{width:46px;height:32px;border:none;background:none;color:var(--text-3);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background 0.1s;pointer-events:auto}
+    .win-ctrls button svg{width:12px;height:12px;flex-shrink:0}
+    .win-ctrls button:hover{background:rgba(255,255,255,0.06)}
+    .win-ctrls button:last-child:hover{background:#e81123;color:white}
+
+    .nav-pill{
+      position:fixed;top:6px;left:50%;transform:translateX(-50%);z-index:50;
+      display:flex;align-items:center;gap:2px;padding:4px 10px;
+      border-radius:22px;background:rgba(13,13,22,0.6);backdrop-filter:blur(20px);
+      border:1px solid rgba(255,255,255,0.04);-webkit-app-region:no-drag;
+      box-shadow:0 4px 24px rgba(0,0,0,0.3);
+    }
+    .nav-brand{font-size:11px;font-weight:300;letter-spacing:4px;text-transform:uppercase;background:linear-gradient(135deg,var(--accent),var(--text-2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-right:10px;flex-shrink:0;padding:0 6px}
+    .nav-sep{width:1px;height:16px;background:rgba(255,255,255,0.06);margin:0 4px;flex-shrink:0}
+    .chip{padding:4px 12px;border-radius:14px;border:1px solid transparent;background:none;color:var(--text-3);font-size:10px;font-weight:500;font-family:inherit;white-space:nowrap;cursor:pointer;transition:all 0.2s}
+    .chip:hover{color:var(--text-2);background:var(--glass)}
+    .chip.active{background:var(--accent-soft);border-color:var(--accent-border);color:var(--accent)}
+    .nav-actions{display:flex;gap:1px;margin-left:6px;flex-shrink:0}
+    .nav-btn{width:30px;height:30px;border:none;background:none;border-radius:8px;color:var(--text-3);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.15s}
+    .nav-btn:hover{background:var(--glass);color:var(--text)}
+    .nav-btn svg{width:14px;height:14px}
+    .settings-quick-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:20px}
+    .settings-qa-btn{display:flex;align-items:center;gap:8px;padding:12px 14px;border-radius:10px;border:1px solid var(--glass-border);background:var(--glass);color:var(--text-2);font-size:11px;font-weight:500;font-family:inherit;cursor:pointer;transition:all 0.15s}
+    .settings-qa-btn:hover{background:var(--accent-soft);border-color:var(--accent-border);color:var(--accent)}
+    .settings-qa-btn svg{width:16px;height:16px;flex-shrink:0;opacity:0.7}
+    .settings-qa-btn:hover svg{opacity:1}
+
+    .orb-field{position:fixed;inset:0;z-index:1}
+    .orb{position:absolute;transform:translate(-50%,-50%);z-index:2;animation:orbDrift var(--drift-dur,20s) ease-in-out infinite alternate;animation-delay:var(--drift-delay,0s);transition:z-index 0s}
+    .orb:hover{z-index:100}
+    @keyframes orbDrift{
+      0%{transform:translate(-50%,-50%)}
+      100%{transform:translate(calc(-50% + var(--drift-x,0px)),calc(-50% + var(--drift-y,0px)))}
+    }
+    .orb-body{
+      width:var(--orb-size,52px);height:var(--orb-size,52px);border-radius:50%;
+      position:relative;cursor:pointer;overflow:visible;
+      opacity:0;transform:scale(0.4);
+      transition:opacity 0.6s ease,transform 0.5s cubic-bezier(0.16,1,0.3,1),box-shadow 0.3s,filter 0.5s;
+      transition-delay:var(--enter-delay,0s);
+    }
+    .orb-body.entered{opacity:1;transform:scale(1)}
+    .orb-body.entered:hover{transform:scale(1.35);z-index:20;transition-delay:0s !important}
+    .orb-body.entered.dimmed{opacity:0.06;filter:grayscale(1) blur(1px);pointer-events:none;transition-delay:0s !important}
+    .orb-visual{
+      width:100%;height:100%;border-radius:50%;overflow:hidden;position:relative;
+      box-shadow:0 0 0 2px rgba(255,255,255,0.04),0 4px 20px rgba(0,0,0,0.5);
+      transition:box-shadow 0.3s;
+    }
+    .orb-body.entered:hover .orb-visual{
+      box-shadow:0 0 0 2px var(--orb-color,#555),0 0 28px color-mix(in srgb,var(--orb-color,#555) 35%,transparent),0 8px 32px rgba(0,0,0,0.5);
+    }
+    .orb-visual::after{content:'';position:absolute;inset:0;border-radius:50%;background:radial-gradient(ellipse at 30% 20%,rgba(255,255,255,0.12),transparent 55%);pointer-events:none;z-index:2}
+    .orb-visual img{width:100%;height:100%;object-fit:cover;display:block}
+    .orb-fallback{
+      width:100%;height:100%;display:flex;align-items:center;justify-content:center;
+      font-weight:200;color:rgba(255,255,255,0.3);
+      background:radial-gradient(circle at 35% 30%,color-mix(in srgb,var(--orb-color,#555) 15%,var(--card)),var(--card) 70%);
+    }
+    .orb-name{
+      position:absolute;bottom:-24px;left:50%;transform:translateX(-50%) translateY(4px);
+      opacity:0;transition:opacity 0.2s,transform 0.2s;
+      white-space:nowrap;font-size:10px;font-weight:600;padding:3px 10px;border-radius:6px;
+      background:rgba(7,7,13,0.85);backdrop-filter:blur(8px);color:var(--text);
+      border:1px solid rgba(255,255,255,0.06);pointer-events:none;z-index:30;
+    }
+    .orb-body.entered:hover .orb-name{opacity:1;transform:translateX(-50%) translateY(0)}
+    .orb-fav{
+      position:absolute;top:-3px;right:-3px;width:16px;height:16px;border-radius:50%;
+      background:var(--accent);display:flex;align-items:center;justify-content:center;z-index:3;
+      box-shadow:0 2px 8px rgba(212,168,83,0.3);
+    }
+    .orb-fav svg{width:8px;height:8px;fill:#0a0a0f}
+
+    .focus-overlay{position:fixed;inset:0;z-index:80;display:flex;align-items:center;justify-content:center;animation:fadeIn 0.3s ease}
+    .focus-bg{position:absolute;inset:-60px;background-size:cover;background-position:center;filter:blur(70px) brightness(0.12) saturate(1.4);transform:scale(1.2)}
+    .focus-dim{position:absolute;inset:0;background:rgba(7,7,13,0.78)}
+    .focus-content{position:relative;z-index:2;display:flex;align-items:flex-start;gap:48px;max-width:860px;max-height:80vh;padding:0 32px;animation:focusSlide 0.4s cubic-bezier(0.16,1,0.3,1);overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,0.1) transparent}
+    @keyframes focusSlide{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+    .focus-close{position:fixed;top:44px;right:32px;z-index:82;width:36px;height:36px;border:none;border-radius:10px;background:rgba(255,255,255,0.05);backdrop-filter:blur(8px);color:var(--text-3);font-size:18px;cursor:pointer;transition:all 0.15s;display:flex;align-items:center;justify-content:center}
+    .focus-close:hover{background:rgba(255,255,255,0.1);color:var(--text)}
+    .focus-art{flex-shrink:0}
+    .focus-art img{height:340px;border-radius:14px;box-shadow:0 24px 64px rgba(0,0,0,0.6),0 0 0 1px rgba(255,255,255,0.04)}
+    .focus-art-fallback{width:220px;height:340px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:80px;font-weight:200;color:var(--text-4);background:linear-gradient(145deg,var(--card),var(--card-up));box-shadow:0 24px 64px rgba(0,0,0,0.6)}
+    .focus-details{flex:1;min-width:0}
+    .focus-platform{display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:6px;border:1px solid;font-size:10px;font-weight:700;margin-bottom:14px}
+    .focus-title{font-size:32px;font-weight:700;line-height:1.1;color:var(--text);margin-bottom:10px}
+    .focus-meta{display:flex;flex-wrap:wrap;gap:8px;font-size:12px;color:var(--text-3);margin-bottom:8px}
+    .focus-cats{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:24px}
+    .focus-cat{padding:3px 10px;border-radius:10px;background:var(--glass);font-size:10px;color:var(--text-3)}
+    .focus-actions{display:flex;gap:8px;flex-wrap:wrap}
+    .focus-info-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;margin-bottom:16px}
+    .focus-info-item{display:flex;flex-direction:column;gap:1px}
+    .focus-info-label{font-size:9px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-4);font-weight:600}
+    .focus-info-value{font-size:12px;color:var(--text-2)}
+    .focus-desc{font-size:12px;line-height:1.6;color:var(--text-3);margin-bottom:16px;max-height:100px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,0.08) transparent}
+    .focus-metacritic{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:6px;font-size:11px;font-weight:700;margin-bottom:16px}
+    .focus-screenshots{display:flex;gap:8px;margin-bottom:16px;overflow-x:auto;padding-bottom:6px;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,0.08) transparent}
+    .focus-screenshots::-webkit-scrollbar{height:4px}
+    .focus-screenshots::-webkit-scrollbar-track{background:transparent}
+    .focus-screenshots::-webkit-scrollbar-thumb{background:var(--text-4);border-radius:2px}
+    .focus-screenshots::-webkit-scrollbar-thumb:hover{background:var(--text-3)}
+    .focus-screenshots img{height:80px;border-radius:8px;flex-shrink:0;cursor:zoom-in;transition:transform 0.15s;box-shadow:0 2px 8px rgba(0,0,0,0.4)}
+    .focus-screenshots img:hover{transform:scale(1.05)}
+    .screenshot-zoom{position:fixed;inset:0;z-index:9000;display:flex;align-items:center;justify-content:center;background:rgba(7,7,13,0.92);backdrop-filter:blur(8px);cursor:zoom-out;animation:fadeIn 0.2s ease}
+    .screenshot-zoom img{max-width:90vw;max-height:88vh;border-radius:8px;box-shadow:0 8px 60px rgba(0,0,0,0.7);cursor:default}
+    .focus-refresh{font-size:10px;color:var(--text-4);background:none;border:1px solid var(--glass-border);padding:3px 10px;border-radius:6px;cursor:pointer;transition:all 0.15s}
+    .focus-refresh:hover{color:var(--text-2);border-color:var(--text-4)}
+    .focus-refresh:disabled{opacity:0.4;cursor:default}
+    .focus-esc{position:fixed;bottom:32px;left:50%;transform:translateX(-50%);z-index:82;padding:6px 16px;border-radius:8px;border:1px solid var(--glass-border);background:rgba(7,7,13,0.6);backdrop-filter:blur(8px);color:var(--text-4);font-size:10px;font-family:inherit}
+
+    .empty-state{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:1;color:var(--text-4);text-align:center;pointer-events:none}
+    .empty-state>*{pointer-events:auto}
+    .empty-icon{font-size:48px;margin-bottom:16px;opacity:0.2}
+    .empty-title{font-size:16px;font-weight:600;color:var(--text-3);margin-bottom:8px}
+    .empty-text{font-size:13px;max-width:300px;line-height:1.5;margin-bottom:20px}
+
+    .search-overlay{position:fixed;inset:0;z-index:200;background:rgba(7,7,13,0.92);backdrop-filter:blur(24px);display:flex;flex-direction:column;align-items:center;padding-top:15vh;animation:fadeIn 0.2s ease}
+    .search-overlay input{font-size:32px;font-weight:200;letter-spacing:1px;background:none;border:none;border-bottom:1px solid var(--glass-border);color:var(--text);text-align:center;width:60%;padding-bottom:16px;outline:none;font-family:inherit}
+    .search-overlay input::placeholder{color:var(--text-4)}
+    .search-results{margin-top:32px;width:60%;max-height:40vh;overflow-y:auto;scrollbar-width:thin}
+    .search-hit{display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:10px;cursor:pointer;transition:background 0.15s}
+    .search-hit:hover{background:var(--glass)}
+    .search-hit-cover{width:40px;height:40px;border-radius:50%;overflow:hidden;background:var(--card);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:200;color:var(--text-3);flex-shrink:0}
+    .search-hit-cover img{width:100%;height:100%;object-fit:cover}
+    .search-hit-name{font-size:14px;color:var(--text)}
+    .search-hit-meta{font-size:11px;color:var(--text-3)}
+    .search-esc{position:absolute;top:24px;right:32px;padding:6px 14px;border-radius:6px;border:1px solid var(--glass-border);background:none;color:var(--text-3);font-size:11px;font-family:inherit;cursor:pointer;transition:all 0.15s}
+    .search-esc:hover{border-color:var(--text-3);color:var(--text-2)}
+
+    .panel-backdrop{position:fixed;inset:0;z-index:100;background:rgba(0,0,0,0.55);backdrop-filter:blur(8px);animation:fadeIn 0.2s ease}
+    .side-panel{position:fixed;top:0;right:0;bottom:0;width:480px;max-width:92vw;background:var(--surface);border-left:1px solid var(--glass-border);z-index:101;display:flex;flex-direction:column;animation:panelIn 0.3s cubic-bezier(0.16,1,0.3,1)}
+    .side-panel.wide{width:560px}
+    @keyframes panelIn{from{transform:translateX(100%)}to{transform:translateX(0)}}
+    @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+    .panel-head{display:flex;align-items:center;justify-content:space-between;padding:20px 24px;padding-top:36px;border-bottom:1px solid var(--glass-border);flex-shrink:0}
+    .panel-head h3{font-size:15px;font-weight:600;color:var(--text)}
+    .panel-head-actions{display:flex;gap:6px;align-items:center}
+    .panel-body{flex:1;overflow-y:auto;padding:20px 24px;scrollbar-width:thin}
+    .panel-body::-webkit-scrollbar{width:4px}
+    .panel-body::-webkit-scrollbar-thumb{background:var(--text-4);border-radius:2px}
+    .panel-foot{padding:16px 24px;border-top:1px solid var(--glass-border);display:flex;justify-content:flex-end;gap:8px;flex-shrink:0}
+    .panel-close{width:30px;height:30px;border:none;background:var(--glass);border-radius:8px;color:var(--text-3);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.15s}
+    .panel-close:hover{background:var(--glow);color:var(--text)}
+
+    .field{margin-bottom:14px}
+    .field label{display:block;font-size:10px;font-weight:700;color:var(--text-3);margin-bottom:5px;text-transform:uppercase;letter-spacing:0.5px}
+    .field input,.field select,.field textarea{width:100%;padding:9px 12px;border-radius:8px;border:1px solid var(--glass-border);background:var(--glass);color:var(--text);font-size:13px;font-family:inherit;outline:none;transition:border-color 0.2s;box-sizing:border-box}
+    .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--accent-border)}
+    .field input::placeholder,.field textarea::placeholder{color:var(--text-4)}
+    .field textarea{resize:vertical;min-height:60px;line-height:1.5}
+    .cover-preview{width:100%;max-height:160px;object-fit:contain;border-radius:8px;margin-top:6px;background:var(--glass);border:1px solid var(--glass-border)}
+    .art-picker{margin-top:8px;border:1px solid var(--glass-border);border-radius:10px;background:var(--glass);padding:10px;max-height:260px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,0.08) transparent}
+    .art-picker-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+    .art-picker-title{font-size:10px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px}
+    .art-picker-close{width:20px;height:20px;border:none;background:none;color:var(--text-4);font-size:14px;cursor:pointer;border-radius:4px;display:flex;align-items:center;justify-content:center}
+    .art-picker-close:hover{color:var(--text);background:rgba(255,255,255,0.06)}
+    .art-picker-grid{display:grid;gap:8px}
+    .art-picker-grid.covers{grid-template-columns:repeat(auto-fill,minmax(90px,1fr))}
+    .art-picker-grid.headers{grid-template-columns:repeat(auto-fill,minmax(160px,1fr))}
+    .art-pick{position:relative;border-radius:8px;overflow:hidden;cursor:pointer;border:2px solid transparent;transition:all 0.15s;background:rgba(0,0,0,0.3)}
+    .art-pick:hover{border-color:var(--accent);transform:scale(1.03)}
+    .art-pick.selected{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+    .art-pick img{width:100%;display:block}
+    .art-pick-label{position:absolute;bottom:0;left:0;right:0;padding:3px 6px;background:linear-gradient(transparent,rgba(0,0,0,0.85));font-size:8px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .art-pick-source{position:absolute;top:4px;right:4px;padding:1px 5px;border-radius:4px;background:rgba(0,0,0,0.7);font-size:8px;color:var(--text-3);font-weight:600}
+    .art-picker-empty{text-align:center;padding:16px;font-size:11px;color:var(--text-4)}
+    .art-picker-loading{text-align:center;padding:16px;font-size:11px;color:var(--text-4);display:flex;align-items:center;justify-content:center;gap:8px}
+    .meta-toggle{display:flex;align-items:center;gap:8px;width:100%;padding:10px 0;border:none;background:none;color:var(--text-2);font-size:11px;font-weight:700;font-family:inherit;cursor:pointer;text-transform:uppercase;letter-spacing:0.5px;border-top:1px solid var(--glass-border);margin-top:4px}
+    .meta-toggle svg{width:12px;height:12px;transition:transform 0.2s}
+    .meta-toggle.open svg{transform:rotate(90deg)}
+    .meta-section{overflow:hidden;transition:max-height 0.3s ease}
+    .field-hint{font-size:9px;color:var(--text-4);margin-top:3px}
+    .field select{cursor:pointer}
+    .field select option{background:var(--surface)}
+    .field-row{display:flex;gap:12px}
+    .field-row>.field{flex:1}
+
+    .btn-play{display:inline-flex;align-items:center;gap:8px;padding:10px 24px;border-radius:10px;border:none;background:var(--accent);color:#0a0a0f;font-size:13px;font-weight:700;font-family:inherit;cursor:pointer;transition:all 0.15s}
+    .btn-play:hover{filter:brightness(1.1);transform:translateY(-1px)}
+    .btn-play svg{width:14px;height:14px}
+    .btn-ghost{display:inline-flex;align-items:center;gap:6px;padding:10px 20px;border-radius:10px;border:1px solid var(--glass-border);background:none;color:var(--text-2);font-size:13px;font-family:inherit;cursor:pointer;transition:all 0.15s}
+    .btn-ghost:hover{border-color:var(--text-3);color:var(--text)}
+    .btn-ghost.danger{border-color:rgba(248,113,113,0.2);color:var(--red)}
+    .btn-ghost.danger:hover{border-color:rgba(248,113,113,0.4);background:rgba(248,113,113,0.05)}
+    .btn-accent{padding:8px 20px;border-radius:8px;border:none;background:var(--accent);color:#0a0a0f;font-size:12px;font-weight:600;font-family:inherit;cursor:pointer;transition:all 0.15s}
+    .btn-accent:hover{filter:brightness(1.1)}
+    .btn-accent:disabled{opacity:0.4;cursor:default}
+    .btn-flat{padding:8px 16px;border-radius:8px;border:1px solid var(--glass-border);background:none;color:var(--text-2);font-size:12px;font-family:inherit;cursor:pointer;transition:all 0.15s}
+    .btn-flat:hover{border-color:var(--text-3);color:var(--text)}
+    .btn-sm{padding:5px 12px;border-radius:6px;border:1px solid var(--glass-border);background:none;color:var(--text-2);font-size:11px;font-family:inherit;cursor:pointer;transition:all 0.15s}
+    .btn-sm:hover{border-color:var(--text-3);color:var(--text)}
+    .btn-sm.primary{border-color:var(--accent-border);background:var(--accent-soft);color:var(--accent)}
+    .btn-sm.primary:hover{background:rgba(212,168,83,0.2)}
+    .btn-sm.danger{border-color:rgba(248,113,113,0.3);color:var(--red)}
+    .btn-sm.danger:hover{background:rgba(248,113,113,0.08)}
+
+    .tag-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+    .tag{padding:4px 10px;border-radius:12px;border:1px solid var(--glass-border);background:none;color:var(--text-3);font-size:11px;font-family:inherit;cursor:pointer;transition:all 0.15s}
+    .tag:hover{border-color:var(--text-3);color:var(--text-2)}
+    .tag.sel{border-color:var(--accent-border);background:var(--accent-soft);color:var(--accent)}
+
+    .conn-card{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:10px;background:var(--glass);border:1px solid var(--glass-border);margin-bottom:8px;transition:border-color 0.15s}
+    .conn-card:hover{border-color:var(--glow)}
+    .conn-icon{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:white;flex-shrink:0}
+    .conn-info{flex:1;min-width:0}
+    .conn-name{font-size:12px;font-weight:600;color:var(--text)}
+    .conn-detail{font-size:10px;color:var(--text-3);margin-top:1px}
+    .conn-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+    .conn-dot.ok{background:var(--green)}
+    .conn-dot.warn{background:var(--accent)}
+    .conn-dot.off{background:var(--text-4)}
+    .conn-actions{display:flex;gap:6px}
+    .conn-section{font-size:10px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;margin:18px 0 8px}
+
+    .chiaki-bar{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:8px;margin-bottom:14px}
+    .chiaki-bar.bundled,.chiaki-bar.system{background:rgba(52,211,153,0.06);border:1px solid rgba(52,211,153,0.15)}
+    .chiaki-bar.missing{background:rgba(248,113,113,0.06);border:1px solid rgba(248,113,113,0.15)}
+    .chiaki-bar-dot{width:8px;height:8px;border-radius:50%}
+    .chiaki-bar.bundled .chiaki-bar-dot,.chiaki-bar.system .chiaki-bar-dot{background:var(--green)}
+    .chiaki-bar.missing .chiaki-bar-dot{background:var(--red)}
+    .chiaki-bar-text{flex:1;font-size:12px;color:var(--text-2)}
+    .chiaki-bar-ver{font-size:10px;color:var(--text-3);font-weight:600}
+    .detect-status{padding:10px 14px;border-radius:8px;margin-bottom:12px;font-size:12px;text-align:center}
+    .detect-status.scanning{background:rgba(74,158,255,0.06);color:var(--blue)}
+    .detect-status.done{background:rgba(52,211,153,0.06);color:var(--green)}
+    .detect-status.err{background:rgba(248,113,113,0.06);color:var(--red)}
+
+    .stream-float{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:60;display:flex;align-items:center;gap:14px;padding:10px 20px;border-radius:14px;background:rgba(12,12,22,0.88);backdrop-filter:blur(20px);border:1px solid rgba(0,112,209,0.2);box-shadow:0 8px 32px rgba(0,0,0,0.4);animation:slideUp 0.3s cubic-bezier(0.16,1,0.3,1)}
+    @keyframes slideUp{from{transform:translateX(-50%) translateY(100%);opacity:0}to{transform:translateX(-50%) translateY(0);opacity:1}}
+    .stream-float-dot{width:8px;height:8px;border-radius:50%;background:var(--red);box-shadow:0 0 10px rgba(248,113,113,0.4);animation:pulse 1.5s ease-in-out infinite}
+    .stream-float-dot.connecting{background:var(--accent);box-shadow:0 0 10px rgba(212,168,83,0.4)}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+    .stream-float-info{flex:1}
+    .stream-float-name{font-size:12px;font-weight:600;color:var(--text)}
+    .stream-float-meta{font-size:10px;color:var(--text-3);margin-top:1px}
+    .stream-float-stats{display:flex;gap:14px}
+    .stream-stat{text-align:center}
+    .stream-stat-val{font-size:14px;font-weight:700;color:var(--text)}
+    .stream-stat-lbl{font-size:8px;font-weight:700;color:var(--text-4);text-transform:uppercase;letter-spacing:0.5px}
+    .stream-float-stop{padding:5px 14px;border-radius:8px;border:1px solid rgba(248,113,113,0.25);background:rgba(248,113,113,0.06);color:var(--red);font-size:11px;font-weight:600;font-family:inherit;cursor:pointer;transition:all 0.15s}
+    .stream-float-stop:hover{background:rgba(248,113,113,0.12);border-color:rgba(248,113,113,0.4)}
+
+    .stream-overlay{position:fixed;inset:0;z-index:9000;background:#000;display:flex;flex-direction:column}
+    .stream-overlay-bar{height:40px;flex-shrink:0;display:flex;align-items:center;gap:12px;padding:0 14px;background:rgba(12,12,22,0.95);border-bottom:1px solid rgba(255,255,255,0.06)}
+    .stream-overlay-bar-title{font-size:12px;font-weight:600;color:var(--text);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .stream-overlay-body{flex:1;display:flex;align-items:center;justify-content:center}
+
+    .sub-tabs{display:flex;gap:3px;margin-bottom:14px}
+    .sub-tab{padding:5px 14px;border-radius:6px;border:none;background:none;color:var(--text-3);font-size:11px;font-weight:500;font-family:inherit;cursor:pointer;text-transform:capitalize;transition:all 0.15s}
+    .sub-tab:hover{color:var(--text-2);background:var(--glass)}
+    .sub-tab.active{background:var(--accent-soft);color:var(--accent)}
+    @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+    .spinner{width:14px;height:14px;border:2px solid var(--glass-border);border-top-color:var(--accent);border-radius:50%;display:inline-block;animation:spin 0.7s linear infinite}
+    .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:300;padding:10px 24px;border-radius:10px;background:rgba(16,16,24,0.92);backdrop-filter:blur(12px);border:1px solid var(--glass-border);color:var(--text);font-size:13px;font-weight:500;box-shadow:0 8px 24px rgba(0,0,0,0.3);animation:slideUp 0.3s cubic-bezier(0.16,1,0.3,1)}
+
+    .galaxy-viewport{position:fixed;inset:0;z-index:1;overflow:hidden;cursor:grab}
+    .galaxy-viewport:active{cursor:grabbing}
+    .galaxy-canvas{position:absolute;top:0;left:0;transform-origin:0 0;will-change:transform}
+    .galaxy-canvas.fly{transition:transform 0.6s cubic-bezier(0.25,1,0.5,1)}
+    .galaxy-star{position:absolute;border-radius:50%;pointer-events:none}
+    .galaxy-star.tw{animation:twinkle var(--tw-dur,4s) ease-in-out infinite;animation-delay:var(--tw-del,0s)}
+    @keyframes twinkle{0%,100%{filter:brightness(1)}35%{filter:brightness(3)}65%{filter:brightness(0.5)}}
+    @keyframes shoot{0%{opacity:0;transform:translateX(-20px)}5%{opacity:0.8;transform:translateX(0)}50%{opacity:0;transform:translateX(280px)}100%{opacity:0;transform:translateX(280px)}}
+    @keyframes coronaPulse{0%,100%{transform:translate(-50%,-50%) scale(1);opacity:0.25}50%{transform:translate(-50%,-50%) scale(1.15);opacity:0.55}}
+    .shooting-star{width:100px;height:1.5px;border-radius:1px;background:linear-gradient(90deg,transparent 0%,rgba(200,220,255,0.7) 30%,transparent 100%);pointer-events:none;opacity:0;animation:shoot var(--sh-dur,5s) ease-out infinite;animation-delay:var(--sh-del,0s)}
+    .galaxy-sun{position:absolute;transform:translate(-50%,-50%);z-index:5;pointer-events:none}
+    .galaxy-sun-core{border-radius:50%;display:flex;align-items:center;justify-content:center;position:relative;z-index:2}
+    .galaxy-sun-letter{font-weight:900;letter-spacing:2px;text-shadow:0 0 10px currentColor}
+    .galaxy-sun-corona{position:absolute;left:50%;top:50%;border-radius:50%;z-index:1;animation:coronaPulse 4s ease-in-out infinite alternate}
+    .galaxy-sun-flare{position:absolute;left:50%;top:50%;border-radius:50%;z-index:0;transform:translate(-50%,-50%);pointer-events:none}
+    .bg-star{position:absolute;border-radius:50%;background:white;pointer-events:none}
+    .bg-star.tw{animation:twinkle var(--tw-dur,5s) ease-in-out infinite;animation-delay:var(--tw-del,0s)}
+    .zoom-hud{position:fixed;bottom:20px;left:20px;z-index:50;display:flex;align-items:center;gap:4px}
+    .zoom-btn{width:30px;height:30px;border:none;border-radius:8px;background:rgba(13,13,22,0.6);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.04);color:var(--text-3);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.15s}
+    .zoom-btn:hover{background:rgba(255,255,255,0.06);color:var(--text)}
+    .zoom-btn svg{width:14px;height:14px}
+    .zoom-pct{font-size:10px;color:var(--text-4);font-weight:600;min-width:36px;text-align:center}
+
+    .view-toggle{display:flex;gap:1px;padding:2px;border-radius:8px;background:var(--glass);border:1px solid var(--glass-border);margin:0 4px}
+    .view-toggle button{width:26px;height:26px;border:none;background:none;border-radius:6px;color:var(--text-4);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.15s}
+    .view-toggle button:hover{color:var(--text-2)}
+    .view-toggle button.active{background:var(--accent-soft);color:var(--accent)}
+    .view-toggle button svg{width:12px;height:12px}
+
+    .card-grid-wrap{position:fixed;inset:0;z-index:1;overflow-y:auto;padding:52px 32px 32px;scrollbar-width:thin}
+    .card-grid-wrap::-webkit-scrollbar{width:4px}
+    .card-grid-wrap::-webkit-scrollbar-thumb{background:var(--text-4);border-radius:2px}
+    .card-platform-section{margin-bottom:28px}
+    .card-platform-header{display:flex;align-items:center;gap:10px;margin-bottom:14px;padding-left:2px}
+    .card-platform-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+    .card-platform-name{font-size:13px;font-weight:600;color:var(--text-2);letter-spacing:0.5px}
+    .card-platform-count{font-size:11px;color:var(--text-4);font-weight:400}
+    .card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px}
+    .game-card{position:relative;border-radius:12px;overflow:hidden;cursor:pointer;background:var(--card);border:1px solid var(--glass-border);transition:all 0.25s cubic-bezier(0.16,1,0.3,1);animation:cardIn 0.4s ease both}
+    .game-card:hover{transform:translateY(-4px) scale(1.02);border-color:rgba(255,255,255,0.1);box-shadow:0 12px 32px rgba(0,0,0,0.4)}
+    .game-card.dimmed{opacity:0.08;filter:grayscale(1);pointer-events:none}
+    @keyframes cardIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+    .card-cover{aspect-ratio:2/3;width:100%;overflow:hidden;position:relative;background:var(--card-up)}
+    .card-cover img{width:100%;height:100%;object-fit:cover;display:block;transition:transform 0.3s}
+    .game-card:hover .card-cover img{transform:scale(1.05)}
+    .card-cover-fallback{width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:36px;font-weight:200;color:var(--text-4)}
+    .card-cover::after{content:'';position:absolute;bottom:0;left:0;right:0;height:50%;background:linear-gradient(transparent,rgba(7,7,13,0.7));pointer-events:none}
+    .card-fav{position:absolute;top:8px;right:8px;width:22px;height:22px;border-radius:50%;background:rgba(212,168,83,0.9);display:flex;align-items:center;justify-content:center;z-index:3;box-shadow:0 2px 8px rgba(212,168,83,0.3)}
+    .card-fav svg{width:10px;height:10px;fill:#0a0a0f}
+    .card-plat-badge{position:absolute;top:8px;left:8px;padding:2px 8px;border-radius:4px;font-size:9px;font-weight:700;z-index:3;backdrop-filter:blur(8px)}
+    .card-info{padding:10px 12px 12px}
+    .card-name{font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:3px}
+    .card-meta{font-size:10px;color:var(--text-3)}
+    .card-hover-actions{position:absolute;bottom:0;left:0;right:0;padding:10px;display:flex;gap:6px;justify-content:center;opacity:0;transform:translateY(8px);transition:all 0.2s;z-index:4}
+    .game-card:hover .card-hover-actions{opacity:1;transform:translateY(0)}
+    .card-hover-btn{padding:5px 12px;border-radius:6px;border:none;font-size:10px;font-weight:600;font-family:inherit;cursor:pointer;backdrop-filter:blur(8px);transition:all 0.15s}
+    .card-hover-btn.play{background:var(--accent);color:#0a0a0f}
+    .card-hover-btn.play:hover{filter:brightness(1.1)}
+    .card-hover-btn.ghost{background:rgba(255,255,255,0.08);color:var(--text-2);border:1px solid rgba(255,255,255,0.08)}
+    .card-hover-btn.ghost:hover{background:rgba(255,255,255,0.12)}
+
+    .settings-section{margin-bottom:24px}
+    .settings-section-title{font-size:10px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px}
+    .settings-row{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-radius:8px;background:var(--glass);border:1px solid var(--glass-border);margin-bottom:6px;min-height:42px}
+    .settings-row:last-child{margin-bottom:0}
+    .settings-row-info{flex:1;min-width:0}
+    .settings-row-label{font-size:12px;font-weight:500;color:var(--text)}
+    .settings-row-desc{font-size:10px;color:var(--text-3);margin-top:2px}
+    .settings-toggle{position:relative;width:36px;height:20px;border-radius:10px;border:none;background:var(--text-4);cursor:pointer;transition:background 0.2s;flex-shrink:0;margin-left:12px;padding:0}
+    .settings-toggle.on{background:var(--accent)}
+    .settings-toggle::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:white;transition:transform 0.2s}
+    .settings-toggle.on::after{transform:translateX(16px)}
+    .settings-select{padding:5px 10px;border-radius:6px;border:1px solid var(--glass-border);background:var(--glass);color:var(--text);font-size:11px;font-family:inherit;cursor:pointer;outline:none;flex-shrink:0;margin-left:12px}
+    .settings-select option{background:var(--surface)}
+    .settings-color{width:28px;height:28px;border-radius:6px;border:2px solid var(--glass-border);cursor:pointer;padding:0;overflow:hidden;flex-shrink:0;margin-left:12px}
+    .settings-color::-webkit-color-swatch-wrapper{padding:0}
+    .settings-color::-webkit-color-swatch{border:none;border-radius:4px}
+    .settings-danger-zone{padding:14px;border-radius:10px;border:1px solid rgba(248,113,113,0.15);background:rgba(248,113,113,0.03)}
+    .settings-about{text-align:center;padding:20px 0 8px;color:var(--text-3)}
+    .settings-about-logo{font-size:13px;font-weight:300;letter-spacing:5px;text-transform:uppercase;background:linear-gradient(135deg,var(--accent),var(--text-2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:6px}
+    .settings-about-ver{font-size:11px;color:var(--text-4);margin-bottom:4px}
+    .settings-about-author{font-size:10px;color:var(--text-4)}
+    .theme-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:4px}
+    .theme-swatch{position:relative;border:2px solid var(--glass-border);border-radius:10px;background:none;cursor:pointer;padding:0;overflow:hidden;transition:all 0.2s;display:flex;flex-direction:column;align-items:center}
+    .theme-swatch:hover{border-color:var(--text-3)}
+    .theme-swatch.active{border-color:var(--accent);box-shadow:0 0 12px color-mix(in srgb,var(--accent) 25%,transparent)}
+    .theme-swatch-preview{width:100%;height:32px;display:flex}
+    .theme-swatch-accent{width:100%;height:3px}
+    .theme-swatch-label{font-size:9px;font-weight:500;color:var(--text-2);padding:5px 0 6px;font-family:inherit;letter-spacing:0.3px}
+  </style>
+</head>
+<body>
+  <div id="root"><div style="position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center"><div style="width:32px;height:32px;border:2px solid rgba(255,255,255,0.06);border-top-color:#d4a853;border-radius:50%;animation:spin 0.8s linear infinite"></div><div style="margin-top:14px;font-size:10px;letter-spacing:2px;color:rgba(255,255,255,0.15);text-transform:uppercase">Cereal</div></div></div>
+  <script type="text/babel">
+    const { useState, useEffect, useMemo, useRef } = React;
+
+    const THEMES = {
+      midnight:  { label: 'Midnight',      accent: '#d4a853', void: '#07070d', surface: '#0d0d16', card: '#101018', cardUp: '#16161f', text: '#e8e4de', text2: '#b0aaa0', text3: '#706b63', text4: '#3d3a35', glass: 'rgba(255,255,255,0.03)', glassBorder: 'rgba(255,255,255,0.06)', glow: 'rgba(255,255,255,0.08)', bodyBg: '#07070d', preview: ['#07070d','#d4a853','#0d0d16','#e8e4de'] },
+      obsidian:  { label: 'Obsidian',      accent: '#8b5cf6', void: '#09090b', surface: '#0f0f14', card: '#13131a', cardUp: '#1a1a22', text: '#e4e2ef', text2: '#a8a4b8', text3: '#5f5b72', text4: '#36333f', glass: 'rgba(139,92,246,0.04)', glassBorder: 'rgba(139,92,246,0.08)', glow: 'rgba(139,92,246,0.1)', bodyBg: '#09090b', preview: ['#09090b','#8b5cf6','#0f0f14','#e4e2ef'] },
+      aurora:    { label: 'Aurora',        accent: '#34d399', void: '#060d0b', surface: '#0a1410', card: '#0e1a15', cardUp: '#13211c', text: '#dceee6', text2: '#9abfad', text3: '#4e7363', text4: '#2d4238', glass: 'rgba(52,211,153,0.04)', glassBorder: 'rgba(52,211,153,0.08)', glow: 'rgba(52,211,153,0.1)', bodyBg: '#060d0b', preview: ['#060d0b','#34d399','#0a1410','#dceee6'] },
+      ember:     { label: 'Ember',          accent: '#f97316', void: '#0d0806', surface: '#14100c', card: '#1a1410', cardUp: '#221b15', text: '#f0e6dc', text2: '#bfad9a', text3: '#73644f', text4: '#403729', glass: 'rgba(249,115,22,0.04)', glassBorder: 'rgba(249,115,22,0.08)', glow: 'rgba(249,115,22,0.1)', bodyBg: '#0d0806', preview: ['#0d0806','#f97316','#14100c','#f0e6dc'] },
+      arctic:    { label: 'Arctic',        accent: '#38bdf8', void: '#060a0f', surface: '#0a1018', card: '#0e1520', cardUp: '#141c28', text: '#dce8f0', text2: '#96b0c4', text3: '#4a6578', text4: '#283848', glass: 'rgba(56,189,248,0.04)', glassBorder: 'rgba(56,189,248,0.08)', glow: 'rgba(56,189,248,0.1)', bodyBg: '#060a0f', preview: ['#060a0f','#38bdf8','#0a1018','#dce8f0'] },
+      rose:      { label: 'Ros\u00e9',     accent: '#f472b6', void: '#0d060a', surface: '#140c12', card: '#1a1018', cardUp: '#22161f', text: '#f0dce6', text2: '#c49aaf', text3: '#7a5068', text4: '#42293a', glass: 'rgba(244,114,182,0.04)', glassBorder: 'rgba(244,114,182,0.08)', glow: 'rgba(244,114,182,0.1)', bodyBg: '#0d060a', preview: ['#0d060a','#f472b6','#140c12','#f0dce6'] },
+      carbon:    { label: 'Carbon',        accent: '#a1a1aa', void: '#09090b', surface: '#111113', card: '#18181b', cardUp: '#1f1f23', text: '#e4e4e7', text2: '#a1a1aa', text3: '#63636b', text4: '#3a3a40', glass: 'rgba(255,255,255,0.04)', glassBorder: 'rgba(255,255,255,0.07)', glow: 'rgba(255,255,255,0.09)', bodyBg: '#09090b', preview: ['#09090b','#a1a1aa','#111113','#e4e4e7'] },
+      sakura:    { label: 'Sakura',        accent: '#e879a0', void: '#0c070a', surface: '#120e11', card: '#1a1318', cardUp: '#201920', text: '#eedde4', text2: '#c4a0af', text3: '#7a5a6a', text4: '#402838', glass: 'rgba(232,121,160,0.04)', glassBorder: 'rgba(232,121,160,0.08)', glow: 'rgba(232,121,160,0.1)', bodyBg: '#0c070a', preview: ['#0c070a','#e879a0','#120e11','#eedde4'] },
+    };
+
+    function applyUiScale(scale) {
+      document.documentElement.style.zoom = scale || '1';
+    }
+
+    function applyTheme(themeKey) {
+      var t = THEMES[themeKey];
+      if (!t) t = THEMES.midnight;
+      var r = document.documentElement;
+      r.style.setProperty('--void', t.void);
+      r.style.setProperty('--surface', t.surface);
+      r.style.setProperty('--card', t.card);
+      r.style.setProperty('--card-up', t.cardUp);
+      r.style.setProperty('--glass', t.glass);
+      r.style.setProperty('--glass-border', t.glassBorder);
+      r.style.setProperty('--glow', t.glow);
+      r.style.setProperty('--accent', t.accent);
+      r.style.setProperty('--accent-soft', t.accent + '1f');
+      r.style.setProperty('--accent-border', t.accent + '4d');
+      r.style.setProperty('--text', t.text);
+      r.style.setProperty('--text-2', t.text2);
+      r.style.setProperty('--text-3', t.text3);
+      r.style.setProperty('--text-4', t.text4);
+      document.body.style.background = t.bodyBg;
+      document.body.style.color = t.text;
+    }
+
+    const PLATFORMS = {
+      steam:  { label: 'Steam',      letter: 'S', color: '#66c0f4' },
+      epic:   { label: 'Epic Games', letter: 'E', color: '#a0a0a0' },
+      gog:    { label: 'GOG',        letter: 'G', color: '#b44aff' },
+      psn:    { label: 'PlayStation', letter: 'P', color: '#0070d1' },
+      xbox:   { label: 'Xbox',       letter: 'X', color: '#107c10' },
+      custom: { label: 'Custom',     letter: 'C', color: '#7a7586' },
+    };
+    const GALAXY_W = 3000, GALAXY_H = 2000;
+    const CLUSTER_CENTERS = {
+      steam:  { x: 480, y: 580 },
+      epic:   { x: 1450, y: 400 },
+      gog:    { x: 2400, y: 560 },
+      psn:    { x: 560, y: 1400 },
+      xbox:   { x: 1600, y: 1350 },
+      custom: { x: 2500, y: 1350 },
+    };
+    function platformLabel(p) { return PLATFORMS[p]?.label || p; }
+    function fmtTime(m) { if (!m) return 'No playtime'; if (m < 60) return m + ' min'; var h = Math.floor(m/60), r = m%60; return r ? h+'h '+r+'m' : h+'h'; }
+    function fmtDate(d) { if (!d) return ''; try { return new Date(d).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }); } catch(e) { return ''; } }
+
+    const I = {
+      search: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>,
+      play: <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.14v13.72a1 1 0 001.5.86l11.04-6.86a1 1 0 000-1.72L9.5 4.28A1 1 0 008 5.14z"/></svg>,
+      plus: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg>,
+      scan: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 7V5a2 2 0 012-2h2M17 3h2a2 2 0 012 2v2M21 17v2a2 2 0 01-2 2h-2M7 21H5a2 2 0 01-2-2v-2"/><path d="M8 12h8"/></svg>,
+      star: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>,
+      starFill: <svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="1"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>,
+      min: <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 6h8"/></svg>,
+      max: <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="2" y="2" width="8" height="8" rx="1"/></svg>,
+      close: <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M3 3l6 6M9 3l-6 6"/></svg>,
+      gear: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>,
+      link: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>,
+      globe: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>,
+      trash: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>,
+      edit: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>,
+      fit: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>,
+      zIn: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35M11 8v6M8 11h6"/></svg>,
+      zOut: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35M8 11h6"/></svg>,
+      orbit: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="9"/></svg>,
+      sync: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>,
+      account: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
+      grid: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>,
+      download: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>,
+    };
+
+    function Toast({ msg, onDone }) {
+      useEffect(() => { var t = setTimeout(onDone, 3000); return () => clearTimeout(t); }, []);
+      return <div className="toast">{msg}</div>;
+    }
+
+    function SidePanel({ show, onClose, title, wide, headActions, children, foot }) {
+      if (!show) return null;
+      return <>
+        <div className="panel-backdrop" onClick={onClose} />
+        <div className={'side-panel' + (wide ? ' wide' : '')}>
+          <div className="panel-head"><h3>{title}</h3><div className="panel-head-actions">{headActions}<button className="panel-close" onClick={onClose}>&times;</button></div></div>
+          <div className="panel-body">{children}</div>
+          {foot && <div className="panel-foot">{foot}</div>}
+        </div>
+      </>;
+    }
+
+    function SearchOverlay({ show, onClose, games, onSelect }) {
+      const [q, setQ] = useState('');
+      const inputRef = useRef(null);
+      useEffect(() => { if (show) { setQ(''); setTimeout(() => inputRef.current?.focus(), 100); } }, [show]);
+      useEffect(() => { if (!show) return; var h = e => { if (e.key === 'Escape') onClose(); }; window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h); }, [show]);
+      if (!show) return null;
+      var hits = q.length > 0 ? games.filter(g => g.name.toLowerCase().includes(q.toLowerCase())).slice(0, 12) : [];
+      return (
+        <div className="search-overlay" onClick={onClose}>
+          <button className="search-esc">ESC</button>
+          <input ref={inputRef} value={q} onChange={e => setQ(e.target.value)} placeholder="Search games..." onClick={e => e.stopPropagation()} />
+          <div className="search-results" onClick={e => e.stopPropagation()}>
+            {hits.map(g => (
+              <div key={g.id} className="search-hit" onClick={() => { onSelect(g); onClose(); }}>
+                <div className="search-hit-cover">{g.coverUrl ? <img src={g.coverUrl} alt="" /> : g.name.charAt(0)}</div>
+                <div><div className="search-hit-name">{g.name}</div><div className="search-hit-meta">{platformLabel(g.platform)} &middot; {fmtTime(g.playtimeMinutes)}</div></div>
+              </div>
+            ))}
+            {q && hits.length === 0 && <div style={{textAlign:'center',padding:'20px',color:'var(--text-4)',fontSize:'13px'}}>No matches</div>}
+          </div>
+        </div>
+      );
+    }
+
+    function FocusView({ game, onClose, onLaunch, onFav, onEdit, onDelete, onRefreshGame }) {
+      if (!game) return null;
+      var p = PLATFORMS[game.platform];
+      const [refreshing, setRefreshing] = useState(false);
+      const [zoomSrc, setZoomSrc] = useState(null);
+      useEffect(() => {
+        if (!zoomSrc) return;
+        var h = e => { if (e.key === 'Escape') { e.stopImmediatePropagation(); setZoomSrc(null); } };
+        window.addEventListener('keydown', h, true);
+        return () => window.removeEventListener('keydown', h, true);
+      }, [zoomSrc]);
+      const doRefresh = async () => {
+        if (!window.api?.applyMetadata) return;
+        setRefreshing(true);
+        try {
+          var r = await window.api.applyMetadata(game.id, true);
+          if (r?.success && r.game && onRefreshGame) onRefreshGame(r.game);
+        } catch(e) {}
+        setRefreshing(false);
+      };
+      var mcColor = !game.metacritic ? null : game.metacritic >= 75 ? '#6dc849' : game.metacritic >= 50 ? '#fdca52' : '#fc4b37';
+      return (
+        <div className="focus-overlay" onClick={onClose}>
+          {(game.headerUrl || game.coverUrl) && <div className="focus-bg" style={{backgroundImage:'url('+(game.headerUrl||game.coverUrl)+')'}} />}
+          <div className="focus-dim" />
+          <button className="focus-close" onClick={onClose}>&times;</button>
+          <div className="focus-content" onClick={e => e.stopPropagation()}>
+            <div className="focus-art">
+              {game.coverUrl ? <img src={game.coverUrl} alt="" onError={e=>{e.target.style.display='none';e.target.nextSibling.style.display='flex';}} /> : null}
+              <div className="focus-art-fallback" style={game.coverUrl?{display:'none'}:{}}>{game.name.charAt(0)}</div>
+            </div>
+            <div className="focus-details">
+              <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}>
+                <div className="focus-platform" style={{borderColor:p?.color,color:p?.color,marginBottom:0}}>
+                  <span style={{width:6,height:6,borderRadius:'50%',background:p?.color,display:'inline-block'}} />
+                  {platformLabel(game.platform)}
+                </div>
+                <button className="focus-refresh" onClick={doRefresh} disabled={refreshing} title="Refresh metadata from online sources">
+                  {refreshing ? 'Fetching...' : 'Refresh Info'}
+                </button>
+              </div>
+              <div className="focus-title">{game.name}</div>
+              {game.metacritic != null && <div className="focus-metacritic" style={{background:mcColor+'22',color:mcColor,border:'1px solid '+mcColor+'44'}}>{game.metacritic} Metacritic</div>}
+              <div className="focus-meta">
+                <span>{fmtTime(game.playtimeMinutes)}</span>
+                {game.lastPlayed && <><span style={{color:'var(--text-4)'}}>|</span><span>Last played {fmtDate(game.lastPlayed)}</span></>}
+              </div>
+              {(game.developer || game.publisher || game.releaseDate) && (
+                <div className="focus-info-grid">
+                  {game.developer && <div className="focus-info-item"><span className="focus-info-label">Developer</span><span className="focus-info-value">{game.developer}</span></div>}
+                  {game.publisher && <div className="focus-info-item"><span className="focus-info-label">Publisher</span><span className="focus-info-value">{game.publisher}</span></div>}
+                  {game.releaseDate && <div className="focus-info-item"><span className="focus-info-label">Released</span><span className="focus-info-value">{game.releaseDate}</span></div>}
+                </div>
+              )}
+              {game.categories?.length > 0 && <div className="focus-cats">{game.categories.map(c => <span key={c} className="focus-cat">{c}</span>)}</div>}
+              {game.description && <div className="focus-desc">{game.description}</div>}
+              {game.screenshots?.length > 0 && <div className="focus-screenshots">{game.screenshots.slice(0,6).map((s,i) => <img key={i} src={s} alt="" onClick={e=>{e.stopPropagation();setZoomSrc(s);}} />)}</div>}
+              <div className="focus-actions">
+                <button className="btn-play" onClick={() => onLaunch(game)}><span style={{display:'flex',width:14,height:14}}>{I.play}</span> Play</button>
+                <button className="btn-ghost" onClick={() => onFav(game.id)}><span style={{display:'flex',width:14,height:14}}>{game.favorite ? I.starFill : I.star}</span>{game.favorite ? 'Unfav' : 'Fav'}</button>
+                <button className="btn-ghost" onClick={() => onEdit(game)}><span style={{display:'flex',width:14,height:14}}>{I.edit}</span> Edit</button>
+                <button className="btn-ghost danger" onClick={() => onDelete(game.id)}><span style={{display:'flex',width:14,height:14}}>{I.trash}</span></button>
+              </div>
+            </div>
+          </div>
+          <div className="focus-esc">ESC to close</div>
+          {zoomSrc && <div className="screenshot-zoom" onClick={() => setZoomSrc(null)}><img src={zoomSrc} alt="" onClick={e => e.stopPropagation()} /></div>}
+        </div>
+      );
+    }
+
+    function ArtPicker({ gameName, platform, field, onPick, onClose }) {
+      const [images, setImages] = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [failed, setFailed] = useState(new Set());
+      const filterType = field === 'coverUrl' ? 'cover' : 'header';
+      useEffect(() => {
+        if (!gameName) { setLoading(false); return; }
+        setLoading(true); setImages([]); setFailed(new Set());
+        (async () => {
+          try {
+            if (window.api?.searchArt) {
+              var r = await window.api.searchArt(gameName, platform);
+              console.log('[ArtPicker] Got results:', r?.images?.length, r?.images?.map(i=>i.url));
+              setImages(r?.images || []);
+            }
+          } catch(e) { console.error('[ArtPicker] searchArt error:', e); }
+          setLoading(false);
+        })();
+      }, [gameName, platform]);
+      // Show type-matched images first, then others; filter out failed loads
+      var sourcePrio = { SteamGridDB: 0, IGDB: 1, Steam: 2, RAWG: 3, DuckDuckGo: 4, Wikidata: 5, Wikipedia: 5 };
+      var sorted = [...images].filter(img => !failed.has(img.url)).sort((a,b) => {
+        var aMatch = a.type === filterType ? 0 : a.type === 'screenshot' ? 1 : 2;
+        var bMatch = b.type === filterType ? 0 : b.type === 'screenshot' ? 1 : 2;
+        if (aMatch !== bMatch) return aMatch - bMatch;
+        return (sourcePrio[a.source] ?? 9) - (sourcePrio[b.source] ?? 9);
+      });
+      var gridClass = field === 'coverUrl' ? 'covers' : 'headers';
+      return (
+        <div className="art-picker">
+          <div className="art-picker-head">
+            <span className="art-picker-title">Select from online sources</span>
+            <button className="art-picker-close" onClick={onClose}>&times;</button>
+          </div>
+          {loading && <div className="art-picker-loading"><span className="spinner"/>Searching...</div>}
+          {!loading && sorted.length === 0 && <div className="art-picker-empty">No images found. Try changing the game name.</div>}
+          {!loading && sorted.length > 0 && <div className={'art-picker-grid '+gridClass}>
+            {sorted.map((img, i) => (
+              <div key={img.url} className="art-pick" onClick={() => { onPick(img.url); onClose(); }} title={img.label}>
+                <img src={img.url} alt="" loading="lazy" onError={e => setFailed(prev => new Set([...prev, img.url]))} />
+                <div className="art-pick-source">{img.source}</div>
+                <div className="art-pick-label">{img.label}</div>
+              </div>
+            ))}
+          </div>}
+        </div>
+      );
+    }
+
+    function AddPanel({ show, onClose, onSave, categories, editGame, flash }) {
+      const emptyForm = { name:'', platform:'custom', executablePath:'', coverUrl:'', categories:[], platformId:'', description:'', developer:'', publisher:'', releaseDate:'', headerUrl:'', metacritic:'', website:'' };
+      const [f, setF] = useState(emptyForm);
+      const [showMeta, setShowMeta] = useState(false);
+      const [fetching, setFetching] = useState(false);
+      const [artPicker, setArtPicker] = useState(null); // null | 'coverUrl' | 'headerUrl'
+      useEffect(() => { if (editGame) { setF({ ...emptyForm, ...editGame, categories: editGame.categories || [], metacritic: editGame.metacritic != null ? String(editGame.metacritic) : '' }); setShowMeta(!!editGame.description || !!editGame.developer); } else { setF(emptyForm); setShowMeta(false); } setArtPicker(null); }, [editGame, show]);
+      var toggle = c => setF(p => ({...p, categories: p.categories.includes(c) ? p.categories.filter(x=>x!==c) : [...p.categories, c]}));
+      var browse = async () => { if (window.api) { var p = await window.api.pickExecutable(); if (p) setF(x=>({...x,executablePath:p})); } };
+      var browseImg = async (field) => { if (window.api) { var p = await window.api.pickImage(); if (p) setF(x=>({...x,[field]:p})); } };
+      var doFetch = async () => {
+        if (!editGame || !window.api?.applyMetadata) return;
+        setFetching(true);
+        try {
+          var r = await window.api.applyMetadata(editGame.id, false);
+          if (r?.success && r.game) {
+            setF(prev => ({ ...prev, ...r.game, categories: r.game.categories || prev.categories, metacritic: r.game.metacritic != null ? String(r.game.metacritic) : prev.metacritic }));
+            setShowMeta(true);
+            if (flash) flash('Metadata fetched');
+          } else if (r?.error) { if (flash) flash('No metadata found'); }
+        } catch(e) {}
+        setFetching(false);
+      };
+      var handleSave = () => {
+        if (!f.name.trim()) return;
+        var out = { ...f, metacritic: f.metacritic ? Number(f.metacritic) : null };
+        if (!out.metacritic && out.metacritic !== 0) delete out.metacritic;
+        onSave(out);
+      };
+      var chevron = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="9 18 15 12 9 6"/></svg>;
+      return (
+        <SidePanel show={show} onClose={onClose} title={editGame ? 'Edit Game' : 'Add Game'} foot={<><button className="btn-flat" onClick={onClose}>Cancel</button><button className="btn-accent" onClick={handleSave}>{editGame?'Update':'Add'}</button></>}>
+          <div className="field"><label>Name</label><input value={f.name} onChange={e=>setF(p=>({...p,name:e.target.value}))} placeholder="Game title" /></div>
+          <div className="field"><label>Platform</label><select value={f.platform} onChange={e=>setF(p=>({...p,platform:e.target.value}))}>{Object.keys(PLATFORMS).map(k=><option key={k} value={k}>{PLATFORMS[k].label}</option>)}</select></div>
+          {['steam','epic','gog'].includes(f.platform) && <div className="field"><label>Platform ID</label><input value={f.platformId||''} onChange={e=>setF(p=>({...p,platformId:e.target.value}))} placeholder="App ID" /></div>}
+          {f.platform === 'custom' && <div className="field"><label>Executable</label><div style={{display:'flex',gap:'8px'}}><input value={f.executablePath||''} onChange={e=>setF(p=>({...p,executablePath:e.target.value}))} placeholder="Path to .exe" style={{flex:1}} /><button className="btn-flat" onClick={browse}>Browse</button></div></div>}
+          <div className="field"><label>Cover Image</label><div style={{display:'flex',gap:'8px'}}><input value={f.coverUrl||''} onChange={e=>setF(p=>({...p,coverUrl:e.target.value}))} placeholder="URL or file path" style={{flex:1}} /><button className="btn-flat" onClick={()=>browseImg('coverUrl')}>File</button><button className="btn-flat" style={{color:'var(--accent)'}} onClick={()=>setArtPicker(artPicker==='coverUrl'?null:'coverUrl')} disabled={!f.name.trim()}>Search</button></div>{artPicker==='coverUrl' && <ArtPicker gameName={f.name} platform={f.platform} field="coverUrl" onPick={url=>setF(p=>({...p,coverUrl:url}))} onClose={()=>setArtPicker(null)} />}{f.coverUrl && artPicker!=='coverUrl' && <img className="cover-preview" src={f.coverUrl} alt="" onError={e=>e.target.style.display='none'} onLoad={e=>e.target.style.display='block'} />}</div>
+          <div className="field"><label>Categories</label><div className="tag-row">{(categories||[]).map(c=><button key={c} className={'tag'+(f.categories.includes(c)?' sel':'')} onClick={()=>toggle(c)}>{c}</button>)}</div></div>
+          <button className={'meta-toggle'+(showMeta?' open':'')} onClick={()=>setShowMeta(!showMeta)}>{chevron} Metadata {editGame && <span style={{marginLeft:'auto',fontSize:9,fontWeight:400,color:'var(--text-4)',textTransform:'none',letterSpacing:0}}>{fetching?'Fetching...':'Auto-fill from web'}</span>}{editGame && <span className="btn-flat" style={{padding:'3px 10px',fontSize:10,marginLeft:8}} onClick={e=>{e.stopPropagation();doFetch();}}>{I.download}</span>}</button>
+          {showMeta && <div className="meta-section">
+            <div className="field"><label>Description</label><textarea value={f.description||''} onChange={e=>setF(p=>({...p,description:e.target.value}))} placeholder="Game description" rows={3} /></div>
+            <div className="field-row">
+              <div className="field"><label>Developer</label><input value={f.developer||''} onChange={e=>setF(p=>({...p,developer:e.target.value}))} placeholder="Studio name" /></div>
+              <div className="field"><label>Publisher</label><input value={f.publisher||''} onChange={e=>setF(p=>({...p,publisher:e.target.value}))} placeholder="Publisher name" /></div>
+            </div>
+            <div className="field-row">
+              <div className="field"><label>Release Date</label><input value={f.releaseDate||''} onChange={e=>setF(p=>({...p,releaseDate:e.target.value}))} placeholder="e.g. Dec 10, 2020" /></div>
+              <div className="field"><label>Metacritic</label><input type="number" min="0" max="100" value={f.metacritic||''} onChange={e=>setF(p=>({...p,metacritic:e.target.value}))} placeholder="0-100" /></div>
+            </div>
+            <div className="field"><label>Header Image</label><div style={{display:'flex',gap:'8px'}}><input value={f.headerUrl||''} onChange={e=>setF(p=>({...p,headerUrl:e.target.value}))} placeholder="Wide banner URL" style={{flex:1}} /><button className="btn-flat" onClick={()=>browseImg('headerUrl')}>File</button><button className="btn-flat" style={{color:'var(--accent)'}} onClick={()=>setArtPicker(artPicker==='headerUrl'?null:'headerUrl')} disabled={!f.name.trim()}>Search</button></div><div className="field-hint">Used as blurred background in game detail view</div>{artPicker==='headerUrl' && <ArtPicker gameName={f.name} platform={f.platform} field="headerUrl" onPick={url=>setF(p=>({...p,headerUrl:url}))} onClose={()=>setArtPicker(null)} />}{f.headerUrl && artPicker!=='headerUrl' && <img className="cover-preview" src={f.headerUrl} alt="" onError={e=>e.target.style.display='none'} onLoad={e=>e.target.style.display='block'} />}</div>
+            <div className="field"><label>Website</label><input value={f.website||''} onChange={e=>setF(p=>({...p,website:e.target.value}))} placeholder="https://..." /></div>
+          </div>}
+        </SidePanel>
+      );
+    }
+
+    function DetectPanel({ show, onClose, onImport }) {
+      const [results, setResults] = useState([]);
+      const [sel, setSel] = useState(new Set());
+      const [status, setStatus] = useState('');
+      useEffect(() => {
+        if (!show) return;
+        (async () => {
+          if (!window.api) { setStatus('err:Detection requires Electron'); return; }
+          setResults([]); setSel(new Set()); setStatus('scanning:Scanning Steam...');
+          var all = [];
+          try { var s = await window.api.detectSteam(); if (s.games) all.push(...s.games); } catch(e) {}
+          setStatus('scanning:Scanning Epic...');
+          try { var ep = await window.api.detectEpic(); if (ep.games) all.push(...ep.games); } catch(e) {}
+          setStatus('scanning:Scanning GOG...');
+          try { var g = await window.api.detectGOG(); if (g.games) all.push(...g.games); } catch(e) {}
+          setResults(all); setSel(new Set(all.map((_,i)=>i)));
+          setStatus(all.length ? 'done:Found '+all.length+' games' : 'done:No games detected');
+        })();
+      }, [show]);
+      var toggleSel = i => setSel(p => { var n=new Set(p); if(n.has(i))n.delete(i);else n.add(i); return n; });
+      var st = status.split(':')[0], sm = status.split(':').slice(1).join(':');
+      return (
+        <SidePanel show={show} onClose={onClose} title="Detect Games" foot={results.length>0?<button className="btn-accent" onClick={()=>onImport(results.filter((_,i)=>sel.has(i)))}>Import {sel.size}</button>:null}>
+          {sm && <div className={'detect-status '+st}>{st==='scanning'?<><span className="spinner" style={{marginRight:8}}/>{sm}</>:sm}</div>}
+          {results.map((g,i)=>(
+            <div key={i} className="conn-card" style={{cursor:'pointer'}} onClick={()=>toggleSel(i)}>
+              <input type="checkbox" checked={sel.has(i)} readOnly style={{accentColor:'var(--accent)'}} />
+              <div className="conn-info"><div className="conn-name">{g.name}</div><div className="conn-detail">{platformLabel(g.platform)}{g.platformId?' / '+g.platformId:''}</div></div>
+            </div>
+          ))}
+        </SidePanel>
+      );
+    }
+
+    function PlatformsPanel({ show, onClose, flash, setGames, onOpenChiaki, onOpenXcloud }) {
+      const [accounts, setAccounts] = useState({});
+      const [platforms, setPlatforms] = useState({ steam:{status:'checking',games:0}, epic:{status:'checking',games:0}, gog:{status:'checking',games:0}, psn:{status:'checking',chiaki:null}, xbox:{status:'checking',cloudUrl:'',appFound:false,games:0} });
+      const [steamLoading, setSteamLoading] = useState(false);
+      const [gogLoading, setGogLoading] = useState(false);
+      const [epicLoading, setEpicLoading] = useState(false);
+      const [xboxLoading, setXboxLoading] = useState(false);
+      const [importing, setImporting] = useState('');
+      useEffect(() => {
+        if (!show) return;
+        (async () => {
+          if (window.api?.getAccounts) { var a = await window.api.getAccounts(); setAccounts(a || {}); }
+          var p = {...platforms};
+          if (window.api) {
+            try { var s=await window.api.detectSteam(); p.steam={status:s.games?.length?'connected':'not-found',games:s.games?.length||0}; } catch(e) { p.steam={status:'not-found',games:0}; }
+            try { var ep=await window.api.detectEpic(); p.epic={status:ep.games?.length?'connected':'not-found',games:ep.games?.length||0}; } catch(e) { p.epic={status:'not-found',games:0}; }
+            try { var g=await window.api.detectGOG(); p.gog={status:g.games?.length?'connected':'not-found',games:g.games?.length||0}; } catch(e) { p.gog={status:'not-found',games:0}; }
+            try { var ch=await window.api.getChiakiStatus(); p.psn={status:ch.status==='missing'?'not-found':'connected',chiaki:ch}; } catch(e) { p.psn={status:'not-found',chiaki:null}; }
+            try { var xb=await window.api.detectXbox(); p.xbox={status:(xb.games?.length||xb.xboxAppFound)?'connected':'available',cloudUrl:xb.cloudGamingUrl||'https://www.xbox.com/play',appFound:xb.xboxAppFound,games:xb.games?.length||0}; } catch(e) { p.xbox={status:'available',cloudUrl:'https://www.xbox.com/play',appFound:false,games:0}; }
+          } else { p.steam={status:'connected',games:5};p.epic={status:'not-found',games:0};p.gog={status:'connected',games:1};p.psn={status:'connected',chiaki:{status:'bundled',version:'1.6.4'}};p.xbox={status:'available',cloudUrl:'https://www.xbox.com/play',appFound:false,games:1}; }
+          setPlatforms(p);
+        })();
+      }, [show]);
+      const refreshAccounts = async () => { if(window.api?.getAccounts){var a=await window.api.getAccounts();setAccounts(a||{});} };
+      const doSteamAuth = async () => { setSteamLoading(true); var r=await window.api.steamAuth(); setSteamLoading(false); if(r.error==='cancelled')return; if(r.error){flash('Steam sign-in failed: '+r.error);return;} flash('Steam connected: '+r.displayName); refreshAccounts(); };
+      const doSteamImport = async () => { setImporting('steam'); var r=await window.api.importSteamLibrary(); setImporting(''); if(r.error){flash(r.error);return;} if(r.games)setGames(r.games); flash('Imported '+(r.imported?.length||0)+' new, updated '+(r.updated?.length||0)+' games'); refreshAccounts(); };
+      const doSteamDisconnect = async () => { await window.api.removeAccount('steam'); refreshAccounts(); flash('Steam disconnected'); };
+      const doGogAuth = async () => { setGogLoading(true); var r=await window.api.gogAuth(); setGogLoading(false); if(r.error==='cancelled')return; if(r.error){flash('GOG sign-in failed: '+r.error);return;} flash('GOG account connected'); refreshAccounts(); };
+      const doGogImport = async () => { setImporting('gog'); var r=await window.api.importGogLibrary(); setImporting(''); if(r.error){flash(r.error);return;} if(r.games)setGames(r.games); flash('Imported '+(r.imported?.length||0)+' new GOG games'); refreshAccounts(); };
+      const doGogDisconnect = async () => { await window.api.removeAccount('gog'); refreshAccounts(); flash('GOG disconnected'); };
+      const doEpicAuth = async () => { setEpicLoading(true); var r=await window.api.epicAuth(); setEpicLoading(false); if(r.error==='cancelled')return; if(r.error){flash('Epic sign-in failed: '+r.error);return;} flash('Epic connected: '+r.displayName); refreshAccounts(); };
+      const doEpicImport = async () => { setImporting('epic'); var r=await window.api.importEpicLibrary(); setImporting(''); if(r.error){flash(r.error);return;} if(r.games)setGames(r.games); flash('Imported '+(r.imported?.length||0)+' new Epic games'); refreshAccounts(); };
+      const doEpicDisconnect = async () => { await window.api.removeAccount('epic'); refreshAccounts(); flash('Epic disconnected'); };
+      const doXboxAuth = async () => { setXboxLoading(true); var r=await window.api.xboxAuth(); setXboxLoading(false); if(r.error==='cancelled')return; if(r.error){flash('Xbox sign-in failed: '+r.error);return;} flash('Xbox connected: '+r.gamertag); refreshAccounts(); };
+      const doXboxImport = async () => { setImporting('xbox'); var r=await window.api.importXboxLibrary(); setImporting(''); if(r.error){flash(r.error);return;} if(r.games)setGames(r.games); flash('Imported '+(r.imported?.length||0)+' new Xbox games'); refreshAccounts(); };
+      const doXboxDisconnect = async () => { await window.api.removeAccount('xbox'); refreshAccounts(); flash('Xbox disconnected'); };
+      var sc=accounts.steam?.connected, gc=accounts.gog?.connected, ec=accounts.epic?.connected, xc=accounts.xbox?.connected;
+      var dot=s=>s==='connected'?'ok':s==='available'?'warn':s==='checking'?'warn':'off';
+      var PlatCard = ({ name, icon, iconBg, acct, connected, detected, loading, onAuth, onImport, onDisconnect, authLabel, extra }) => (
+        <div style={{marginBottom:'16px'}}>
+          <div className="conn-section">{name}</div>
+          <div style={{padding:'14px',borderRadius:'10px',background:'var(--glass)',border:'1px solid var(--glass-border)'}}>
+            {connected && acct ? (
+              <div>
+                <div style={{display:'flex',alignItems:'center',gap:'12px',marginBottom:'14px'}}>
+                  {acct.avatarUrl ? <img src={acct.avatarUrl} style={{width:40,height:40,borderRadius:'50%',border:'2px solid '+iconBg}}/> : <div className="conn-icon" style={{background:iconBg,width:40,height:40,fontSize:14}}>{icon}</div>}
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:'13px',fontWeight:600,color:'var(--text)'}}>{acct.displayName||acct.gamertag||name}</div>
+                    <div style={{fontSize:'10px',color:'var(--text-3)'}}>{acct.gameCount?acct.gameCount+' games':'Connected'}{detected?(' \u00b7 '+detected+' installed'):''}</div>
+                    {acct.lastSync && <div style={{fontSize:'9px',color:'var(--text-4)'}}>Synced {fmtDate(acct.lastSync)}</div>}
+                  </div>
+                  <div className={'conn-dot ok'}/>
+                </div>
+                <div style={{display:'flex',gap:'8px'}}>
+                  {onImport && <button className="btn-accent" onClick={onImport} disabled={importing===name.toLowerCase()} style={{flex:1}}>{importing===name.toLowerCase()?<><span className="spinner" style={{marginRight:6}}/>Importing...</>:'Import Library'}</button>}
+                  <button className="btn-flat danger" onClick={onDisconnect}>Disconnect</button>
+                </div>
+                {extra}
+              </div>
+            ) : (
+              <div>
+                <div style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'12px'}}>
+                  <div className="conn-icon" style={{background:iconBg,width:32,height:32,fontSize:11}}>{icon}</div>
+                  <div style={{flex:1}}><div style={{fontSize:'11px',color:'var(--text-3)',lineHeight:1.6}}>{detected?detected+' games detected locally':'Not connected'}</div></div>
+                  <div className={'conn-dot '+dot(detected?'connected':'not-found')}/>
+                </div>
+                <button className="btn-accent" onClick={onAuth} disabled={loading} style={{width:'100%'}}>{loading?<><span className="spinner" style={{marginRight:6}}/>Signing in...</>:(authLabel||'Sign in with '+name)}</button>
+                {extra}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+      return (
+        <SidePanel show={show} onClose={onClose} title="Platforms" wide>
+          <PlatCard name="Steam" icon="S" iconBg="#1b2838" acct={accounts.steam} connected={sc} detected={platforms.steam.games} loading={steamLoading} onAuth={doSteamAuth} onImport={doSteamImport} onDisconnect={doSteamDisconnect} extra={sc&&<div style={{fontSize:'9px',color:'var(--text-4)',marginTop:'8px',lineHeight:1.5}}>Game list requires your Steam profile &amp; game details to be set to Public.</div>}/>
+          <PlatCard name="GOG" icon="G" iconBg="#3a1a50" acct={accounts.gog} connected={gc} detected={platforms.gog.games} loading={gogLoading} onAuth={doGogAuth} onImport={doGogImport} onDisconnect={doGogDisconnect}/>
+          <PlatCard name="Epic" icon="E" iconBg="#2a2a2a" acct={accounts.epic} connected={ec} detected={platforms.epic.games} loading={epicLoading} onAuth={doEpicAuth} onImport={doEpicImport} onDisconnect={doEpicDisconnect} authLabel="Sign in with Epic Games"/>
+          <PlatCard name="Xbox" icon="X" iconBg="#0e6a0e" acct={accounts.xbox} connected={xc} detected={platforms.xbox.games} loading={xboxLoading} onAuth={doXboxAuth} onImport={doXboxImport} onDisconnect={doXboxDisconnect} extra={<div style={{marginTop:'10px'}}><button className="btn-sm" onClick={()=>{onClose();onOpenXcloud();}} style={{width:'100%',display:'flex',alignItems:'center',justifyContent:'center',gap:'6px'}}><span style={{display:'flex',width:14,height:14}}>{I.globe}</span><span>Xbox Cloud Gaming</span></button></div>}/>
+          <div style={{marginBottom:'16px'}}>
+            <div className="conn-section">PlayStation</div>
+            <div style={{padding:'14px',borderRadius:'10px',background:'var(--glass)',border:'1px solid var(--glass-border)'}}>
+              <div style={{display:'flex',alignItems:'center',gap:'10px'}}>
+                <div className="conn-icon" style={{background:'#003087',width:32,height:32,fontSize:11,cursor:'pointer'}} onClick={()=>{onClose();onOpenChiaki();}}>P</div>
+                <div style={{flex:1}}><div style={{fontSize:'12px',color:'var(--text)'}}>PlayStation Remote Play</div><div style={{fontSize:'10px',color:'var(--text-4)'}}>{platforms.psn.chiaki?'chiaki-ng v'+(platforms.psn.chiaki.version||''):'Not configured'}</div></div>
+                <div className={'conn-dot '+dot(platforms.psn.status)}/>
+              </div>
+              <button className="btn-sm" onClick={()=>{onClose();onOpenChiaki();}} style={{width:'100%',marginTop:'10px',display:'flex',alignItems:'center',justifyContent:'center',gap:'6px'}}><span style={{display:'flex',width:14,height:14}}>{I.gear}</span><span>Configure chiaki-ng</span></button>
+            </div>
+          </div>
+        </SidePanel>
+      );
+    }
+
+    function StreamOverlay({ sessions, games, onStop }) {
+      var entries = Object.entries(sessions).filter(([,s]) =>
+        s.state && s.state !== 'disconnected' && s.state !== 'gui'
+      );
+      if (entries.length === 0) return null;
+      var [gameId, sess] = entries[0];
+      var game = games.find(g => g.id === gameId);
+      var displayName = sess.detectedTitle || (game && game.name) || 'PlayStation Remote Play';
+      var isEmbedded = !!sess.embedded;
+      var dotClass = 'stream-float-dot' + (sess.state === 'streaming' || isEmbedded ? '' : ' connecting');
+      return (
+        <div className="stream-overlay">
+          <div className="stream-overlay-bar">
+            <div className={dotClass} style={{flexShrink:0}}/>
+            <div className="stream-overlay-bar-title">{displayName}</div>
+            {sess.quality?.bitrate && <div className="stream-float-stats">
+              <div className="stream-stat">
+                <div className="stream-stat-val">{sess.quality.bitrate.toFixed(1)}</div>
+                <div className="stream-stat-lbl">Mbps</div>
+              </div>
+              {sess.quality.fpsActual && <div className="stream-stat">
+                <div className="stream-stat-val">{Math.round(sess.quality.fpsActual)}</div>
+                <div className="stream-stat-lbl">FPS</div>
+              </div>}
+              {sess.quality.latencyMs && <div className="stream-stat">
+                <div className="stream-stat-val">{Math.round(sess.quality.latencyMs)}</div>
+                <div className="stream-stat-lbl">ms</div>
+              </div>}
+            </div>}
+            {sess.streamInfo?.resolution && <span style={{fontSize:10,color:'var(--text-3)',flexShrink:0}}>
+              {sess.streamInfo.resolution}{sess.streamInfo.fps?' / '+sess.streamInfo.fps+'fps':''}
+            </span>}
+            <button className="stream-float-stop" onClick={()=>onStop(gameId)}>Stop</button>
+          </div>
+          {!isEmbedded && <div className="stream-overlay-body">
+            <div style={{textAlign:'center'}}>
+              <div style={{width:36,height:36,border:'2px solid rgba(255,255,255,0.1)',borderTopColor:'var(--accent)',borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto 12px'}}/>
+              <div style={{fontSize:11,color:'var(--text-4)',letterSpacing:1}}>
+                {sess.state==='connecting'?'Connecting to console...':'Launching chiaki-ng...'}
+              </div>
+            </div>
+          </div>}
+        </div>
+      );
+    }
+
+    function ChiakiPanel({ show, onClose, flash, games, setGames, chiakiSessions }) {
+      const [chiakiStatus, setChiakiStatus] = useState(null);
+      const [chiakiConfig, setChiakiConfig] = useState({ executablePath:'', consoles:[], cerealMode:true });
+      const [newConsole, setNewConsole] = useState({ nickname:'', host:'', profile:'' });
+      const [showAddConsole, setShowAddConsole] = useState(false);
+      const [streamingGame, setStreamingGame] = useState(null);
+      const [streamCfg, setStreamCfg] = useState({ nickname:'', host:'', profile:'', fullscreen:true, registKey:'', morning:'' });
+      const [activeTab, setActiveTab] = useState('consoles');
+      const [discovering, setDiscovering] = useState(false);
+      const [discovered, setDiscovered] = useState([]);
+      const [registering, setRegistering] = useState(null);
+      const [regForm, setRegForm] = useState({ host:'', psnAccountId:'', pin:'' });
+      const [regResult, setRegResult] = useState(null);
+      useEffect(() => { if(!show)return;(async()=>{ if(window.api){var st=await window.api.getChiakiStatus();var cfg=await window.api.getChiakiConfig();setChiakiStatus(st);setChiakiConfig(cfg||{executablePath:'',consoles:[],cerealMode:true});}else{setChiakiStatus({status:'bundled',version:'1.6.4'});setChiakiConfig({executablePath:'',consoles:[{nickname:'PS5-Living-Room',host:'192.168.1.50',profile:'default'}],cerealMode:true});}})(); }, [show]);
+      var addConsole=async()=>{if(!newConsole.nickname||!newConsole.host)return;var u={...chiakiConfig,consoles:[...(chiakiConfig.consoles||[]),newConsole]};if(window.api)await window.api.saveChiakiConfig(u);setChiakiConfig(u);setNewConsole({nickname:'',host:'',profile:''});setShowAddConsole(false);flash('Console added');};
+      var removeConsole=async idx=>{var u={...chiakiConfig,consoles:chiakiConfig.consoles.filter((_,i)=>i!==idx)};if(window.api)await window.api.saveChiakiConfig(u);setChiakiConfig(u);flash('Console removed');};
+      var doDiscover=async()=>{setDiscovering(true);setDiscovered([]);if(window.api){var r=await window.api.chiakiDiscoverConsoles();setDiscovered(r.consoles||[]);}else{await new Promise(r=>setTimeout(r,2000));setDiscovered([{name:'PS5-FEC1',host:'192.168.1.50'},{name:'PS5-Bedroom',host:'192.168.1.75'}]);}setDiscovering(false);};
+      var doRegister=async()=>{if(!regForm.host||!regForm.pin)return;setRegistering('working');if(window.api){var r=await window.api.chiakiRegisterConsole(regForm);setRegResult(r);setRegistering(r.success?'success':'failed');if(r.success)flash('Console registered!');}else{await new Promise(r=>setTimeout(r,2000));setRegResult({success:true,registKey:'DEMO_KEY_123',morning:'DEMO_MORNING_456'});setRegistering('success');flash('Console registered! (demo)');}};
+      var addDiscoveredAsConsole=c=>{setNewConsole({nickname:c.name,host:c.host,profile:''});setShowAddConsole(true);setActiveTab('consoles');};
+      var configureStream=g=>{setStreamingGame(g);setStreamCfg({nickname:g.chiakiNickname||(chiakiConfig.consoles?.[0]?.nickname||''),host:g.chiakiHost||(chiakiConfig.consoles?.[0]?.host||''),profile:g.chiakiProfile||'',fullscreen:g.chiakiFullscreen!==false,registKey:g.chiakiRegistKey||'',morning:g.chiakiMorning||''});};
+      var saveStream=async()=>{if(!streamingGame)return;if(window.api){var u=await window.api.setChiakiStream(streamingGame.id,streamCfg);if(u)setGames(g=>g.map(x=>x.id===streamingGame.id?u:x));}setStreamingGame(null);flash('Stream config saved');};
+      var startStream=async g=>{if(window.api){var r=await window.api.chiakiStartStream(g.id);flash(r.success?'Starting stream: '+g.name:'Error: '+r.error);}else flash('Starting stream: '+g.name+' (demo)');};
+      var stopStream=async gid=>{if(window.api)await window.api.chiakiStopStream(gid);flash('Stream stopped');};
+      var openChiakiGui=async()=>{if(window.api){var r=await window.api.chiakiOpenGui();flash(r.success?'chiaki-ng GUI opened':'Error: '+r.error);}else flash('chiaki-ng GUI (demo)');};
+      var toggleCerealMode=async()=>{var u={...chiakiConfig,cerealMode:!chiakiConfig.cerealMode};if(window.api)await window.api.saveChiakiConfig(u);setChiakiConfig(u);};
+      var psGames=games.filter(g=>g.platform==='psn');var statusClass=chiakiStatus?.status||'missing';var chiakiMissing=statusClass==='missing';
+      return (
+        <SidePanel show={show} onClose={onClose} title="PlayStation Remote Play" wide headActions={<button className="btn-sm" onClick={openChiakiGui} title="Open chiaki-ng GUI"><span style={{display:'flex',width:14,height:14}}>{I.globe}</span></button>}>
+          <div className={'chiaki-bar '+statusClass}><div className="chiaki-bar-dot"/><div className="chiaki-bar-text">{statusClass==='bundled'?'chiaki-ng bundled':statusClass==='system'?'chiaki-ng (system)':'chiaki-ng not found'}</div>{chiakiStatus?.version&&<div className="chiaki-bar-ver">v{chiakiStatus.version}</div>}</div>
+          {chiakiMissing&&<div style={{padding:'12px 14px',borderRadius:'8px',background:'var(--glass)',marginBottom:'14px',fontSize:'11px',color:'var(--text-3)',lineHeight:1.6}}>Run <span style={{color:'var(--accent)',fontWeight:600}}>scripts/build-chiaki.ps1</span> to build from source.</div>}
+          <div style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'14px',padding:'10px 14px',borderRadius:'8px',background:'var(--glass)'}}><span style={{display:'flex',width:14,height:14,color:'var(--text-3)'}}>{I.gear}</span><span style={{flex:1,fontSize:'11px',color:'var(--text-2)'}}>Cereal integration mode</span><button className={'btn-sm'+(chiakiConfig.cerealMode?' primary':'')} onClick={toggleCerealMode} style={{fontSize:'10px',padding:'3px 10px'}}>{chiakiConfig.cerealMode?'ON':'OFF'}</button></div>
+          <div className="sub-tabs">{['consoles','games','discover','register'].map(t=><button key={t} className={'sub-tab'+(activeTab===t?' active':'')} onClick={()=>setActiveTab(t)}>{t}</button>)}</div>
+          {activeTab==='consoles'&&<>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'10px'}}><div className="conn-section" style={{margin:0}}>Registered Consoles</div><button className="btn-sm" onClick={()=>setShowAddConsole(!showAddConsole)}>+ Add</button></div>
+            {showAddConsole&&<div style={{padding:'14px',borderRadius:'10px',background:'var(--glass)',border:'1px solid var(--glass-border)',marginBottom:'12px'}}><div className="field-row"><div className="field"><label>Nickname</label><input value={newConsole.nickname} onChange={e=>setNewConsole(p=>({...p,nickname:e.target.value}))} placeholder="PS5-Living-Room"/></div><div className="field"><label>Host IP</label><input value={newConsole.host} onChange={e=>setNewConsole(p=>({...p,host:e.target.value}))} placeholder="192.168.1.x"/></div></div><div className="field"><label>Profile</label><input value={newConsole.profile} onChange={e=>setNewConsole(p=>({...p,profile:e.target.value}))} placeholder="default"/></div><div style={{display:'flex',gap:'8px',justifyContent:'flex-end'}}><button className="btn-flat" onClick={()=>setShowAddConsole(false)}>Cancel</button><button className="btn-accent" onClick={addConsole}>Add</button></div></div>}
+            {(chiakiConfig.consoles||[]).length===0&&!showAddConsole&&<div style={{textAlign:'center',padding:'20px',color:'var(--text-4)',fontSize:'11px'}}>No consoles.</div>}
+            {(chiakiConfig.consoles||[]).map((c,i)=><div key={i} className="conn-card"><div className="conn-icon" style={{background:'#003087'}}>PS</div><div className="conn-info"><div className="conn-name">{c.nickname}</div><div className="conn-detail">{c.host}{c.profile?' / '+c.profile:''}</div></div><button className="btn-sm danger" onClick={()=>removeConsole(i)}><span style={{display:'flex',width:12,height:12}}>{I.trash}</span></button></div>)}
+          </>}
+          {activeTab==='games'&&<>
+            {psGames.length===0&&<div style={{textAlign:'center',padding:'20px',color:'var(--text-4)',fontSize:'11px'}}>No PlayStation games.</div>}
+            {psGames.map(g=>{var sess=chiakiSessions[g.id];return(<div key={g.id} className="conn-card" style={{flexWrap:'wrap'}}><div className="conn-icon" style={{background:'#003087'}}>PS</div><div className="conn-info"><div className="conn-name">{g.name}</div><div className="conn-detail">{sess?<span style={{color:sess.state==='streaming'?'var(--green)':'var(--accent)'}}>{sess.state==='streaming'?'LIVE':sess.state.toUpperCase()}{sess.streamInfo?.resolution?' / '+sess.streamInfo.resolution:''}{sess.quality?.bitrate?' / '+sess.quality.bitrate.toFixed(1)+' Mbps':''}</span>:(g.chiakiHost?'To '+g.chiakiNickname+' ('+g.chiakiHost+')':'Not configured')}</div></div><div className="conn-actions">{sess&&sess.state!=='disconnected'?<button className="btn-sm danger" onClick={()=>stopStream(g.id)}>Stop</button>:g.chiakiHost&&<button className="btn-sm primary" onClick={()=>startStream(g)} disabled={chiakiMissing}>Stream</button>}<button className="btn-sm" onClick={()=>configureStream(g)}>Config</button></div></div>);})}
+            {streamingGame&&<div style={{marginTop:'12px',padding:'14px',borderRadius:'10px',background:'var(--glass)',border:'1px solid var(--accent-border)'}}><div style={{fontSize:'12px',fontWeight:600,color:'var(--text)',marginBottom:'10px'}}>Config: {streamingGame.name}</div><div className="field-row"><div className="field"><label>Console</label><select value={streamCfg.nickname} onChange={e=>{var con=(chiakiConfig.consoles||[]).find(c=>c.nickname===e.target.value);setStreamCfg(p=>({...p,nickname:e.target.value,host:con?.host||p.host}));}}><option value="">Select...</option>{(chiakiConfig.consoles||[]).map(c=><option key={c.nickname} value={c.nickname}>{c.nickname}</option>)}</select></div><div className="field"><label>Host</label><input value={streamCfg.host} onChange={e=>setStreamCfg(p=>({...p,host:e.target.value}))}/></div></div><div className="field-row"><div className="field"><label>Profile</label><input value={streamCfg.profile} onChange={e=>setStreamCfg(p=>({...p,profile:e.target.value}))} placeholder="default"/></div><div className="field"><label>Fullscreen</label><select value={streamCfg.fullscreen?'yes':'no'} onChange={e=>setStreamCfg(p=>({...p,fullscreen:e.target.value==='yes'}))}><option value="yes">Yes</option><option value="no">No</option></select></div></div><div className="field-row"><div className="field"><label>Regist Key</label><input value={streamCfg.registKey} onChange={e=>setStreamCfg(p=>({...p,registKey:e.target.value}))} placeholder="From registration"/></div><div className="field"><label>Morning</label><input value={streamCfg.morning} onChange={e=>setStreamCfg(p=>({...p,morning:e.target.value}))} placeholder="From registration"/></div></div><div style={{display:'flex',gap:'8px',justifyContent:'flex-end'}}><button className="btn-flat" onClick={()=>setStreamingGame(null)}>Cancel</button><button className="btn-accent" onClick={saveStream}>Save</button></div></div>}
+          </>}
+          {activeTab==='discover'&&<><div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'12px'}}><span style={{fontSize:'11px',color:'var(--text-3)'}}>Scan for PlayStation consoles</span><button className="btn-sm primary" onClick={doDiscover} disabled={discovering||chiakiMissing}>{discovering?<><span className="spinner" style={{marginRight:6}}/>Scanning</>:'Scan Network'}</button></div>{discovered.map((c,i)=><div key={i} className="conn-card"><div className="conn-icon" style={{background:'#003087'}}>PS</div><div className="conn-info"><div className="conn-name">{c.name||'PlayStation'}</div><div className="conn-detail">{c.host}</div></div><button className="btn-sm primary" onClick={()=>addDiscoveredAsConsole(c)}>Add</button><button className="btn-sm" onClick={()=>{setRegForm(p=>({...p,host:c.host}));setActiveTab('register');}}>Register</button></div>)}{!discovering&&discovered.length===0&&<div style={{textAlign:'center',padding:'28px',color:'var(--text-4)',fontSize:'11px'}}>Click Scan to find consoles.</div>}</>}
+          {activeTab==='register'&&<><div style={{fontSize:'11px',color:'var(--text-3)',marginBottom:'14px',lineHeight:1.6}}>Register your console with chiaki-ng.</div><div className="field"><label>Console IP</label><input value={regForm.host} onChange={e=>setRegForm(p=>({...p,host:e.target.value}))} placeholder="192.168.1.x"/></div><div className="field"><label>PSN Account ID</label><input value={regForm.psnAccountId} onChange={e=>setRegForm(p=>({...p,psnAccountId:e.target.value}))} placeholder="Base64 ID"/></div><div className="field"><label>Link Code</label><input value={regForm.pin} onChange={e=>setRegForm(p=>({...p,pin:e.target.value}))} placeholder="8-digit code"/></div>{registering==='working'&&<div className="detect-status scanning" style={{display:'flex',alignItems:'center',gap:'8px',justifyContent:'center'}}><span className="spinner"/>Registering...</div>}{registering==='success'&&regResult&&<div className="detect-status done">Registered!{regResult.registKey?' Key: '+regResult.registKey.slice(0,12)+'...':''}</div>}{registering==='failed'&&regResult&&<div className="detect-status err">{regResult.error||'Registration failed'}</div>}<div style={{display:'flex',justifyContent:'flex-end',marginTop:'12px'}}><button className="btn-accent" onClick={doRegister} disabled={registering==='working'||chiakiMissing}>Register</button></div></>}
+        </SidePanel>
+      );
+    }
+
+    function XcloudPanel({ show, onClose, flash, games, setGames }) {
+      const [xboxInfo, setXboxInfo] = useState({ games:[], xboxAppFound:false, cloudGamingUrl:'https://www.xbox.com/play' });
+      const [editingGame, setEditingGame] = useState(null);
+      const [streamUrl, setStreamUrl] = useState('');
+      useEffect(() => { if(!show)return;(async()=>{ if(window.api){try{var xb=await window.api.detectXbox();setXboxInfo(xb);}catch(e){}}else setXboxInfo({games:[],xboxAppFound:true,cloudGamingUrl:'https://www.xbox.com/play'});})(); }, [show]);
+      var xboxGames=games.filter(g=>g.platform==='xbox');
+      var setGameStreamUrl=async()=>{if(!editingGame||!streamUrl)return;var updated={...editingGame,streamUrl};if(window.api){var u=await window.api.updateGame(updated);if(u)setGames(g=>g.map(x=>x.id===editingGame.id?u:x));}else setGames(g=>g.map(x=>x.id===editingGame.id?{...x,streamUrl}:x));setEditingGame(null);setStreamUrl('');flash('Cloud URL saved');};
+      return (
+        <SidePanel show={show} onClose={onClose} title="Xbox Cloud Gaming">
+          <div style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'14px',padding:'12px 14px',borderRadius:'8px',background:'var(--glass)'}}><div className="conn-icon" style={{background:'#0e6a0e',width:32,height:32,fontSize:11}}>X</div><div style={{flex:1}}><div style={{fontSize:'12px',fontWeight:600,color:'var(--text)'}}>Xbox Cloud Gaming</div><div style={{fontSize:'10px',color:'var(--text-3)'}}>xbox.com/play</div></div><button className="btn-sm primary" onClick={()=>{window.open(xboxInfo.cloudGamingUrl||'https://www.xbox.com/play','_blank');flash('Opening xCloud...');}}>Launch</button></div>
+          {xboxGames.length>0&&<div className="conn-section">Xbox Games</div>}
+          {xboxGames.map(g=><div key={g.id} className="conn-card"><div className="conn-icon" style={{background:'#0e6a0e',width:32,height:32,fontSize:11}}>X</div><div className="conn-info"><div className="conn-name">{g.name}</div><div className="conn-detail">{g.streamUrl?'Cloud URL set':'No cloud URL'}</div></div><button className="btn-sm" onClick={()=>{setEditingGame(g);setStreamUrl(g.streamUrl||'');}}>Config</button></div>)}
+          {editingGame&&<div style={{marginTop:'12px',padding:'14px',borderRadius:'10px',background:'var(--glass)',border:'1px solid var(--accent-border)'}}><div style={{fontSize:'12px',fontWeight:600,color:'var(--text)',marginBottom:'10px'}}>Stream: {editingGame.name}</div><div className="field"><label>xCloud URL</label><input value={streamUrl} onChange={e=>setStreamUrl(e.target.value)} placeholder="https://www.xbox.com/play/games/..."/></div><div style={{display:'flex',gap:'8px',justifyContent:'flex-end'}}><button className="btn-flat" onClick={()=>{setEditingGame(null);setStreamUrl('');}}>Cancel</button><button className="btn-accent" onClick={setGameStreamUrl}>Save</button></div></div>}
+          {xboxGames.length===0&&<div style={{textAlign:'center',padding:'20px',color:'var(--text-4)',fontSize:'11px'}}>No Xbox games.</div>}
+        </SidePanel>
+      );
+    }
+
+    function SettingsPanel({ show, onClose, flash, settings, onSettingsChange, setGames, setCats, onOpenPlatforms, onOpenDetect, onSync, onFetchMetadata }) {
+      const [local, setLocal] = useState({});
+      const [dataPath, setDataPath] = useState('');
+      const [appVersion, setAppVersion] = useState('1.0.0');
+      const [confirmClear, setConfirmClear] = useState(false);
+      const [confirmClearCovers, setConfirmClearCovers] = useState(false);
+
+      useEffect(() => {
+        if (!show) { setConfirmClear(false); setConfirmClearCovers(false); return; }
+        setLocal({ ...settings });
+        (async () => {
+          if (window.api?.getDataPath) { var p = await window.api.getDataPath(); setDataPath(p); }
+          if (window.api?.getAppVersion) { var v = await window.api.getAppVersion(); setAppVersion(v); }
+        })();
+      }, [show, settings]);
+
+      const update = async (key, val) => {
+        var next = { ...local, [key]: val };
+        setLocal(next);
+        if (window.api?.saveSettings) {
+          var saved = await window.api.saveSettings({ [key]: val });
+          onSettingsChange(saved);
+        } else {
+          onSettingsChange(next);
+        }
+      };
+
+      const doExport = async () => {
+        if (!window.api?.exportLibrary) { flash('Export not available'); return; }
+        var r = await window.api.exportLibrary();
+        if (r.cancelled) return;
+        if (r.error) { flash('Export failed: ' + r.error); return; }
+        flash('Library exported');
+      };
+
+      const doImport = async () => {
+        if (!window.api?.importLibrary) { flash('Import not available'); return; }
+        var r = await window.api.importLibrary();
+        if (r.cancelled) return;
+        if (r.error) { flash('Import failed: ' + r.error); return; }
+        if (r.games) setGames(r.games);
+        if (r.categories) setCats(r.categories);
+        flash('Imported ' + (r.added || 0) + ' new games');
+      };
+
+      const doClearCovers = async () => {
+        if (!confirmClearCovers) { setConfirmClearCovers(true); return; }
+        if (window.api?.clearCovers) {
+          var r = await window.api.clearCovers();
+          if (r?.games) setGames(r.games);
+        }
+        setConfirmClearCovers(false);
+        flash('Covers reset to defaults');
+      };
+
+      const doClearAll = async () => {
+        if (!confirmClear) { setConfirmClear(true); return; }
+        if (window.api?.clearAllGames) await window.api.clearAllGames();
+        setGames([]);
+        setConfirmClear(false);
+        flash('All games cleared');
+      };
+
+      const doReset = async () => {
+        if (window.api?.resetSettings) {
+          var s = await window.api.resetSettings();
+          setLocal(s);
+          onSettingsChange(s);
+        }
+        flash('Settings reset to defaults');
+      };
+
+      var Toggle = ({ value, onChange }) => (
+        <button className={'settings-toggle' + (value ? ' on' : '')} onClick={() => onChange(!value)} />
+      );
+
+      return (
+        <SidePanel show={show} onClose={onClose} title="Settings" wide>
+          <div className="settings-quick-actions">
+            <button className="settings-qa-btn" onClick={onOpenDetect}>{I.scan}<span>Detect Games</span></button>
+            <button className="settings-qa-btn" onClick={()=>{if(onSync)onSync();}}>{I.sync}<span>Sync Playtime</span></button>
+            <button className="settings-qa-btn" onClick={onOpenPlatforms}>{I.link}<span>Platforms</span></button>
+            <button className="settings-qa-btn" onClick={()=>{if(onFetchMetadata)onFetchMetadata();}}>{I.download}<span>Fetch Metadata</span></button>
+          </div>
+          <div className="settings-section">
+            <div className="settings-section-title">Theme</div>
+            <div className="theme-grid">
+              {Object.entries(THEMES).map(([key, t]) => (
+                <button key={key} className={'theme-swatch' + ((local.theme || 'midnight') === key ? ' active' : '')} onClick={() => { update('theme', key); applyTheme(key); }} title={t.label}>
+                  <div className="theme-swatch-preview">
+                    <div style={{background:t.preview[0],flex:1}}/>
+                    <div style={{background:t.preview[2],flex:1}}/>
+                  </div>
+                  <div className="theme-swatch-accent" style={{background:t.accent}}/>
+                  <div className="theme-swatch-label">{t.label}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="settings-section">
+            <div className="settings-section-title">Appearance</div>
+            <div className="settings-row">
+              <div className="settings-row-info"><div className="settings-row-label">Default View</div><div className="settings-row-desc">View shown on startup</div></div>
+              <select className="settings-select" value={local.defaultView || 'orbit'} onChange={e => update('defaultView', e.target.value)}>
+                <option value="orbit">Galaxy Orbit</option>
+                <option value="cards">Card Grid</option>
+              </select>
+            </div>
+            <div className="settings-row">
+              <div className="settings-row-info"><div className="settings-row-label">Star Density</div><div className="settings-row-desc">Background star count</div></div>
+              <select className="settings-select" value={local.starDensity || 'normal'} onChange={e => update('starDensity', e.target.value)}>
+                <option value="low">Low</option>
+                <option value="normal">Normal</option>
+                <option value="high">High</option>
+              </select>
+            </div>
+            <div className="settings-row">
+              <div className="settings-row-info"><div className="settings-row-label">Font Size</div><div className="settings-row-desc">UI scale factor</div></div>
+              <select className="settings-select" value={local.uiScale || '1'} onChange={e => { update('uiScale', e.target.value); applyUiScale(e.target.value); }}>
+                <option value="0.9">Small</option>
+                <option value="1">Normal</option>
+                <option value="1.1">Large</option>
+                <option value="1.25">X-Large</option>
+              </select>
+            </div>
+            <div className="settings-row">
+              <div className="settings-row-info"><div className="settings-row-label">Animations</div><div className="settings-row-desc">Orbit drift and transitions</div></div>
+              <Toggle value={local.showAnimations !== false} onChange={v => update('showAnimations', v)} />
+            </div>
+          </div>
+
+          <div className="settings-section">
+            <div className="settings-section-title">Behavior</div>
+            <div className="settings-row">
+              <div className="settings-row-info"><div className="settings-row-label">Default Tab</div><div className="settings-row-desc">Starting filter when app opens</div></div>
+              <select className="settings-select" value={local.defaultTab || 'all'} onChange={e => update('defaultTab', e.target.value)}>
+                <option value="all">All</option>
+                <option value="favorites">Favorites</option>
+                <option value="recent">Recent</option>
+              </select>
+            </div>
+            <div className="settings-row">
+              <div className="settings-row-info"><div className="settings-row-label">Auto-Sync Playtime</div><div className="settings-row-desc">Sync Steam playtime on launch</div></div>
+              <Toggle value={!!local.autoSyncPlaytime} onChange={v => update('autoSyncPlaytime', v)} />
+            </div>
+            <div className="settings-row">
+              <div className="settings-row-info"><div className="settings-row-label">Minimize on Game Launch</div><div className="settings-row-desc">Hide window when starting a game</div></div>
+              <Toggle value={!!local.minimizeOnLaunch} onChange={v => update('minimizeOnLaunch', v)} />
+            </div>
+            <div className="settings-row">
+              <div className="settings-row-info"><div className="settings-row-label">Close to System Tray</div><div className="settings-row-desc">Keep running in background</div></div>
+              <Toggle value={!!local.closeToTray} onChange={v => update('closeToTray', v)} />
+            </div>
+            <div className="settings-row">
+              <div className="settings-row-info"><div className="settings-row-label">Discord Rich Presence</div><div className="settings-row-desc">Show currently playing game on Discord</div></div>
+              <Toggle value={!!local.discordPresence} onChange={v => update('discordPresence', v)} />
+            </div>
+          </div>
+
+          <div className="settings-section">
+            <div className="settings-section-title">Metadata Source</div>
+            <div className="settings-row">
+              <div className="settings-row-info"><div className="settings-row-label">Primary Source</div><div className="settings-row-desc">Where to fetch game info, covers, and descriptions</div></div>
+              <select className="settings-select" value={local.metadataSource || 'steam'} onChange={e => update('metadataSource', e.target.value)}>
+                <optgroup label="No Account Needed">
+                  <option value="steam">Steam Store</option>
+                  <option value="wikipedia">Wikipedia</option>
+                </optgroup>
+                <optgroup label="API Key Required">
+                  <option value="rawg">RAWG.io</option>
+                  <option value="igdb">IGDB (Twitch)</option>
+                  <option value="steamgriddb">SteamGridDB</option>
+                </optgroup>
+                <optgroup label="Unavailable">
+                  <option value="giantbomb" disabled>GiantBomb (API Down)</option>
+                </optgroup>
+              </select>
+            </div>
+            <div style={{margin:'6px 0 10px',padding:'10px 14px',borderRadius:'8px',background:'var(--glass)',border:'1px solid var(--glass-border)',fontSize:'10px',color:'var(--text-4)',lineHeight:1.6}}>
+              {(local.metadataSource === 'steam' || !local.metadataSource) && <><strong style={{color:'var(--text-3)'}}>Steam Store</strong> &mdash; No account needed. Searches Steam's entire catalog by name. Best covers, screenshots, and Metacritic scores. Falls back to Wikipedia.</>}
+              {local.metadataSource === 'wikipedia' && <><strong style={{color:'var(--text-3)'}}>Wikipedia</strong> &mdash; No account needed. Fetches descriptions, developer, publisher, and genres from Wikipedia articles. Falls back to Steam search.</>}
+              {local.metadataSource === 'rawg' && <><strong style={{color:'var(--text-3)'}}>RAWG.io</strong> &mdash; Requires free API key from <span style={{color:'var(--accent)'}}>rawg.io/apidocs</span>. Large database with ratings.</>}
+              {local.metadataSource === 'igdb' && <><strong style={{color:'var(--text-3)'}}>IGDB</strong> &mdash; Twitch-powered. Requires Client ID &amp; Secret from <span style={{color:'var(--accent)'}}>dev.twitch.tv</span>.</>}
+              {local.metadataSource === 'steamgriddb' && <><strong style={{color:'var(--text-3)'}}>SteamGridDB</strong> &mdash; Community game art. Covers, heroes, logos. Free key from <span style={{color:'var(--accent)'}}>steamgriddb.com/profile/preferences/api</span>. Used for art search only.</>}
+              {local.metadataSource === 'giantbomb' && <><strong style={{color:'var(--text-3)'}}>GiantBomb</strong> &mdash; API is currently unavailable (site rebuilt, API not restored).</>}
+            </div>
+            {local.metadataSource === 'rawg' && <div className="field" style={{marginBottom:10}}><label>RAWG API Key</label><input type="password" value={local.rawgApiKey||''} onChange={e=>update('rawgApiKey',e.target.value)} placeholder="Paste RAWG API key" /></div>}
+            {local.metadataSource === 'igdb' && <>
+              <div className="field" style={{marginBottom:10}}><label>IGDB / Twitch Client ID</label><input value={local.igdbClientId||''} onChange={e=>update('igdbClientId',e.target.value)} placeholder="Client ID from dev.twitch.tv" /></div>
+              <div className="field" style={{marginBottom:10}}><label>IGDB / Twitch Client Secret</label><input type="password" value={local.igdbClientSecret||''} onChange={e=>update('igdbClientSecret',e.target.value)} placeholder="Client Secret" /></div>
+            </>}
+            {local.metadataSource === 'giantbomb' && <div className="field" style={{marginBottom:10}}><label>GiantBomb API Key</label><input type="password" value={local.giantbombApiKey||''} onChange={e=>update('giantbombApiKey',e.target.value)} placeholder="Paste GiantBomb API key" /></div>}
+          </div>
+
+          <div className="settings-section">
+            <div className="settings-section-title">Art Search Keys <span style={{fontWeight:400,fontSize:'10px',color:'var(--text-2)'}}>(optional &mdash; enhances art picker results)</span></div>
+            <div style={{fontSize:'10px',color:'var(--text-2)',marginBottom:10,padding:'0 2px'}}>
+              These keys let the art picker search additional sources for game covers, heroes, and screenshots. Free sources (Steam, DuckDuckGo, Wikipedia) always work without keys.
+            </div>
+            <div className="field" style={{marginBottom:10}}>
+              <label>SteamGridDB API Key</label>
+              <input type="password" value={local.steamGridDbKey||''} onChange={e=>update('steamGridDbKey',e.target.value)} placeholder="Free key from steamgriddb.com/profile/preferences/api" />
+            </div>
+            {local.metadataSource !== 'igdb' && <>
+              <div className="field" style={{marginBottom:10}}>
+                <label>IGDB / Twitch Client ID</label>
+                <input value={local.igdbClientId||''} onChange={e=>update('igdbClientId',e.target.value)} placeholder="Client ID from dev.twitch.tv" />
+              </div>
+              <div className="field" style={{marginBottom:10}}>
+                <label>IGDB / Twitch Client Secret</label>
+                <input type="password" value={local.igdbClientSecret||''} onChange={e=>update('igdbClientSecret',e.target.value)} placeholder="Client Secret" />
+              </div>
+            </>}
+            {local.metadataSource !== 'rawg' && <div className="field" style={{marginBottom:10}}>
+              <label>RAWG API Key</label>
+              <input type="password" value={local.rawgApiKey||''} onChange={e=>update('rawgApiKey',e.target.value)} placeholder="Free key from rawg.io/apidocs" />
+            </div>}
+          </div>
+
+          <div className="settings-section">
+            <div className="settings-section-title">Library Data</div>
+            <div className="settings-row">
+              <div className="settings-row-info"><div className="settings-row-label">Export Library</div><div className="settings-row-desc">Save games and settings to a file</div></div>
+              <button className="btn-sm primary" onClick={doExport}>Export</button>
+            </div>
+            <div className="settings-row">
+              <div className="settings-row-info"><div className="settings-row-label">Import Library</div><div className="settings-row-desc">Load games from an exported file</div></div>
+              <button className="btn-sm" onClick={doImport}>Import</button>
+            </div>
+            {dataPath && <div className="settings-row">
+              <div className="settings-row-info"><div className="settings-row-label">Data Location</div><div className="settings-row-desc" style={{wordBreak:'break-all',fontSize:'9px'}}>{dataPath}</div></div>
+            </div>}
+          </div>
+
+          <div className="settings-section">
+            <div className="settings-section-title">Danger Zone</div>
+            <div className="settings-danger-zone">
+              <div className="settings-row" style={{background:'none',border:'none',padding:'4px 0',marginBottom:8}}>
+                <div className="settings-row-info"><div className="settings-row-label" style={{color:'var(--red)'}}>Reset All Covers</div><div className="settings-row-desc">Clear custom art. Steam games get their default covers back, others go blank.</div></div>
+                <button className={'btn-sm danger'} onClick={doClearCovers}>{confirmClearCovers ? 'Confirm?' : 'Reset'}</button>
+              </div>
+              <div className="settings-row" style={{background:'none',border:'none',padding:'4px 0',marginBottom:8}}>
+                <div className="settings-row-info"><div className="settings-row-label" style={{color:'var(--red)'}}>Clear All Games</div><div className="settings-row-desc">Remove every game from your library</div></div>
+                <button className={'btn-sm danger'} onClick={doClearAll}>{confirmClear ? 'Confirm?' : 'Clear'}</button>
+              </div>
+              <div className="settings-row" style={{background:'none',border:'none',padding:'4px 0',marginBottom:0}}>
+                <div className="settings-row-info"><div className="settings-row-label" style={{color:'var(--red)'}}>Reset Settings</div><div className="settings-row-desc">Restore all options to defaults</div></div>
+                <button className="btn-sm danger" onClick={doReset}>Reset</button>
+              </div>
+            </div>
+          </div>
+
+          <div className="settings-about">
+            <div className="settings-about-logo">Cereal</div>
+            <div className="settings-about-ver">v{appVersion}</div>
+            <div className="settings-about-author">by Andrew</div>
+          </div>
+        </SidePanel>
+      );
+    }
+
+    /* ===== APP ===== */
+    function App() {
+      const [games, setGames] = useState([]);
+      const [cats, setCats] = useState([]);
+      const [tab, setTab] = useState('all');
+      const [focusGame, setFocusGame] = useState(null);
+      const [showSearch, setShowSearch] = useState(false);
+      const [showAdd, setShowAdd] = useState(false);
+      const [showDetect, setShowDetect] = useState(false);
+      const [showPlatforms, setShowPlatforms] = useState(false);
+      const [showChiaki, setShowChiaki] = useState(false);
+      const [showXcloud, setShowXcloud] = useState(false);
+      const [showSettings, setShowSettings] = useState(false);
+      const [settings, setSettings] = useState({ defaultView:'orbit', theme:'midnight', starDensity:'normal', showAnimations:true, autoSyncPlaytime:false, minimizeOnLaunch:false, closeToTray:false, defaultTab:'all', discordPresence:false, metadataSource:'steam', rawgApiKey:'', igdbClientId:'', igdbClientSecret:'', giantbombApiKey:'' });
+      const [editGame, setEditGame] = useState(null);
+      const [chiakiSessions, setChiakiSessions] = useState({});
+      const [toast, setToast] = useState('');
+      const [entered, setEntered] = useState(false);
+      const [ready, setReady] = useState(false);
+      const [viewMode, setViewMode] = useState('orbit');
+      const [cam, setCam] = useState({zoom:0.4, x:0, y:0});
+      const [animating, setAnimating] = useState(false);
+      const viewportRef = useRef(null);
+      const canvasRef = useRef(null);
+      const camRef = useRef({zoom:0.4,x:0,y:0});
+      const dragInfo = useRef({active:false,sx:0,sy:0,cx:0,cy:0,moved:false});
+      useEffect(()=>{camRef.current=cam;},[cam]);
+      const flash = m => { setToast(''); setTimeout(() => setToast(m), 30); };
+
+      const fitAll=()=>{var vw=window.innerWidth,vh=window.innerHeight;var z=Math.min(vw/GALAXY_W,vh/GALAXY_H)*0.9;var nx=(vw-GALAXY_W*z)/2,ny=(vh-GALAXY_H*z)/2;setAnimating(true);setCam({zoom:z,x:nx,y:ny});setTimeout(()=>setAnimating(false),650);};
+      const flyTo=(cx,cy,tz)=>{tz=tz||1.6;var vw=window.innerWidth,vh=window.innerHeight;setAnimating(true);setCam({zoom:tz,x:vw/2-cx*tz,y:vh/2-cy*tz});setTimeout(()=>setAnimating(false),650);};
+      const zoomIn=()=>{var hw=window.innerWidth/2,hh=window.innerHeight/2;setAnimating(true);setCam(c=>{var nz=Math.min(5,c.zoom*1.4);var r=nz/c.zoom;return{zoom:nz,x:hw-r*(hw-c.x),y:hh-r*(hh-c.y)};});setTimeout(()=>setAnimating(false),350);};
+      const zoomOut=()=>{var hw=window.innerWidth/2,hh=window.innerHeight/2;setAnimating(true);setCam(c=>{var nz=Math.max(0.15,c.zoom/1.4);var r=nz/c.zoom;return{zoom:nz,x:hw-r*(hw-c.x),y:hh-r*(hh-c.y)};});setTimeout(()=>setAnimating(false),350);};
+
+      useEffect(()=>{if(viewMode==='orbit'){var vw=window.innerWidth,vh=window.innerHeight;var z=Math.min(vw/GALAXY_W,vh/GALAXY_H)*0.9;setCam({zoom:z,x:(vw-GALAXY_W*z)/2,y:(vh-GALAXY_H*z)/2});}},[viewMode]);
+
+      useEffect(()=>{
+        if(viewMode!=='orbit')return;var vp=viewportRef.current;if(!vp)return;
+        var onWheel=(e)=>{e.preventDefault();setAnimating(false);var rect=vp.getBoundingClientRect();var mx=e.clientX-rect.left,my=e.clientY-rect.top;setCam(c=>{var f=e.deltaY<0?1.12:1/1.12;var nz=Math.min(5,Math.max(0.15,c.zoom*f));var r=nz/c.zoom;return{zoom:nz,x:mx-r*(mx-c.x),y:my-r*(my-c.y)};});};
+        var onDown=(e)=>{if(e.button!==0)return;setAnimating(false);var c=camRef.current;dragInfo.current={active:true,sx:e.clientX,sy:e.clientY,cx:c.x,cy:c.y,moved:false};};
+        var onMove=(e)=>{var d=dragInfo.current;if(!d.active)return;if(Math.abs(e.clientX-d.sx)>3||Math.abs(e.clientY-d.sy)>3)d.moved=true;setCam(c=>({...c,x:d.cx+(e.clientX-d.sx),y:d.cy+(e.clientY-d.sy)}));};
+        var onUp=()=>{dragInfo.current.active=false;};
+        vp.addEventListener('wheel',onWheel,{passive:false});vp.addEventListener('mousedown',onDown);window.addEventListener('mousemove',onMove);window.addEventListener('mouseup',onUp);
+        return()=>{vp.removeEventListener('wheel',onWheel);vp.removeEventListener('mousedown',onDown);window.removeEventListener('mousemove',onMove);window.removeEventListener('mouseup',onUp);};
+      },[viewMode]);
+
+      useEffect(() => { var t1=setTimeout(()=>setEntered(true),200); var t2=setTimeout(()=>setReady(true),2200); return()=>{clearTimeout(t1);clearTimeout(t2);}; }, []);
+
+      useEffect(() => {
+        if (!window.api||!window.api.onChiakiEvent) return;
+        var unsub = window.api.onChiakiEvent(evt => {
+          if (evt.type === 'title_change') {
+            // PS5 detected a game switch — update session's displayed game
+            setChiakiSessions(prev => {
+              var n = {...prev};
+              var s = n[evt.gameId] || {};
+              s.detectedTitle = evt.titleName || evt.gameName || '';
+              s.detectedGameId = evt.gameId2 || evt.gameId;
+              n[evt.gameId] = {...s, ...evt};
+              return n;
+            });
+            if (evt.gameName) flash('Now playing: ' + evt.gameName);
+            return;
+          }
+          setChiakiSessions(prev => { var n={...prev}; if(evt.type==='disconnected'&&evt.reason!=='transient_error')delete n[evt.gameId]; else n[evt.gameId]={...(n[evt.gameId]||{}),...evt}; return n; });
+        });
+        // Listen for game list refreshes (e.g. auto-created PS games)
+        var unsubRefresh = window.api?.onGamesRefresh ? window.api.onGamesRefresh(g => setGames(g || [])) : null;
+        return () => { unsub && unsub(); unsubRefresh && unsubRefresh(); };
+      }, []);
+
+      useEffect(() => {
+        (async () => {
+          if (window.api) {
+            var g=await window.api.getGames(); var c=await window.api.getCategories();
+            setGames(g||[]); setCats(c||[]);
+            if (window.api.getSettings) {
+              var s = await window.api.getSettings();
+              if (s) {
+                setSettings(s);
+                if (s.defaultView) setViewMode(s.defaultView);
+                if (s.defaultTab) setTab(s.defaultTab);
+                if (s.theme) applyTheme(s.theme);
+                else if (s.accentColor) document.documentElement.style.setProperty('--accent', s.accentColor);
+                if (s.uiScale) applyUiScale(s.uiScale);
+              }
+            }
+          } else {
+            setCats(['Action','Adventure','RPG','Strategy','Puzzle','Simulation','Sports','FPS','Indie','Multiplayer']);
+            setGames([
+              {id:'1',name:'Cyberpunk 2077',platform:'steam',platformId:'1091500',coverUrl:'https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/1091500/library_600x900.jpg',categories:['Action','RPG'],playtimeMinutes:1240,lastPlayed:'2025-01-28T10:30:00Z',addedAt:'2024-06-15',favorite:true},
+              {id:'2',name:'Elden Ring',platform:'steam',platformId:'1245620',coverUrl:'https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/1245620/library_600x900.jpg',categories:['Action','RPG','Adventure'],playtimeMinutes:840,lastPlayed:'2025-02-01T14:00:00Z',addedAt:'2024-03-10',favorite:true},
+              {id:'3',name:'Hades',platform:'steam',platformId:'1145360',coverUrl:'https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/1145360/library_600x900.jpg',categories:['Action','Indie'],playtimeMinutes:320,lastPlayed:'2025-01-15T18:00:00Z',addedAt:'2024-08-20',favorite:false},
+              {id:'4',name:"Baldur's Gate 3",platform:'steam',platformId:'1086940',coverUrl:'https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/1086940/library_600x900.jpg',categories:['RPG','Strategy'],playtimeMinutes:2100,lastPlayed:'2025-02-08T20:00:00Z',addedAt:'2024-01-05',favorite:false},
+              {id:'5',name:'Hollow Knight',platform:'steam',platformId:'367520',coverUrl:'https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/367520/library_600x900.jpg',categories:['Action','Indie','Adventure'],playtimeMinutes:180,lastPlayed:'2025-01-10T16:00:00Z',addedAt:'2024-09-01',favorite:false},
+              {id:'6',name:'DOOM Eternal',platform:'steam',platformId:'782330',coverUrl:'https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/782330/library_600x900.jpg',categories:['Action','FPS'],playtimeMinutes:440,lastPlayed:'2024-11-22T19:00:00Z',addedAt:'2024-04-10',favorite:false},
+              {id:'7',name:'Stardew Valley',platform:'steam',platformId:'413150',coverUrl:'https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/413150/library_600x900.jpg',categories:['Simulation','Indie'],playtimeMinutes:680,lastPlayed:'2025-02-09T21:00:00Z',addedAt:'2024-07-01',favorite:true},
+              {id:'8',name:'Celeste',platform:'steam',platformId:'504230',coverUrl:'https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/504230/library_600x900.jpg',categories:['Action','Indie'],playtimeMinutes:95,lastPlayed:'2025-01-05T14:30:00Z',addedAt:'2024-10-18',favorite:false},
+              {id:'9',name:'Portal 2',platform:'steam',platformId:'620',coverUrl:'https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/620/library_600x900.jpg',categories:['Puzzle','Adventure'],playtimeMinutes:210,lastPlayed:'2024-09-14T11:00:00Z',addedAt:'2024-02-20',favorite:false},
+              {id:'10',name:'Fortnite',platform:'epic',platformId:'fortnite',coverUrl:'',categories:['Action','Multiplayer','FPS'],playtimeMinutes:3200,lastPlayed:'2025-02-10T22:00:00Z',addedAt:'2024-01-01',favorite:false},
+              {id:'11',name:'Alan Wake 2',platform:'epic',platformId:'alanwake2',coverUrl:'',categories:['Action','Adventure'],playtimeMinutes:260,lastPlayed:'2025-01-18T20:30:00Z',addedAt:'2024-05-12',favorite:true},
+              {id:'12',name:'Rocket League',platform:'epic',platformId:'rocketleague',coverUrl:'',categories:['Sports','Multiplayer'],playtimeMinutes:1560,lastPlayed:'2025-02-07T18:00:00Z',addedAt:'2024-03-22',favorite:false},
+              {id:'13',name:'The Witcher 3',platform:'gog',coverUrl:'',categories:['RPG','Adventure'],playtimeMinutes:560,lastPlayed:'2024-12-20',addedAt:'2024-02-14',favorite:false},
+              {id:'14',name:'Disco Elysium',platform:'gog',coverUrl:'',categories:['RPG','Adventure'],playtimeMinutes:380,lastPlayed:'2024-10-05T16:00:00Z',addedAt:'2024-06-30',favorite:false},
+              {id:'15',name:'Divinity: Original Sin 2',platform:'gog',coverUrl:'',categories:['RPG','Strategy'],playtimeMinutes:920,lastPlayed:'2025-01-02T12:00:00Z',addedAt:'2024-04-18',favorite:true},
+              {id:'16',name:'God of War Ragnarok',platform:'psn',coverUrl:'',categories:['Action','Adventure'],playtimeMinutes:420,lastPlayed:'2025-02-05',addedAt:'2024-07-20',favorite:true,chiakiNickname:'PS5-Living-Room',chiakiHost:'192.168.1.50',chiakiProfile:'default',chiakiFullscreen:true},
+              {id:'17',name:"Marvel's Spider-Man 2",platform:'psn',coverUrl:'',categories:['Action','Adventure'],playtimeMinutes:340,lastPlayed:'2025-01-30T17:00:00Z',addedAt:'2024-08-05',favorite:false,chiakiNickname:'PS5-Living-Room',chiakiHost:'192.168.1.50',chiakiProfile:'',chiakiFullscreen:true},
+              {id:'18',name:'Final Fantasy XVI',platform:'psn',coverUrl:'',categories:['RPG','Action'],playtimeMinutes:520,lastPlayed:'2025-01-12T20:00:00Z',addedAt:'2024-09-15',favorite:false},
+              {id:'19',name:'Astro Bot',platform:'psn',coverUrl:'',categories:['Action','Adventure'],playtimeMinutes:140,lastPlayed:'2025-02-11T15:00:00Z',addedAt:'2024-12-25',favorite:true},
+              {id:'20',name:"Demon's Souls",platform:'psn',coverUrl:'',categories:['Action','RPG'],playtimeMinutes:310,lastPlayed:'2024-11-08T21:30:00Z',addedAt:'2024-05-01',favorite:false},
+              {id:'21',name:'Forza Horizon 5',platform:'xbox',coverUrl:'',categories:['Sports','Simulation'],playtimeMinutes:90,lastPlayed:'2025-01-22',addedAt:'2024-11-10',favorite:false,streamUrl:'https://www.xbox.com/play/games/forza-horizon-5/9NKX70BBCDRN'},
+              {id:'22',name:'Halo Infinite',platform:'xbox',coverUrl:'',categories:['FPS','Action','Multiplayer'],playtimeMinutes:650,lastPlayed:'2025-02-03T19:00:00Z',addedAt:'2024-02-28',favorite:true,streamUrl:'https://www.xbox.com/play/games/halo-infinite/9PP5G1F0C2B6'},
+              {id:'23',name:'Starfield',platform:'xbox',coverUrl:'',categories:['RPG','Adventure'],playtimeMinutes:480,lastPlayed:'2025-01-25T22:00:00Z',addedAt:'2024-06-10',favorite:false,streamUrl:'https://www.xbox.com/play/games/starfield/9NKX70BBCDRN'},
+              {id:'24',name:'Sea of Thieves',platform:'xbox',coverUrl:'',categories:['Adventure','Multiplayer'],playtimeMinutes:220,lastPlayed:'2025-02-06T20:30:00Z',addedAt:'2024-08-14',favorite:false},
+              {id:'25',name:'Grounded',platform:'xbox',coverUrl:'',categories:['Adventure','Simulation'],playtimeMinutes:170,lastPlayed:'2024-12-15T14:00:00Z',addedAt:'2024-10-22',favorite:false},
+              {id:'26',name:'Minecraft',platform:'custom',coverUrl:'',categories:['Simulation','Adventure'],playtimeMinutes:4500,lastPlayed:'2025-02-11T23:00:00Z',addedAt:'2024-01-15',favorite:true,executablePath:'C:/Games/Minecraft/minecraft.exe'},
+              {id:'27',name:'RetroArch',platform:'custom',coverUrl:'',categories:['Action','Simulation'],playtimeMinutes:280,lastPlayed:'2025-01-20T16:00:00Z',addedAt:'2024-09-08',favorite:false,executablePath:'C:/RetroArch/retroarch.exe'},
+            ]);
+          }
+        })();
+      }, []);
+
+      // Auto-sync playtime if enabled
+      useEffect(() => {
+        if (!settings.autoSyncPlaytime || !window.api?.syncPlaytime) return;
+        var timer = setTimeout(async () => {
+          var r = await window.api.syncPlaytime();
+          if (r.games) setGames(r.games);
+        }, 3000);
+        return () => clearTimeout(timer);
+      }, [settings.autoSyncPlaytime]);
+
+      useEffect(() => {
+        var handler = e => {
+          if ((e.ctrlKey||e.metaKey)&&e.key==='k') { e.preventDefault(); setShowSearch(true); }
+          if ((e.ctrlKey||e.metaKey)&&e.key===',') { e.preventDefault(); setShowSettings(true); }
+          if (e.key==='Escape'&&focusGame) setFocusGame(null);
+        };
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
+      }, [focusGame]);
+
+      const doLaunch=async game=>{if(window.api){var r=await window.api.launchGame(game.id);flash(r.success?'Launching '+game.name:'Error: '+r.error);}else flash('Launching '+game.name+'...');};
+      const doFav=async id=>{if(window.api){var u=await window.api.toggleFavorite(id);setGames(g=>g.map(x=>x.id===id?u:x));}else setGames(g=>g.map(x=>x.id===id?{...x,favorite:!x.favorite}:x));};
+      const doAdd=async f=>{if(window.api){var n=await window.api.addGame(f);setGames(g=>[...g,n]);}else setGames(g=>[...g,{...f,id:Date.now()+'',addedAt:new Date().toISOString(),playtimeMinutes:0,favorite:false}]);setShowAdd(false);setEditGame(null);flash('Game added');};
+      const doEdit=async f=>{if(window.api){var u=await window.api.updateGame(f);setGames(g=>g.map(x=>x.id===f.id?u:x));}else setGames(g=>g.map(x=>x.id===f.id?{...x,...f}:x));setShowAdd(false);setEditGame(null);flash('Game updated');};
+      const doDelete=async id=>{if(window.api)await window.api.deleteGame(id);setGames(g=>g.filter(x=>x.id!==id));setFocusGame(null);flash('Game removed');};
+      const doImport=async list=>{for(var g of list){if(window.api){var n=await window.api.addGame(g);setGames(prev=>[...prev,n]);}else setGames(prev=>[...prev,{...g,id:Date.now()+''+Math.random(),addedAt:new Date().toISOString(),playtimeMinutes:0,favorite:false}]);}setShowDetect(false);flash('Imported '+list.length+' games');};
+      const doSync=async()=>{if(!window.api||!window.api.syncPlaytime){flash('Sync not available');return;}flash('Syncing playtime...');var r=await window.api.syncPlaytime();if(r.games)setGames(r.games);if(r.updated&&r.updated.length>0)flash('Updated playtime for '+r.updated.length+' games');else flash('Playtime is up to date');};
+      const doFetchAllMetadata=async()=>{if(!window.api?.fetchAllMetadata){flash('Metadata fetch not available');return;}flash('Fetching metadata for all games...');try{var r=await window.api.fetchAllMetadata();if(r.updated>0){var g=await window.api.getGames();setGames(g);flash('Updated metadata for '+r.updated+' of '+r.total+' games');}else{flash('All metadata is up to date');}}catch(e){flash('Metadata fetch failed');}};
+      const onSettingsChange = s => {
+        setSettings(prev => ({ ...prev, ...s }));
+        if (s.theme) {
+          applyTheme(s.theme);
+        } else if (s.accentColor) {
+          document.documentElement.style.setProperty('--accent', s.accentColor);
+          document.documentElement.style.setProperty('--accent-soft', s.accentColor + '1f');
+          document.documentElement.style.setProperty('--accent-border', s.accentColor + '4d');
+        }
+        if (s.uiScale) applyUiScale(s.uiScale);
+      };
+      const doEditFromFocus=game=>{setFocusGame(null);setEditGame(game);setShowAdd(true);};
+
+      const activePlatforms=useMemo(()=>{var s=new Set(games.map(g=>g.platform));return Object.keys(PLATFORMS).filter(k=>s.has(k));},[games]);
+      const isDimmed=game=>{if(tab==='all')return false;if(tab==='favorites')return !game.favorite;if(tab==='recent')return!game.lastPlayed;return game.platform!==tab;};
+
+      const orbData=useMemo(()=>{
+        var groups={};games.forEach(g=>{if(!groups[g.platform])groups[g.platform]=[];groups[g.platform].push(g);});
+        var allPt=games.map(g=>g.playtimeMinutes||0);
+        var maxPt=Math.max(...allPt,1);
+        var result=[];var idx=0;
+        Object.entries(groups).forEach(([plat,gms])=>{
+          var c=CLUSTER_CENTERS[plat]||{x:1500,y:1000};
+          gms.sort((a,b)=>(b.playtimeMinutes||0)-(a.playtimeMinutes||0));
+          var nArms=Math.max(2,Math.ceil(gms.length/6));
+          gms.forEach((game,i)=>{
+            var pt=game.playtimeMinutes||0;
+            // Log-based sizing: tighter range, less extreme variance
+            var t=maxPt>1?Math.log(1+pt)/Math.log(1+maxPt):0;
+            var sz=36+t*36;
+            if(game.favorite)sz=Math.max(sz,50);
+            var arm=i%nArms,ai=Math.floor(i/nArms);
+            var armOff=arm*(Math.PI*2/nArms);
+            var theta=armOff+0.65*(ai+1);
+            // Scale radius by accumulated orb sizes so bigger orbs spread further
+            var r=70+50*(ai+1)+sz*0.3;
+            var sc=(Math.random()-0.5)*16;
+            var sx=sc*Math.cos(theta+Math.PI/2),sy=sc*Math.sin(theta+Math.PI/2);
+            result.push({game,x:c.x+r*Math.cos(theta)+sx,y:c.y+r*Math.sin(theta)+sy,size:Math.round(sz),driftX:(Math.random()-0.5)*10,driftY:(Math.random()-0.5)*8,driftDur:20+Math.random()*18,driftDelay:-Math.random()*15,enterDelay:idx*0.04});
+            idx++;
+          });
+        });
+        // Collision nudge pass - push overlapping orbs apart
+        for(var pass=0;pass<3;pass++){
+          for(var i=0;i<result.length;i++){
+            for(var j=i+1;j<result.length;j++){
+              var a=result[i],b=result[j];
+              var dx=b.x-a.x,dy=b.y-a.y;
+              var dist=Math.sqrt(dx*dx+dy*dy);
+              var minDist=(a.size+b.size)/2+12;
+              if(dist<minDist&&dist>0){
+                var push=(minDist-dist)/2+2;
+                var nx=dx/dist,ny=dy/dist;
+                a.x-=nx*push;a.y-=ny*push;
+                b.x+=nx*push;b.y+=ny*push;
+              }
+            }
+          }
+        }
+        return result;
+      },[games]);
+
+      const stars=useMemo(()=>{var count=settings.starDensity==='low'?100:settings.starDensity==='high'?350:200;var s=[];for(var i=0;i<count;i++){var bright=Math.random()>0.85;s.push({x:Math.random()*100,y:Math.random()*100,sz:bright?1.5+Math.random()*2:0.6+Math.random()*1.5,op:bright?0.2+Math.random()*0.4:0.06+Math.random()*0.16,tw:Math.random()>0.4,twDur:3+Math.random()*6,twDel:Math.random()*8});}return s;},[settings.starDensity]);
+      const galaxyStars=useMemo(()=>{var count=settings.starDensity==='low'?250:settings.starDensity==='high'?800:500;var s=[];for(var i=0;i<count;i++){var bright=Math.random()>0.9;var hue=Math.random()>0.82?(Math.random()>0.5?'rgb(180,200,255)':'rgb(255,220,180)'):'white';s.push({x:Math.random()*GALAXY_W,y:Math.random()*GALAXY_H,sz:bright?2+Math.random()*3:0.3+Math.random()*2.5,op:bright?0.15+Math.random()*0.3:0.03+Math.random()*0.12,hue:hue,tw:Math.random()>0.45,twDur:2.5+Math.random()*7,twDel:Math.random()*10});}return s;},[settings.starDensity]);
+      const shootingStars=useMemo(()=>{var s=[];for(var i=0;i<8;i++)s.push({x:150+Math.random()*(GALAXY_W-300),y:80+Math.random()*( GALAXY_H-160),angle:-25+Math.random()*50,dur:4+Math.random()*8,del:i*2.5+Math.random()*5});return s;},[]);
+
+      var liveFocus=focusGame?games.find(g=>g.id===focusGame.id)||focusGame:null;
+
+      const filteredGames=useMemo(()=>{
+        var list=[...games];
+        if(tab==='favorites')list=list.filter(g=>g.favorite);
+        else if(tab==='recent')list=list.filter(g=>g.lastPlayed).sort((a,b)=>new Date(b.lastPlayed)-new Date(a.lastPlayed));
+        else if(tab!=='all')list=list.filter(g=>g.platform===tab);
+        return list;
+      },[games,tab]);
+
+      const groupedByPlatform=useMemo(()=>{
+        var groups={};
+        filteredGames.forEach(g=>{if(!groups[g.platform])groups[g.platform]=[];groups[g.platform].push(g);});
+        return Object.keys(PLATFORMS).filter(k=>groups[k]).map(k=>({platform:k,games:groups[k]}));
+      },[filteredGames]);
+
+      return (
+        <div style={{width:'100%',height:'100%',position:'relative'}}>
+          <div className="void-layer">{stars.map((s,i)=><div key={i} className={s.tw?'bg-star tw':'bg-star'} style={{left:s.x+'%',top:s.y+'%',width:s.sz+'px',height:s.sz+'px',opacity:s.op,'--tw-dur':s.twDur+'s','--tw-del':s.twDel+'s'}}/>)}</div>
+          {viewMode==='orbit'&&<div className="galaxy-viewport" ref={viewportRef} onDoubleClick={fitAll}>
+            <div className={'galaxy-canvas'+(animating?' fly':'')} ref={canvasRef} style={{transform:'translate('+cam.x+'px,'+cam.y+'px) scale('+cam.zoom+')',width:GALAXY_W,height:GALAXY_H}}>
+              {galaxyStars.map((s,i)=><div key={i} className={'galaxy-star'+(s.tw?' tw':'')} style={{left:s.x,top:s.y,width:s.sz,height:s.sz,background:s.hue,opacity:s.op,'--tw-dur':s.twDur+'s','--tw-del':s.twDel+'s'}}/>)}
+              {shootingStars.map((s,i)=><div key={'sh'+i} style={{position:'absolute',left:s.x,top:s.y,transform:'rotate('+s.angle+'deg)',pointerEvents:'none'}}><div className="shooting-star" style={{'--sh-dur':s.dur+'s','--sh-del':s.del+'s'}}/></div>)}
+              <div style={{position:'absolute',left:950,top:500,width:400,height:160,borderRadius:'50%',background:'rgba(100,192,244,0.08)',filter:'blur(100px)',opacity:0.02,pointerEvents:'none'}}/>
+              <div style={{position:'absolute',left:1850,top:480,width:350,height:140,borderRadius:'50%',background:'rgba(180,74,255,0.1)',filter:'blur(90px)',opacity:0.015,pointerEvents:'none'}}/>
+              <div style={{position:'absolute',left:1050,top:950,width:500,height:200,borderRadius:'50%',background:'rgba(212,168,83,0.08)',filter:'blur(110px)',opacity:0.015,pointerEvents:'none'}}/>
+              <div style={{position:'absolute',left:2050,top:950,width:400,height:160,borderRadius:'50%',background:'rgba(16,124,16,0.08)',filter:'blur(100px)',opacity:0.015,pointerEvents:'none'}}/>
+              <div style={{position:'absolute',left:600,top:1000,width:350,height:300,borderRadius:'50%',background:'rgba(0,112,209,0.08)',filter:'blur(120px)',opacity:0.01,pointerEvents:'none'}}/>
+              {activePlatforms.map(plat=>{var c=CLUSTER_CENTERS[plat];var col=PLATFORMS[plat].color;var p=PLATFORMS[plat];return<React.Fragment key={plat}>
+                <div className="nebula" style={{left:c.x,top:c.y,width:600,height:600,background:col,opacity:0.07}}/>
+                <div className="nebula" style={{left:c.x+100,top:c.y-80,width:350,height:350,background:col,opacity:0.03}}/>
+                <div className="nebula" style={{left:c.x-60,top:c.y+70,width:280,height:280,background:col,opacity:0.02}}/>
+                {[90,150,220,300].map(r=><div key={r} className="orbit-ring" style={{left:c.x,top:c.y,width:r*2,height:r*2,borderColor:r<160?'rgba(255,255,255,0.04)':'rgba(255,255,255,0.018)'}}/>)}
+                <div className="galaxy-sun" style={{left:c.x,top:c.y}}>
+                  <div className="galaxy-sun-flare" style={{width:200,height:200,background:'radial-gradient(circle,'+col+' 0%,transparent 70%)',opacity:0.1,left:'50%',top:'50%',transform:'translate(-50%,-50%)',position:'absolute'}}/>
+                  <div className="galaxy-sun-corona" style={{width:130,height:130,background:'radial-gradient(circle,'+col+' 0%,transparent 65%)',opacity:0.35}}/>
+                  <div className="galaxy-sun-core" style={{width:56,height:56,background:'radial-gradient(circle at 35% 35%,rgba(255,255,255,0.2),'+col+')',border:'2px solid rgba(255,255,255,0.1)',boxShadow:'0 0 30px '+col+',0 0 60px '+col}}>
+                    <span className="galaxy-sun-letter" style={{fontSize:16,color:'rgba(255,255,255,0.9)'}}>{p.letter}</span>
+                  </div>
+                </div>
+                <div className="cluster-label" style={{left:c.x,top:c.y,fontSize:80,color:'rgba(255,255,255,0.03)'}}>{p.label}</div>
+              </React.Fragment>;})}
+              {orbData.map(o=>{var p=PLATFORMS[o.game.platform];var dimmed=isDimmed(o.game);var anim=settings.showAnimations!==false;return(
+                <div key={o.game.id} className="orb" style={{left:o.x,top:o.y,'--drift-x':anim?o.driftX+'px':'0px','--drift-y':anim?o.driftY+'px':'0px','--drift-dur':o.driftDur+'s','--drift-delay':o.driftDelay+'s',animationPlayState:anim?'running':'paused'}}>
+                  <div className={'orb-body'+(entered?' entered':'')+(dimmed?' dimmed':'')} style={{'--orb-size':o.size+'px','--orb-color':p?.color||'#555','--enter-delay':(!ready?o.enterDelay+'s':'0s')}} onClick={()=>{if(!dragInfo.current.moved)setFocusGame(o.game);}}>
+                    <div className="orb-visual">
+                      {o.game.coverUrl?<img src={o.game.coverUrl} alt="" onError={e=>{e.target.style.display='none';e.target.nextSibling.style.display='flex';}}/>:null}
+                      <div className="orb-fallback" style={o.game.coverUrl?{display:'none'}:{}}><span style={{fontSize:o.size*0.38+'px'}}>{o.game.name.charAt(0)}</span></div>
+                    </div>
+                    {o.game.favorite&&<div className="orb-fav"><svg viewBox="0 0 24 24" fill="currentColor" width="8" height="8"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></div>}
+                    <div className="orb-name">{o.game.name}{o.game.playtimeMinutes?' · '+fmtTime(o.game.playtimeMinutes):''}</div>
+                  </div>
+                </div>
+              );})}
+            </div>
+          </div>}
+          {viewMode==='cards'&&<div className="card-grid-wrap">
+            {groupedByPlatform.map(({platform:plat,games:gms})=>{var p=PLATFORMS[plat];return(
+              <div key={plat} className="card-platform-section">
+                <div className="card-platform-header"><div className="card-platform-dot" style={{background:p.color}}/><span className="card-platform-name">{p.label}</span><span className="card-platform-count">{gms.length}</span></div>
+                <div className="card-grid">
+                  {gms.map((g,gi)=>{var dim=isDimmed(g);return(
+                    <div key={g.id} className={'game-card'+(dim?' dimmed':'')} style={{animationDelay:gi*0.04+'s'}} onClick={()=>setFocusGame(g)}>
+                      <div className="card-cover">
+                        {g.coverUrl?<img src={g.coverUrl} alt="" onError={e=>{e.target.style.display='none';e.target.nextSibling.style.display='flex';}}/>:null}
+                        <div className="card-cover-fallback" style={g.coverUrl?{display:'none'}:{}}>{g.name.charAt(0)}</div>
+                        <div className="card-plat-badge" style={{background:'rgba(0,0,0,0.55)',color:p.color}}>{p.letter}</div>
+                        {g.favorite&&<div className="card-fav"><svg viewBox="0 0 24 24" fill="currentColor" width="10" height="10"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></div>}
+                        <div className="card-hover-actions">
+                          <button className="card-hover-btn play" onClick={e=>{e.stopPropagation();doLaunch(g);}}>Play</button>
+                          <button className="card-hover-btn ghost" onClick={e=>{e.stopPropagation();doFav(g.id);}}>{g.favorite?'Unfav':'Fav'}</button>
+                        </div>
+                      </div>
+                      <div className="card-info"><div className="card-name">{g.name}</div><div className="card-meta">{fmtTime(g.playtimeMinutes)}</div></div>
+                    </div>
+                  );})}
+                </div>
+              </div>
+            );})}
+            {filteredGames.length===0&&<div style={{textAlign:'center',padding:'60px 0',color:'var(--text-4)',fontSize:'13px'}}>No games match this filter.</div>}
+          </div>}
+          <div className="drag-bar"/>
+          <div className="win-ctrls"><button onClick={()=>window.api?.minimize()}>{I.min}</button><button onClick={()=>window.api?.maximize()}>{I.max}</button><button onClick={()=>window.api?.close()}>{I.close}</button></div>
+          <div className="nav-pill">
+            <div className="nav-brand">Cereal</div><div className="nav-sep"/>
+            <button className={'chip'+(tab==='all'?' active':'')} onClick={()=>{setTab('all');if(viewMode==='orbit')fitAll();}}>All</button>
+            <button className={'chip'+(tab==='favorites'?' active':'')} onClick={()=>setTab('favorites')}>Fav</button>
+            <button className={'chip'+(tab==='recent'?' active':'')} onClick={()=>setTab('recent')}>Recent</button>
+            {activePlatforms.map(p=>(<button key={p} className={'chip'+(tab===p?' active':'')} onClick={()=>{var nt=tab===p?'all':p;setTab(nt);if(viewMode==='orbit'){if(nt==='all')fitAll();else{var c=CLUSTER_CENTERS[p];if(c)flyTo(c.x,c.y,1.6);}}}}><span style={{width:5,height:5,borderRadius:'50%',background:PLATFORMS[p].color,display:'inline-block',marginRight:5,verticalAlign:'middle'}}/>{PLATFORMS[p].label}</button>))}
+            <div className="nav-sep"/>
+            <div className="view-toggle">
+              <button className={viewMode==='orbit'?'active':''} onClick={()=>setViewMode('orbit')} title="Orbit view">{I.orbit}</button>
+              <button className={viewMode==='cards'?'active':''} onClick={()=>setViewMode('cards')} title="Card view">{I.grid}</button>
+            </div>
+            <div className="nav-sep"/><div className="nav-actions">
+              <button className="nav-btn" title="Search (Ctrl+K)" onClick={()=>setShowSearch(true)}>{I.search}</button>
+              <button className="nav-btn" title="Add game" onClick={()=>{setEditGame(null);setShowAdd(true);}}>{I.plus}</button>
+              <button className="nav-btn" title="Settings (Ctrl+,)" onClick={()=>setShowSettings(true)}>{I.gear}</button>
+            </div>
+          </div>
+          {games.length===0&&viewMode==='orbit'&&<div style={{position:'fixed',inset:0,zIndex:2,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',pointerEvents:'none'}}><div style={{width:36,height:36,border:'2px solid rgba(255,255,255,0.05)',borderTopColor:'var(--accent)',borderRadius:'50%',animation:'spin 0.8s linear infinite',marginBottom:16}}/><div style={{fontSize:11,color:'var(--text-4)',letterSpacing:1}}>Loading galaxy...</div></div>}
+          {games.length===0&&<div className="empty-state"><div className="empty-icon">:/</div><div className="empty-title">No games yet</div><div className="empty-text">Add games manually or detect from installed platforms.</div><div style={{display:'flex',gap:'8px'}}><button className="btn-play" onClick={()=>{setEditGame(null);setShowAdd(true);}}>Add Game</button><button className="btn-ghost" onClick={()=>setShowDetect(true)}>Detect</button></div></div>}
+          <FocusView game={liveFocus} onClose={()=>setFocusGame(null)} onLaunch={doLaunch} onFav={doFav} onEdit={doEditFromFocus} onDelete={doDelete} onRefreshGame={g=>{setGames(prev=>prev.map(x=>x.id===g.id?g:x));setFocusGame(g);flash('Metadata updated');}} />
+          {Object.entries(chiakiSessions).filter(([,s])=>s.state==='gui').map(([gid,sess])=>{var g=games.find(x=>x.id===gid);if(!g)return null;return(<div key={gid} className="stream-float" onClick={()=>setShowChiaki(true)}><div className="stream-float-dot connecting"/><div className="stream-float-info"><div className="stream-float-name">{g.name}</div><div className="stream-float-meta">chiaki-ng GUI open</div></div><button className="stream-float-stop" onClick={async e=>{e.stopPropagation();if(window.api)await window.api.chiakiStopStream(gid);setChiakiSessions(p=>{var n={...p};delete n[gid];return n;});flash('Stream stopped');}}>Stop</button></div>);})}
+          <StreamOverlay sessions={chiakiSessions} games={games} onStop={async gid=>{if(window.api)await window.api.chiakiStopStream(gid);setChiakiSessions(p=>{var n={...p};delete n[gid];return n;});flash('Stream stopped');}} />
+          <SearchOverlay show={showSearch} onClose={()=>setShowSearch(false)} games={games} onSelect={g=>setFocusGame(g)}/>
+          <AddPanel show={showAdd} onClose={()=>{setShowAdd(false);setEditGame(null);}} onSave={editGame?doEdit:doAdd} categories={cats} editGame={editGame} flash={flash}/>
+          <DetectPanel show={showDetect} onClose={()=>setShowDetect(false)} onImport={doImport}/>
+          <PlatformsPanel show={showPlatforms} onClose={()=>setShowPlatforms(false)} flash={flash} setGames={setGames} onOpenChiaki={()=>setShowChiaki(true)} onOpenXcloud={()=>setShowXcloud(true)}/>
+          <ChiakiPanel show={showChiaki} onClose={()=>setShowChiaki(false)} flash={flash} games={games} setGames={setGames} chiakiSessions={chiakiSessions}/>
+          <XcloudPanel show={showXcloud} onClose={()=>setShowXcloud(false)} flash={flash} games={games} setGames={setGames}/>
+          <SettingsPanel show={showSettings} onClose={()=>setShowSettings(false)} flash={flash} settings={settings} onSettingsChange={onSettingsChange} setGames={setGames} setCats={setCats} onOpenPlatforms={()=>{setShowSettings(false);setTimeout(()=>setShowPlatforms(true),150);}} onOpenDetect={()=>{setShowSettings(false);setTimeout(()=>setShowDetect(true),150);}} onSync={doSync} onFetchMetadata={doFetchAllMetadata}/>
+          {toast&&<Toast msg={toast} onDone={()=>setToast('')}/>}
+          {viewMode==='orbit'&&<div className="zoom-hud">
+            <button className="zoom-btn" onClick={fitAll} title="Fit all"><span style={{display:'flex',width:14,height:14}}>{I.fit}</span></button>
+            <button className="zoom-btn" onClick={zoomOut} title="Zoom out"><span style={{display:'flex',width:14,height:14}}>{I.zOut}</span></button>
+            <div className="zoom-pct">{Math.round(cam.zoom*100)}%</div>
+            <button className="zoom-btn" onClick={zoomIn} title="Zoom in"><span style={{display:'flex',width:14,height:14}}>{I.zIn}</span></button>
+          </div>}
+        </div>
+      );
+    }
+    ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+  </script>
+</body>
+</html>

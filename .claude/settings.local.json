@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rustc:*)",
+      "Bash(cargo:*)",
+      "Bash(rustup target list:*)",
+      "Bash(cmd /c \"rustc --version && cargo --version && rustup target list --installed\")",
+      "Bash(powershell -Command:*)",
+      "Bash(node -e:*)",
+      "Bash(npm run dev:*)",
+      "Bash(node --check:*)",
+      "Bash(node_modules/.bin/electron.cmd -e \"const e=require\\(''electron''\\);console.log\\(Object.keys\\(e\\).join\\('',''\\)\\)\")",
+      "Bash(node_modules/.bin/electron.cmd:*)",
+      "Bash(Get-Content:*)",
+      "Bash(\"e:/CODE/cereal-launcher/node_modules/electron/dist/electron.exe\" --version)",
+      "Bash(\"e:/CODE/cereal-launcher/node_modules/electron/dist/electron.exe\" -e \"console.log\\(JSON.stringify\\(process.versions\\)\\)\")",
+      "Bash(\"e:/CODE/cereal-launcher/node_modules/electron/dist/electron.exe\" -e \"const e=require\\(''electron''\\);console.log\\(''app:'',typeof e.app,''keys:'',Object.keys\\(e\\).slice\\(0,10\\).join\\('',''\\)\\)\")",
+      "Bash(cmd /c:*)",
+      "Bash(npm install:*)",
+      "Bash(node_modules/electron/dist/electron.exe:*)"
+    ]
+  }
+}

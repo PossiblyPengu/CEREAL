@@ -1,0 +1,18 @@
+node_modules/
+dist/
+chiaki-dist/
+
+# Bundled chiaki-ng (built from source, not committed)
+resources/chiaki-ng/
+
+# Submodule build artifacts
+vendor/chiaki-ng/build/
+
+# Electron
+*.asar
+
+# OS
+.DS_Store
+Thumbs.db
+
+.fake

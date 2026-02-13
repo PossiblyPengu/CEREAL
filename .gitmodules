@@ -1,0 +1,4 @@
+[submodule "vendor/chiaki-ng"]
+	path = vendor/chiaki-ng
+	url = https://github.com/streetpea/chiaki-ng.git
+	branch = main

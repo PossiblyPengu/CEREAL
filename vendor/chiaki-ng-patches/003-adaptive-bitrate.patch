@@ -1,0 +1,198 @@
+--- a/lib/src/streamconnection.c
++++ b/lib/src/streamconnection.c
+@@ Description:
+@@ ADAPTIVE BITRATE CONTROL
+@@
+@@ Problem:
+@@   chiaki-ng uses a static, user-configured bitrate. If the network degrades
+@@   (WiFi interference, congestion), users get stuttering, green frames, and
+@@   packet loss artifacts (issues #575, #395, #516, #83). The only fix is
+@@   manually lowering bitrate in settings and reconnecting.
+@@
+@@   The congestion_control module exists but only does basic packet-loss-based
+@@   throttling — it doesn't adjust the requested bitrate dynamically.
+@@
+@@ Solution:
+@@   Add a feedback loop that monitors measured_bitrate and packet_stats to
+@@   dynamically request a lower bitrate from the console when conditions
+@@   degrade, and ramp back up when they improve.
+@@
+@@   The PS Remote Play protocol supports changing bitrate mid-stream via
+@@   the ctrl channel's "change quality" message. We use this to:
+@@
+@@   1. Every 2 seconds, sample packet_loss and measured vs target bitrate
+@@   2. If packet_loss > 2% for 3 consecutive samples → reduce bitrate by 20%
+@@   3. If packet_loss < 0.5% for 10 consecutive samples → increase bitrate by 10%
+@@   4. Never go below 5 Mbps or above the user's configured max
+@@   5. Log all adjustments for debugging
+@@
+@@ Files to modify:
+@@   lib/include/chiaki/streamconnection.h
+@@   lib/src/streamconnection.c
+@@   lib/include/chiaki/session.h  (add enable_adaptive_bitrate flag)
+@@
+
+@@ --- lib/include/chiaki/streamconnection.h ---
+@@ Add to ChiakiStreamConnection struct:
+
+    // Adaptive bitrate state
+    bool adaptive_bitrate_enabled;
+    uint32_t target_bitrate;          // Current target (may differ from user-set)
+    uint32_t user_max_bitrate;        // User's configured bitrate (ceiling)
+    uint32_t min_bitrate;             // Floor (default 5000 kbps)
+    int high_loss_samples;            // Consecutive high-loss measurement windows
+    int low_loss_samples;             // Consecutive low-loss measurement windows
+    double last_packet_loss;
+    ChiakiThread adaptive_bitrate_thread;
+    bool adaptive_bitrate_should_stop;
+
+@@ --- lib/src/streamconnection.c ---
+@@ In chiaki_stream_connection_init:
+
+    stream_connection->adaptive_bitrate_enabled =
+        session->connect_info.enable_adaptive_bitrate;
+    stream_connection->user_max_bitrate =
+        session->connect_info.video_profile.bitrate;
+    stream_connection->target_bitrate =
+        stream_connection->user_max_bitrate;
+    stream_connection->min_bitrate = 5000; // 5 Mbps floor
+    stream_connection->high_loss_samples = 0;
+    stream_connection->low_loss_samples = 0;
+    stream_connection->last_packet_loss = 0.0;
+    stream_connection->adaptive_bitrate_should_stop = false;
+
+@@ New function — the adaptive bitrate monitor loop:
+
+#define ADAPTIVE_SAMPLE_INTERVAL_MS  2000
+#define HIGH_LOSS_THRESHOLD          0.02   // 2% packet loss
+#define LOW_LOSS_THRESHOLD           0.005  // 0.5% packet loss
+#define HIGH_LOSS_TRIGGER_COUNT      3      // 3 consecutive bad samples = reduce
+#define LOW_LOSS_TRIGGER_COUNT       10     // 10 consecutive good samples = increase
+#define BITRATE_DECREASE_FACTOR      0.80   // Reduce by 20%
+#define BITRATE_INCREASE_FACTOR      1.10   // Increase by 10%
+
+static void *adaptive_bitrate_thread_func(void *arg)
+{
+    ChiakiStreamConnection *sc = (ChiakiStreamConnection *)arg;
+
+    while (!sc->adaptive_bitrate_should_stop)
+    {
+        chiaki_thread_sleep_ms(ADAPTIVE_SAMPLE_INTERVAL_MS);
+
+        if (sc->adaptive_bitrate_should_stop)
+            break;
+
+        // Read current packet loss from congestion control stats
+        double packet_loss = 0.0;
+        chiaki_mutex_lock(&sc->packet_stats.mutex);
+        if (sc->packet_stats.total_expected > 0)
+        {
+            packet_loss = (double)sc->packet_stats.total_lost /
+                          (double)sc->packet_stats.total_expected;
+        }
+        chiaki_mutex_unlock(&sc->packet_stats.mutex);
+
+        sc->last_packet_loss = packet_loss;
+
+        if (packet_loss > HIGH_LOSS_THRESHOLD)
+        {
+            sc->high_loss_samples++;
+            sc->low_loss_samples = 0;
+
+            if (sc->high_loss_samples >= HIGH_LOSS_TRIGGER_COUNT)
+            {
+                uint32_t new_bitrate = (uint32_t)(sc->target_bitrate *
+                                                   BITRATE_DECREASE_FACTOR);
+                if (new_bitrate < sc->min_bitrate)
+                    new_bitrate = sc->min_bitrate;
+
+                if (new_bitrate != sc->target_bitrate)
+                {
+                    CHIAKI_LOGW(sc->log,
+                        "Adaptive bitrate: reducing %u → %u kbps "
+                        "(packet loss %.1f%% for %d samples)",
+                        sc->target_bitrate, new_bitrate,
+                        packet_loss * 100.0, sc->high_loss_samples);
+
+                    sc->target_bitrate = new_bitrate;
+
+                    // Send bitrate change request to console via ctrl
+                    // The ctrl channel supports a "change quality" command
+                    // that adjusts the encoder bitrate mid-stream
+                    chiaki_session_send_change_bitrate(
+                        sc->session, new_bitrate);
+                }
+
+                sc->high_loss_samples = 0; // Reset after action
+            }
+        }
+        else if (packet_loss < LOW_LOSS_THRESHOLD)
+        {
+            sc->low_loss_samples++;
+            sc->high_loss_samples = 0;
+
+            if (sc->low_loss_samples >= LOW_LOSS_TRIGGER_COUNT &&
+                sc->target_bitrate < sc->user_max_bitrate)
+            {
+                uint32_t new_bitrate = (uint32_t)(sc->target_bitrate *
+                                                   BITRATE_INCREASE_FACTOR);
+                if (new_bitrate > sc->user_max_bitrate)
+                    new_bitrate = sc->user_max_bitrate;
+
+                if (new_bitrate != sc->target_bitrate)
+                {
+                    CHIAKI_LOGI(sc->log,
+                        "Adaptive bitrate: increasing %u → %u kbps "
+                        "(packet loss %.2f%% for %d samples)",
+                        sc->target_bitrate, new_bitrate,
+                        packet_loss * 100.0, sc->low_loss_samples);
+
+                    sc->target_bitrate = new_bitrate;
+                    chiaki_session_send_change_bitrate(
+                        sc->session, new_bitrate);
+                }
+
+                sc->low_loss_samples = 0; // Reset after action
+            }
+        }
+        else
+        {
+            // In the "okay but not great" zone — slowly decay counters
+            if (sc->high_loss_samples > 0) sc->high_loss_samples--;
+            sc->low_loss_samples = 0;
+        }
+    }
+
+    return NULL;
+}
+
+@@ In chiaki_stream_connection_run, after congestion_control_start:
+
+    if (stream_connection->adaptive_bitrate_enabled)
+    {
+        err = chiaki_thread_create(&stream_connection->adaptive_bitrate_thread,
+                                    adaptive_bitrate_thread_func,
+                                    stream_connection);
+        if (err != CHIAKI_ERR_SUCCESS)
+            CHIAKI_LOGW(stream_connection->log,
+                "Failed to start adaptive bitrate thread, continuing with static bitrate");
+    }
+
+@@ In stream connection cleanup (before takion close):
+
+    if (stream_connection->adaptive_bitrate_enabled)
+    {
+        stream_connection->adaptive_bitrate_should_stop = true;
+        chiaki_thread_join(&stream_connection->adaptive_bitrate_thread, NULL);
+    }
+
+@@ --- lib/include/chiaki/session.h ---
+@@ Add to ChiakiConnectInfo:
+
+    bool enable_adaptive_bitrate;  // Default: true
+
+@@ --- gui/src/streamsession.cpp ---
+@@ In StreamSession constructor, when building connect_info:
+
+    connect_info.enable_adaptive_bitrate =
+        settings->GetAdaptiveBitrateEnabled(); // New setting, default true

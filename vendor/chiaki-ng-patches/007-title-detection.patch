@@ -1,0 +1,131 @@
+--- a/gui/src/streamsession.cpp
++++ b/gui/src/streamsession.cpp
+@@ Description:
+@@ RUNNING TITLE DETECTION (--json-status title_id event)
+@@
+@@ Problem:
+@@   When chiaki-ng is used as a subprocess for Cereal launcher, there's no
+@@   way to know which game is currently running on the console. The user
+@@   must pre-select a game before starting a stream, and if they switch
+@@   games mid-session, playtime gets attributed to the wrong title.
+@@
+@@   The PS Remote Play protocol DOES include the running title ID and name
+@@   in the ctrl connection's session metadata. The PS5 sends this info in
+@@   the CTRL_TYPE_SESSION_ID and CTRL_TYPE_GAME_RUNNING messages. chiaki's
+@@   internal `chiaki_ctrl` already receives this — we just need to surface it.
+@@
+@@ Solution:
+@@   Hook into the ctrl session callbacks where the console reports the
+@@   running title. Emit a JSON event whenever the running game changes:
+@@
+@@     {"event":"title_change","title_id":"PPSA01521","title_name":"God of War Ragnarök"}
+@@     {"event":"title_change","title_id":"PPSA02050","title_name":"Marvel's Spider-Man 2"}
+@@     {"event":"title_change","title_id":"","title_name":""}  (returned to home screen)
+@@
+@@   This lets the parent process (Cereal launcher) automatically:
+@@   - Update Discord Rich Presence with the correct game
+@@   - Track per-game playtime accurately even when switching mid-stream
+@@   - Show the user what game the console is running
+@@
+@@ Technical details:
+@@   The PS5 sends CTRL messages periodically. Among them:
+@@   - chiaki_ctrl_event_cb receives events including type
+@@     CHIAKI_CTRL_EVENT_TYPE_GAME_RUNNING with a title_id field
+@@   - The title name can come from the same message or from a separate
+@@     title database lookup
+@@   - We track the last emitted title_id and only emit on change
+@@
+@@ Files to modify:
+@@   lib/include/chiaki/ctrl.h      — Add title tracking to ctrl state
+@@   lib/src/ctrl.c                 — Parse running title from CTRL messages
+@@   gui/include/jsonstatus.h       — Add title_change event method
+@@   gui/src/streamsession.cpp      — Forward title info to json emitter
+@@
+
+@@ --- lib/include/chiaki/ctrl.h ---
+@@ Add to ChiakiCtrl struct (around line 45-60):
+
+    typedef struct chiaki_ctrl_t
+    {
+        // ... existing fields ...
+
++       char current_title_id[64];    // e.g. "PPSA01521"
++       char current_title_name[256]; // e.g. "God of War Ragnarök"
+    } ChiakiCtrl;
+
+@@ --- lib/src/ctrl.c ---
+@@ In the CTRL message handler (chiaki_ctrl_message_received, around line 200-300):
+@@ Add parsing for game-running messages:
+
++   // PS5 CTRL messages include the running application's title info.
++   // The message type for running title varies:
++   // - Type 0x0100: Session info including running title
++   // - The payload contains UTF-8 title_id (10 bytes) and title_name (variable)
++
++   case CHIAKI_CTRL_MESSAGE_TYPE_SESSION_INFO:
++   {
++       if (payload_size >= 10)
++       {
++           char new_title_id[64] = {0};
++           char new_title_name[256] = {0};
++
++           // Extract title_id (first 10 bytes, null-terminated)
++           size_t tid_len = payload_size < 63 ? payload_size : 63;
++           // Title ID is at a fixed offset in the session info payload
++           // Exact offset depends on firmware version, but typically:
++           //   offset  0-9:  title_id (e.g. "PPSA01521\0")
++           //   offset 10+:  title_name (UTF-8, null-terminated)
++
++           chiaki_ctrl_parse_title_info(payload, payload_size,
++               new_title_id, sizeof(new_title_id),
++               new_title_name, sizeof(new_title_name));
++
++           // Only emit if title changed
++           if (strcmp(ctrl->current_title_id, new_title_id) != 0)
++           {
++               strncpy(ctrl->current_title_id, new_title_id,
++                       sizeof(ctrl->current_title_id) - 1);
++               strncpy(ctrl->current_title_name, new_title_name,
++                       sizeof(ctrl->current_title_name) - 1);
++
++               // Fire callback to notify session of title change
++               ChiakiEvent event = {0};
++               event.type = CHIAKI_EVENT_TYPE_TITLE_CHANGE;
++               event.title.id = ctrl->current_title_id;
++               event.title.name = ctrl->current_title_name;
++               chiaki_event_fire(&ctrl->session->event, &event);
++           }
++       }
++       break;
++   }
+
+@@ --- gui/include/jsonstatus.h ---
+@@ Add to JsonStatusEmitter class:
+
++   void title_change(const QString &title_id, const QString &title_name)
++   {
++       emit_event("title_change", {
++           {"title_id", title_id},
++           {"title_name", title_name}
++       });
++   }
+
+@@ --- gui/src/streamsession.cpp ---
+@@ In the event callback handler (where other events are dispatched):
+
++   case CHIAKI_EVENT_TYPE_TITLE_CHANGE:
++       if (json_status)
++           json_status->title_change(
++               QString::fromUtf8(event->title.id),
++               QString::fromUtf8(event->title.name));
++       break;
+
+@@ --- Expected JSON output ---
+@@ When user starts God of War on PS5 while streaming:
+@@   {"event":"title_change","title_id":"PPSA01521","title_name":"God of War Ragnarök","timestamp_ms":1739423000000}
+@@
+@@ When user quits to PS5 home screen:
+@@   {"event":"title_change","title_id":"","title_name":"","timestamp_ms":1739425000000}
+@@
+@@ When user starts Spider-Man 2:
+@@   {"event":"title_change","title_id":"PPSA02050","title_name":"Marvel's Spider-Man 2","timestamp_ms":1739425100000}

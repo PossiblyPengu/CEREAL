@@ -1,0 +1,185 @@
+--- a/gui/src/main.cpp
++++ b/gui/src/main.cpp
+@@ Description:
+@@ JSON STATUS OUTPUT (--json-status flag)
+@@
+@@ Problem:
+@@   When chiaki-ng is launched as a subprocess from Cereal (Electron), there's no
+@@   structured way to get session status, stream quality metrics, or error info.
+@@   The launcher has to parse log lines or just guess.
+@@
+@@ Solution:
+@@   Add a --json-status CLI flag that emits structured JSON events to stdout:
+@@     {"event":"connecting","host":"192.168.1.100","console":"PS5"}
+@@     {"event":"streaming","resolution":"1920x1080","codec":"h265","fps":60}
+@@     {"event":"quality","bitrate_mbps":42.5,"packet_loss":0.001,"fps_actual":59.8}
+@@     {"event":"reconnecting","attempt":1,"max":5,"delay_ms":1000}
+@@     {"event":"disconnected","reason":"server_shutdown","was_error":false}
+@@     {"event":"quit","reason":"stopped","error":false}
+@@
+@@   This is trivial to consume from Node.js via child_process stdout pipe.
+@@
+@@ Files to modify:
+@@   gui/src/main.cpp           — Parse --json-status flag
+@@   gui/include/streamsession.h — Add json status emitter
+@@   gui/src/streamsession.cpp   — Emit events at key lifecycle points
+@@
+
+@@ --- gui/src/main.cpp ---
+@@ In the argument parsing section (around line 101-166):
+
+    bool json_status = false;
+    // ... existing arg parsing ...
+    for (int i = 1; i < argc; i++)
+    {
+        // ... existing args ...
+        if (strcmp(argv[i], "--json-status") == 0)
+        {
+            json_status = true;
+            continue;
+        }
+    }
+
+@@ Pass json_status to StreamSession construction via the connect info or
+@@ a separate flag on QmlBackend.
+
+@@ --- New file: gui/include/jsonstatus.h ---
+
+#ifndef CHIAKI_JSON_STATUS_H
+#define CHIAKI_JSON_STATUS_H
+
+#include <QObject>
+#include <QJsonObject>
+#include <QJsonDocument>
+#include <QTextStream>
+#include <QMutex>
+#include <cstdio>
+
+/**
+ * JsonStatusEmitter — writes structured JSON events to stdout.
+ * Thread-safe. Each event is one line of compact JSON.
+ *
+ * Used when chiaki-ng is launched with --json-status, enabling
+ * parent processes (like Cereal launcher) to get machine-readable
+ * session status without parsing log output.
+ */
+class JsonStatusEmitter : public QObject
+{
+    Q_OBJECT
+
+public:
+    explicit JsonStatusEmitter(bool enabled, QObject *parent = nullptr)
+        : QObject(parent), m_enabled(enabled) {}
+
+    void emit_event(const QString &event, const QJsonObject &data = {})
+    {
+        if (!m_enabled) return;
+
+        QJsonObject obj = data;
+        obj["event"] = event;
+        obj["timestamp_ms"] = static_cast<qint64>(
+            QDateTime::currentMSecsSinceEpoch());
+
+        QJsonDocument doc(obj);
+        QByteArray json = doc.toJson(QJsonDocument::Compact);
+
+        QMutexLocker lock(&m_mutex);
+        fwrite(json.constData(), 1, json.size(), stdout);
+        fputc('\n', stdout);
+        fflush(stdout);
+    }
+
+    // Convenience methods for common events
+
+    void connecting(const QString &host, const QString &console_type)
+    {
+        emit_event("connecting", {
+            {"host", host},
+            {"console", console_type}
+        });
+    }
+
+    void streaming(int width, int height, const QString &codec, int fps)
+    {
+        emit_event("streaming", {
+            {"resolution", QString("%1x%2").arg(width).arg(height)},
+            {"codec", codec},
+            {"fps", fps}
+        });
+    }
+
+    void quality(double bitrate_mbps, double packet_loss, double fps_actual)
+    {
+        emit_event("quality", {
+            {"bitrate_mbps", bitrate_mbps},
+            {"packet_loss", packet_loss},
+            {"fps_actual", fps_actual}
+        });
+    }
+
+    void reconnecting(int attempt, int max_attempts, int delay_ms)
+    {
+        emit_event("reconnecting", {
+            {"attempt", attempt},
+            {"max", max_attempts},
+            {"delay_ms", delay_ms}
+        });
+    }
+
+    void disconnected(const QString &reason, bool was_error)
+    {
+        emit_event("disconnected", {
+            {"reason", reason},
+            {"was_error", was_error}
+        });
+    }
+
+    void quit(const QString &reason, bool was_error)
+    {
+        emit_event("quit", {
+            {"reason", reason},
+            {"error", was_error}
+        });
+    }
+
+    void console_discovered(const QString &name, const QString &host,
+                            const QString &type, const QString &state)
+    {
+        emit_event("console_discovered", {
+            {"name", name},
+            {"host", host},
+            {"type", type},
+            {"state", state}
+        });
+    }
+
+    bool isEnabled() const { return m_enabled; }
+
+private:
+    bool m_enabled;
+    QMutex m_mutex;
+};
+
+#endif // CHIAKI_JSON_STATUS_H
+
+@@ --- gui/src/streamsession.cpp ---
+@@ Hook into existing lifecycle points:
+
+@@ In session start (after chiaki_session_start succeeds):
+    if (json_status)
+        json_status->connecting(connect_info.host, "PS5");
+
+@@ In streaminfo handler (where resolution/codec is logged):
+    if (json_status)
+        json_status->streaming(width, height, codec_name, fps);
+
+@@ In the measured_bitrate logging (streamconnection.c already calculates this,
+@@ expose it via the event callback):
+    if (json_status)
+        json_status->quality(measured_bitrate, packet_loss, actual_fps);
+
+@@ In quit handler:
+    if (json_status)
+        json_status->quit(
+            chiaki_quit_reason_string(reason),
+            chiaki_quit_reason_is_error(reason));

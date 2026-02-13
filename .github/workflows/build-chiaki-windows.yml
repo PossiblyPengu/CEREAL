@@ -1,0 +1,59 @@
+name: Build chiaki-ng (Windows)
+
+on:
+  push:
+    paths:
+      - 'vendor/chiaki-ng/**'
+      - 'vendor/**'
+      - 'scripts/**'
+  workflow_dispatch: {}
+
+jobs:
+  build-chiaki:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Ensure vcpkg
+        run: |
+          if (-not (Test-Path vendor\vcpkg)) { git clone https://github.com/microsoft/vcpkg.git vendor\vcpkg }
+          Push-Location vendor\vcpkg
+          .\bootstrap-vcpkg.bat
+          Pop-Location
+        shell: powershell
+
+      - name: Install vcpkg packages
+        run: |
+          $env:VCPKG_ROOT = "$PWD\vendor\vcpkg"
+          $v = "$env:VCPKG_ROOT\\vcpkg.exe"
+          & $v install qt6-base:x64-windows ffmpeg:x64-windows openssl:x64-windows sdl2:x64-windows opus:x64-windows
+        shell: powershell
+
+      - name: Configure CMake
+        run: |
+          cmake -S vendor/chiaki-ng -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=vendor/vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows
+        shell: bash
+
+      - name: Build
+        run: |
+          cmake --build build --config Release --parallel
+        shell: bash
+
+      - name: Install to staging
+        run: |
+          cmake --install build --config Release --prefix install
+        shell: bash
+
+      - name: Archive chiaki build
+        run: |
+          tar -czf chiaki-windows.tar.gz -C install .
+        shell: bash
+
+      - name: Upload chiaki artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: chiaki-windows
+          path: chiaki-windows.tar.gz
