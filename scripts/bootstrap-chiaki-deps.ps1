@@ -50,12 +50,35 @@ try {
         }
     }
 
+    Write-Host "vcpkg repository info:" -ForegroundColor Cyan
+    git --no-pager log -n 1 --pretty=oneline
+    Write-Host "Listing ports (first 50) in $VcpkgDir/ports:" -ForegroundColor Cyan
+    Get-ChildItem -Path (Join-Path $VcpkgDir 'ports') -Directory -ErrorAction SilentlyContinue | Select-Object -First 50 | ForEach-Object { Write-Host "  $_.Name" }
+
     Write-Host "Installing packages for triplet: $Triplet" -ForegroundColor White
-    $packages = @( 'qt6-base', 'ffmpeg', 'openssl', 'sdl2', 'libopus' )
-    foreach ($p in $packages) {
-        $pkgArg = "$($p):$Triplet"
-        Write-Host "  vcpkg install $pkgArg" -ForegroundColor Gray
-        & $vcpkgExe install $pkgArg
+    # Provide candidate names for known ports to handle port name differences across vcpkg commits
+    $packageCandidates = @{
+        'qt6-base' = @('qt6-base','qt6','qtbase')
+        'ffmpeg'   = @('ffmpeg')
+        'openssl'  = @('openssl')
+        'sdl2'     = @('sdl2')
+        'libopus'  = @('libopus','opus')
+    }
+
+    foreach ($key in $packageCandidates.Keys) {
+        $installed = $false
+        foreach ($cand in $packageCandidates[$key]) {
+            $pkgArg = "${cand}:$Triplet"
+            Write-Host "Attempting vcpkg install $pkgArg" -ForegroundColor Gray
+            $rc = & $vcpkgExe install $pkgArg 2>&1 | Tee-Object -Variable out
+            if ($LASTEXITCODE -eq 0) { Write-Host "Installed $pkgArg" -ForegroundColor Green; $installed = $true; break }
+            else { Write-Host "vcpkg install $pkgArg failed (exit $LASTEXITCODE)." -ForegroundColor Yellow }
+        }
+        if (-not $installed) {
+            Write-Host "ERROR: Could not install any candidate for $key. Last output:" -ForegroundColor Red
+            $out | Select-Object -Last 20 | ForEach-Object { Write-Host $_ }
+            exit 1
+        }
     }
 
     Write-Host ''
