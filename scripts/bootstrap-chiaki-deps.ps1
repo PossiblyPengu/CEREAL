@@ -14,6 +14,15 @@ Write-Host '============================================================' -Foreg
 if (-not (Test-Path $VcpkgDir)) {
     Write-Host 'Cloning vcpkg into vendor/vcpkg...' -ForegroundColor White
     git clone https://github.com/microsoft/vcpkg.git $VcpkgDir
+} else {
+    Write-Host 'vcpkg directory exists — attempting to update to latest master...' -ForegroundColor White
+    try {
+        git -C $VcpkgDir fetch origin --depth=1
+        git -C $VcpkgDir checkout master 2>$null | Out-Null
+        git -C $VcpkgDir pull origin master
+    } catch {
+        Write-Host 'Warning: failed to update existing vendor/vcpkg — continuing with existing copy.' -ForegroundColor Yellow
+    }
 }
 
 Push-Location $VcpkgDir
