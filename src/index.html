@@ -58,6 +58,15 @@
 
     .orb-field{position:fixed;inset:0;z-index:1}
     .orb{position:absolute;transform:translate(-50%,-50%);z-index:2;animation:orbDrift var(--drift-dur,20s) ease-in-out infinite alternate;animation-delay:var(--drift-delay,0s);transition:z-index 0s}
+    .modal-overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(7,7,13,0.75);backdrop-filter:blur(6px);z-index:10001}
+    .modal-card{background:var(--card);border-radius:12px;padding:18px;width:780px;max-width:92%;box-shadow:0 10px 50px rgba(0,0,0,0.6);border:1px solid rgba(255,255,255,0.04)}
+    .acct-card{background:linear-gradient(180deg,rgba(255,255,255,0.01),transparent);padding:12px;border-radius:8px;border:1px solid rgba(255,255,255,0.03)}
+    .acct-card.connected{border-color:var(--green);box-shadow:0 8px 28px rgba(52,211,153,0.06)}
+    .acct-avatar{width:36px;height:36px;border-radius:8px;overflow:hidden;flex-shrink:0;background:rgba(255,255,255,0.03);display:flex;align-items:center;justify-content:center}
+    .acct-avatar img{width:100%;height:100%;object-fit:cover;display:block}
+    .acct-connected-badge{display:inline-flex;align-items:center;gap:8px;color:var(--green);font-weight:700}
+    .acct-title{font-weight:600;margin-bottom:6px}
+    .acct-status{font-size:12px;color:var(--text-3)}
     .orb:hover{z-index:100}
     @keyframes orbDrift{
       0%{transform:translate(-50%,-50%)}
@@ -388,6 +397,20 @@
   <script type="text/babel">
     const { useState, useEffect, useMemo, useRef } = React;
 
+    // Global error handlers to surface errors in the UI for debugging
+    function showFatalError(err) {
+      try {
+        console.error('Fatal error:', err);
+        const root = document.getElementById('root');
+        if (root) root.innerHTML = '<div style="padding:24px;color:#e8e4de;background:#07070d;font-family:Segoe UI">' +
+          '<h2 style="color:#d4a853">Application error</h2><pre style="white-space:pre-wrap;color:#b0aaa0">' +
+          (err && err.stack ? err.stack : (err && err.message ? err.message : String(err))) + '</pre></div>';
+      } catch (e) { console.error('showFatalError failed', e); }
+    }
+    window.addEventListener('error', e => { e.preventDefault(); showFatalError(e.error || e.message || e); });
+    window.addEventListener('unhandledrejection', e => { e.preventDefault(); showFatalError(e.reason || e); });
+    console.log('renderer boot');
+
     const THEMES = {
       midnight:  { label: 'Midnight',      accent: '#d4a853', void: '#07070d', surface: '#0d0d16', card: '#101018', cardUp: '#16161f', text: '#e8e4de', text2: '#b0aaa0', text3: '#706b63', text4: '#3d3a35', glass: 'rgba(255,255,255,0.03)', glassBorder: 'rgba(255,255,255,0.06)', glow: 'rgba(255,255,255,0.08)', bodyBg: '#07070d', preview: ['#07070d','#d4a853','#0d0d16','#e8e4de'] },
       obsidian:  { label: 'Obsidian',      accent: '#8b5cf6', void: '#09090b', surface: '#0f0f14', card: '#13131a', cardUp: '#1a1a22', text: '#e4e2ef', text2: '#a8a4b8', text3: '#5f5b72', text4: '#36333f', glass: 'rgba(139,92,246,0.04)', glassBorder: 'rgba(139,92,246,0.08)', glow: 'rgba(139,92,246,0.1)', bodyBg: '#09090b', preview: ['#09090b','#8b5cf6','#0f0f14','#e4e2ef'] },
@@ -446,6 +469,56 @@
     function fmtTime(m) { if (!m) return 'No playtime'; if (m < 60) return m + ' min'; var h = Math.floor(m/60), r = m%60; return r ? h+'h '+r+'m' : h+'h'; }
     function fmtDate(d) { if (!d) return ''; try { return new Date(d).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }); } catch(e) { return ''; } }
 
+    // Prefer local cached images (downloaded by main process) when available.
+    function resolveGameImage(game, field) {
+      if (!game) return '';
+      try {
+        // Prefer explicit local paths set by the cover fetcher
+        if (field === 'coverUrl' && game.localCoverPath) {
+          let p = String(game.localCoverPath || '');
+          if (!p) return '';
+          // Normalize any existing file:// prefix and backslashes to a proper file:/// URI
+          try {
+            if (p.startsWith('file:')) {
+              p = p.replace(/^file:\/+/i, '');
+            }
+            // Remove leading slashes until we hit a Windows drive letter or a UNC path
+            p = p.replace(/^\/+/, '');
+            p = p.replace(/\\/g, '/');
+            // Ensure leading slash for absolute paths is preserved via file:/// prefix
+            const fileUrl = 'file:///' + encodeURI(p);
+            const stamp = game._imgStamp ? (fileUrl.includes('?') ? '&cb=' + game._imgStamp : '?cb=' + game._imgStamp) : '';
+            const out = fileUrl + stamp;
+            try { console.log('[UI] resolveGameImage(local)', game.id, field, '->', out); } catch(e) {}
+            return out;
+          } catch (e) { /* fallthrough */ }
+        }
+        if (field === 'headerUrl' && game.localHeaderPath) {
+          let p = String(game.localHeaderPath || '');
+          if (!p) return '';
+          try {
+            if (p.startsWith('file:')) {
+              p = p.replace(/^file:\/+/i, '');
+            }
+            p = p.replace(/^\/+/, '');
+            p = p.replace(/\\/g, '/');
+            const fileUrl = 'file:///' + encodeURI(p);
+            const stamp = game._imgStamp ? (fileUrl.includes('?') ? '&cb=' + game._imgStamp : '?cb=' + game._imgStamp) : '';
+            const out = fileUrl + stamp;
+            try { console.log('[UI] resolveGameImage(local)', game.id, field, '->', out); } catch(e) {}
+            return out;
+          } catch (e) { /* fallthrough */ }
+        }
+        // Fallback to remote URL and append cache-bust stamp if present
+        const url = game[field] || '';
+        if (!url) return '';
+        const stamp = game._imgStamp ? (url.includes('?') ? '&cb=' + game._imgStamp : '?cb=' + game._imgStamp) : '';
+        const out = url + stamp;
+        try { console.log('[UI] resolveGameImage(remote)', game.id, field, '->', out); } catch(e) {}
+        return out;
+      } catch (e) { return game[field] || ''; }
+    }
+
     const I = {
       search: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>,
       play: <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.14v13.72a1 1 0 001.5.86l11.04-6.86a1 1 0 000-1.72L9.5 4.28A1 1 0 008 5.14z"/></svg>,
@@ -502,7 +575,7 @@
           <div className="search-results" onClick={e => e.stopPropagation()}>
             {hits.map(g => (
               <div key={g.id} className="search-hit" onClick={() => { onSelect(g); onClose(); }}>
-                <div className="search-hit-cover">{g.coverUrl ? <img src={g.coverUrl} alt="" /> : g.name.charAt(0)}</div>
+                <div className="search-hit-cover">{(() => { const src = resolveGameImage(g, 'coverUrl'); return src ? <img key={src} src={src} alt="" /> : g.name.charAt(0); })()}</div>
                 <div><div className="search-hit-name">{g.name}</div><div className="search-hit-meta">{platformLabel(g.platform)} &middot; {fmtTime(g.playtimeMinutes)}</div></div>
               </div>
             ))}
@@ -515,6 +588,7 @@
     function FocusView({ game, onClose, onLaunch, onFav, onEdit, onDelete, onRefreshGame }) {
       if (!game) return null;
       var p = PLATFORMS[game.platform];
+      const bgImg = resolveGameImage(game, 'headerUrl') || resolveGameImage(game, 'coverUrl');
       const [refreshing, setRefreshing] = useState(false);
       const [zoomSrc, setZoomSrc] = useState(null);
       useEffect(() => {
@@ -535,13 +609,13 @@
       var mcColor = !game.metacritic ? null : game.metacritic >= 75 ? '#6dc849' : game.metacritic >= 50 ? '#fdca52' : '#fc4b37';
       return (
         <div className="focus-overlay" onClick={onClose}>
-          {(game.headerUrl || game.coverUrl) && <div className="focus-bg" style={{backgroundImage:'url('+(game.headerUrl||game.coverUrl)+')'}} />}
+          {bgImg && <div className="focus-bg" style={{backgroundImage:'url('+bgImg+')'}} />}
           <div className="focus-dim" />
           <button className="focus-close" onClick={onClose}>&times;</button>
           <div className="focus-content" onClick={e => e.stopPropagation()}>
             <div className="focus-art">
-              {game.coverUrl ? <img src={game.coverUrl} alt="" onError={e=>{e.target.style.display='none';e.target.nextSibling.style.display='flex';}} /> : null}
-              <div className="focus-art-fallback" style={game.coverUrl?{display:'none'}:{}}>{game.name.charAt(0)}</div>
+              {(() => { const src = resolveGameImage(game, 'coverUrl'); return src ? <img key={src} src={src} alt="" onError={e=>{e.target.style.display='none';e.target.nextSibling.style.display='flex';}} /> : null; })()}
+              <div className="focus-art-fallback" style={resolveGameImage(game,'coverUrl')?{display:'none'}:{}}>{game.name.charAt(0)}</div>
             </div>
             <div className="focus-details">
               <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}>
@@ -585,25 +659,29 @@
 
     function ArtPicker({ gameName, platform, field, onPick, onClose }) {
       const [images, setImages] = useState([]);
-      const [loading, setLoading] = useState(true);
+      const [loading, setLoading] = useState(false);
       const [failed, setFailed] = useState(new Set());
+      const [query, setQuery] = useState(gameName || '');
       const filterType = field === 'coverUrl' ? 'cover' : 'header';
-      useEffect(() => {
-        if (!gameName) { setLoading(false); return; }
+      useEffect(() => { setQuery(gameName || ''); }, [gameName]);
+
+      const doSearch = async (q) => {
+        const term = (typeof q === 'string' ? q : query) || '';
+        if (!term) { setImages([]); setLoading(false); return; }
         setLoading(true); setImages([]); setFailed(new Set());
-        (async () => {
-          try {
-            if (window.api?.searchArt) {
-              var r = await window.api.searchArt(gameName, platform);
-              console.log('[ArtPicker] Got results:', r?.images?.length, r?.images?.map(i=>i.url));
-              setImages(r?.images || []);
-            }
-          } catch(e) { console.error('[ArtPicker] searchArt error:', e); }
-          setLoading(false);
-        })();
-      }, [gameName, platform]);
+        try {
+          if (window.api?.searchArt) {
+            const r = await window.api.searchArt(term, platform);
+            console.log('[ArtPicker] Got results:', r?.images?.length, (r?.images||[]).map(i=>i.url));
+            setImages(r?.images || []);
+          }
+        } catch (e) { console.error('[ArtPicker] searchArt error:', e); }
+        setLoading(false);
+      };
+
+      useEffect(() => { if (gameName) doSearch(gameName); }, [gameName, platform]);
       // Show type-matched images first, then others; filter out failed loads
-      var sourcePrio = { SteamGridDB: 0, IGDB: 1, Steam: 2, RAWG: 3, DuckDuckGo: 4, Wikidata: 5, Wikipedia: 5 };
+      var sourcePrio = { SteamGridDB: 0 };
       var sorted = [...images].filter(img => !failed.has(img.url)).sort((a,b) => {
         var aMatch = a.type === filterType ? 0 : a.type === 'screenshot' ? 1 : 2;
         var bMatch = b.type === filterType ? 0 : b.type === 'screenshot' ? 1 : 2;
@@ -613,8 +691,12 @@
       var gridClass = field === 'coverUrl' ? 'covers' : 'headers';
       return (
         <div className="art-picker">
-          <div className="art-picker-head">
-            <span className="art-picker-title">Select from online sources</span>
+          <div className="art-picker-head" style={{display:'flex',alignItems:'center',gap:8}}>
+            <span className="art-picker-title" style={{flex:'0 0 auto'}}>Select from online sources</span>
+            <div style={{flex:1,display:'flex',gap:8,alignItems:'center'}}>
+              <input value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={e=>{ if(e.key==='Enter'){ doSearch(); } }} placeholder={gameName||'Search term'} style={{flex:1,padding:'8px 10px',borderRadius:8,border:'1px solid var(--glass-border)',background:'var(--surface)',color:'var(--text-2'}} />
+              <button className="btn-flat" onClick={()=>doSearch()} style={{whiteSpace:'nowrap'}}>Search</button>
+            </div>
             <button className="art-picker-close" onClick={onClose}>&times;</button>
           </div>
           {loading && <div className="art-picker-loading"><span className="spinner"/>Searching...</div>}
@@ -632,13 +714,12 @@
       );
     }
 
-    function AddPanel({ show, onClose, onSave, categories, editGame, flash }) {
+    function AddPanel({ show, onClose, onSave, categories, editGame, flash, onOpenArtPicker, onUpdated }) {
       const emptyForm = { name:'', platform:'custom', executablePath:'', coverUrl:'', categories:[], platformId:'', description:'', developer:'', publisher:'', releaseDate:'', headerUrl:'', metacritic:'', website:'' };
       const [f, setF] = useState(emptyForm);
       const [showMeta, setShowMeta] = useState(false);
       const [fetching, setFetching] = useState(false);
-      const [artPicker, setArtPicker] = useState(null); // null | 'coverUrl' | 'headerUrl'
-      useEffect(() => { if (editGame) { setF({ ...emptyForm, ...editGame, categories: editGame.categories || [], metacritic: editGame.metacritic != null ? String(editGame.metacritic) : '' }); setShowMeta(!!editGame.description || !!editGame.developer); } else { setF(emptyForm); setShowMeta(false); } setArtPicker(null); }, [editGame, show]);
+      useEffect(() => { if (editGame) { setF({ ...emptyForm, ...editGame, categories: editGame.categories || [], metacritic: editGame.metacritic != null ? String(editGame.metacritic) : '' }); setShowMeta(!!editGame.description || !!editGame.developer); } else { setF(emptyForm); setShowMeta(false); } }, [editGame, show]);
       var toggle = c => setF(p => ({...p, categories: p.categories.includes(c) ? p.categories.filter(x=>x!==c) : [...p.categories, c]}));
       var browse = async () => { if (window.api) { var p = await window.api.pickExecutable(); if (p) setF(x=>({...x,executablePath:p})); } };
       var browseImg = async (field) => { if (window.api) { var p = await window.api.pickImage(); if (p) setF(x=>({...x,[field]:p})); } };
@@ -659,7 +740,13 @@
         if (!f.name.trim()) return;
         var out = { ...f, metacritic: f.metacritic ? Number(f.metacritic) : null };
         if (!out.metacritic && out.metacritic !== 0) delete out.metacritic;
-        onSave(out);
+        // support async onSave and notify parent when complete so UI can refresh immediately
+        (async () => {
+          try {
+            const res = await onSave(out);
+            if (typeof onUpdated === 'function') onUpdated(res || out);
+          } catch (e) { }
+        })();
       };
       var chevron = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="9 18 15 12 9 6"/></svg>;
       return (
@@ -668,7 +755,7 @@
           <div className="field"><label>Platform</label><select value={f.platform} onChange={e=>setF(p=>({...p,platform:e.target.value}))}>{Object.keys(PLATFORMS).map(k=><option key={k} value={k}>{PLATFORMS[k].label}</option>)}</select></div>
           {['steam','epic','gog'].includes(f.platform) && <div className="field"><label>Platform ID</label><input value={f.platformId||''} onChange={e=>setF(p=>({...p,platformId:e.target.value}))} placeholder="App ID" /></div>}
           {f.platform === 'custom' && <div className="field"><label>Executable</label><div style={{display:'flex',gap:'8px'}}><input value={f.executablePath||''} onChange={e=>setF(p=>({...p,executablePath:e.target.value}))} placeholder="Path to .exe" style={{flex:1}} /><button className="btn-flat" onClick={browse}>Browse</button></div></div>}
-          <div className="field"><label>Cover Image</label><div style={{display:'flex',gap:'8px'}}><input value={f.coverUrl||''} onChange={e=>setF(p=>({...p,coverUrl:e.target.value}))} placeholder="URL or file path" style={{flex:1}} /><button className="btn-flat" onClick={()=>browseImg('coverUrl')}>File</button><button className="btn-flat" style={{color:'var(--accent)'}} onClick={()=>setArtPicker(artPicker==='coverUrl'?null:'coverUrl')} disabled={!f.name.trim()}>Search</button></div>{artPicker==='coverUrl' && <ArtPicker gameName={f.name} platform={f.platform} field="coverUrl" onPick={url=>setF(p=>({...p,coverUrl:url}))} onClose={()=>setArtPicker(null)} />}{f.coverUrl && artPicker!=='coverUrl' && <img className="cover-preview" src={f.coverUrl} alt="" onError={e=>e.target.style.display='none'} onLoad={e=>e.target.style.display='block'} />}</div>
+          <div className="field"><label>Cover Image</label><div style={{display:'flex',gap:'8px'}}><input value={f.coverUrl||''} onChange={e=>setF(p=>({...p,coverUrl:e.target.value}))} placeholder="URL or file path" style={{flex:1}} /><button className="btn-flat" onClick={()=>browseImg('coverUrl')}>File</button><button className="btn-flat" style={{color:'var(--accent)'}} onClick={async ()=>{ if(!f.name.trim()) return; try { const url = await onOpenArtPicker({ gameName: f.name, platform: f.platform, field: 'coverUrl', autoSave: !!editGame }); if (url) { if (editGame) { const out = { ...f, coverUrl: url, metacritic: f.metacritic ? Number(f.metacritic) : null }; if (!out.metacritic && out.metacritic !== 0) delete out.metacritic; try { const res = await onSave(out); if (typeof onUpdated === 'function') onUpdated(res || out); } catch(e) {} } else { setF(p=>({...p,coverUrl:url})); } } } catch(e) {} }} disabled={!f.name.trim()}>Search</button></div>{f.coverUrl && <img className="cover-preview" src={f.coverUrl} alt="" onError={e=>e.target.style.display='none'} onLoad={e=>e.target.style.display='block'} />}</div>
           <div className="field"><label>Categories</label><div className="tag-row">{(categories||[]).map(c=><button key={c} className={'tag'+(f.categories.includes(c)?' sel':'')} onClick={()=>toggle(c)}>{c}</button>)}</div></div>
           <button className={'meta-toggle'+(showMeta?' open':'')} onClick={()=>setShowMeta(!showMeta)}>{chevron} Metadata {editGame && <span style={{marginLeft:'auto',fontSize:9,fontWeight:400,color:'var(--text-4)',textTransform:'none',letterSpacing:0}}>{fetching?'Fetching...':'Auto-fill from web'}</span>}{editGame && <span className="btn-flat" style={{padding:'3px 10px',fontSize:10,marginLeft:8}} onClick={e=>{e.stopPropagation();doFetch();}}>{I.download}</span>}</button>
           {showMeta && <div className="meta-section">
@@ -681,7 +768,7 @@
               <div className="field"><label>Release Date</label><input value={f.releaseDate||''} onChange={e=>setF(p=>({...p,releaseDate:e.target.value}))} placeholder="e.g. Dec 10, 2020" /></div>
               <div className="field"><label>Metacritic</label><input type="number" min="0" max="100" value={f.metacritic||''} onChange={e=>setF(p=>({...p,metacritic:e.target.value}))} placeholder="0-100" /></div>
             </div>
-            <div className="field"><label>Header Image</label><div style={{display:'flex',gap:'8px'}}><input value={f.headerUrl||''} onChange={e=>setF(p=>({...p,headerUrl:e.target.value}))} placeholder="Wide banner URL" style={{flex:1}} /><button className="btn-flat" onClick={()=>browseImg('headerUrl')}>File</button><button className="btn-flat" style={{color:'var(--accent)'}} onClick={()=>setArtPicker(artPicker==='headerUrl'?null:'headerUrl')} disabled={!f.name.trim()}>Search</button></div><div className="field-hint">Used as blurred background in game detail view</div>{artPicker==='headerUrl' && <ArtPicker gameName={f.name} platform={f.platform} field="headerUrl" onPick={url=>setF(p=>({...p,headerUrl:url}))} onClose={()=>setArtPicker(null)} />}{f.headerUrl && artPicker!=='headerUrl' && <img className="cover-preview" src={f.headerUrl} alt="" onError={e=>e.target.style.display='none'} onLoad={e=>e.target.style.display='block'} />}</div>
+            <div className="field"><label>Header Image</label><div style={{display:'flex',gap:'8px'}}><input value={f.headerUrl||''} onChange={e=>setF(p=>({...p,headerUrl:e.target.value}))} placeholder="Wide banner URL" style={{flex:1}} /><button className="btn-flat" onClick={()=>browseImg('headerUrl')}>File</button><button className="btn-flat" style={{color:'var(--accent)'}} onClick={async ()=>{ if(!f.name.trim()) return; try { const url = await onOpenArtPicker({ gameName: f.name, platform: f.platform, field: 'headerUrl', autoSave: !!editGame }); if (url) { if (editGame) { const out = { ...f, headerUrl: url, metacritic: f.metacritic ? Number(f.metacritic) : null }; if (!out.metacritic && out.metacritic !== 0) delete out.metacritic; try { const res = await onSave(out); if (typeof onUpdated === 'function') onUpdated(res || out); } catch(e) {} } else { setF(p=>({...p,headerUrl:url})); } } } catch(e) {} }} disabled={!f.name.trim()}>Search</button></div><div className="field-hint">Used as blurred background in game detail view</div>{f.headerUrl && <img className="cover-preview" src={f.headerUrl} alt="" onError={e=>e.target.style.display='none'} onLoad={e=>e.target.style.display='block'} />}</div>
             <div className="field"><label>Website</label><input value={f.website||''} onChange={e=>setF(p=>({...p,website:e.target.value}))} placeholder="https://..." /></div>
           </div>}
         </SidePanel>
@@ -806,8 +893,8 @@
           <div className="field" style={{marginBottom:12}}><label>Filter platforms</label><input value={platFilter} onChange={e=>setPlatFilter(e.target.value)} placeholder="Filter platforms..." /></div>
           {showPlat('Steam') && <PlatCard name="Steam" icon="S" iconBg="#1b2838" acct={accounts.steam} connected={sc} detected={platforms.steam.games} loading={steamLoading} onAuth={doSteamAuth} onImport={doSteamImport} onDisconnect={doSteamDisconnect} extra={sc&&<div style={{fontSize:'9px',color:'var(--text-4)',marginTop:'8px',lineHeight:1.5}}>Game list requires your Steam profile &amp; game details to be set to Public.</div>}/>} 
           {showPlat('GOG') && <PlatCard name="GOG" icon="G" iconBg="#3a1a50" acct={accounts.gog} connected={gc} detected={platforms.gog.games} loading={gogLoading} onAuth={doGogAuth} onImport={doGogImport} onDisconnect={doGogDisconnect}/>} 
-          {showPlat('Epic') && <PlatCard name="Epic" icon="E" iconBg="#2a2a2a" acct={accounts.epic} connected={ec} detected={platforms.epic.games} loading={epicLoading} onAuth={doEpicAuth} onImport={doEpicImport} onDisconnect={doEpicDisconnect} authLabel="Sign in with Epic Games"/>}
-          {showPlat('Xbox') && <PlatCard name="Xbox" icon="X" iconBg="#0e6a0e" acct={accounts.xbox} connected={xc} detected={platforms.xbox.games} loading={xboxLoading} onAuth={doXboxAuth} onImport={doXboxImport} onDisconnect={doXboxDisconnect} extra={<div style={{marginTop:'10px'}}><button className="btn-sm" onClick={()=>{onClose();onOpenXcloud();}} style={{width:'100%',display:'flex',alignItems:'center',justifyContent:'center',gap:'6px'}}><span style={{display:'flex',width:14,height:14}}>{I.globe}</span><span>Xbox Cloud Gaming</span></button></div>}/>} 
+          {showPlat('Epic') && <PlatCard name="Epic" icon="E" iconBg="#2a2a2a" acct={accounts.epic} connected={ec} detected={platforms.epic.games} loading={epicLoading} onAuth={doEpicAuth} onImport={doEpicImport} onDisconnect={doEpicDisconnect} authLabel="Sign in with Epic Games" extra={<div style={{marginTop:8,fontSize:11,color:'var(--text-3)'}}>Note: Epic's developer APIs require special registration and may limit library imports. You can still sign in manually to import visible purchases.</div>} />}
+          {showPlat('Xbox') && <PlatCard name="Xbox" icon="X" iconBg="#0e6a0e" acct={accounts.xbox} connected={xc} detected={platforms.xbox.games} loading={xboxLoading} onAuth={doXboxAuth} onImport={doXboxImport} onDisconnect={doXboxDisconnect} extra={<div style={{marginTop:'10px'}}><div style={{fontSize:11,color:'var(--text-3)',marginBottom:8}}>Xbox imports may require Microsoft developer access for full library data; cloud gaming requires an active xCloud subscription.</div><button className="btn-sm" onClick={()=>{onClose();onOpenXcloud();}} style={{width:'100%',display:'flex',alignItems:'center',justifyContent:'center',gap:'6px'}}><span style={{display:'flex',width:14,height:14}}>{I.globe}</span><span>Xbox Cloud Gaming</span></button></div>}/>} 
           <div style={{marginBottom:'16px'}}>
             <div className="conn-section">PlayStation</div>
             <div style={{padding:'14px',borderRadius:'10px',background:'var(--glass)',border:'1px solid var(--glass-border)'}}>
@@ -936,16 +1023,45 @@
       );
     }
 
-    function SettingsPanel({ show, onClose, flash, settings, onSettingsChange, setGames, setCats, onOpenPlatforms, onOpenDetect, onSync, onFetchMetadata }) {
+    function SettingsPanel({ show, onClose, flash, settings, onSettingsChange, setGames, setCats, onOpenPlatforms, onOpenDetect, onSync, onFetchMetadata, onRunWizard }) {
       const [local, setLocal] = useState({});
       const [dataPath, setDataPath] = useState('');
       const [appVersion, setAppVersion] = useState('1.0.0');
       const [confirmClear, setConfirmClear] = useState(false);
       const [confirmClearCovers, setConfirmClearCovers] = useState(false);
+      const [sgKey, setSgKey] = useState('');
+      const [sgSavedKey, setSgSavedKey] = useState(null);
+      const [sgValidateStatus, setSgValidateStatus] = useState(null);
+      const [steamKey, setSteamKey] = useState('');
+      const [steamSavedKey, setSteamSavedKey] = useState(null);
+      const [steamValidateStatus, setSteamValidateStatus] = useState(null);
+      const [gogKey, setGogKey] = useState('');
+      const [gogSavedKey, setGogSavedKey] = useState(null);
+      const [gogValidateStatus, setGogValidateStatus] = useState(null);
+      const [epicKey, setEpicKey] = useState('');
+      const [epicSavedKey, setEpicSavedKey] = useState(null);
+      const [epicValidateStatus, setEpicValidateStatus] = useState(null);
+      const [xboxKey, setXboxKey] = useState('');
+      const [xboxSavedKey, setXboxSavedKey] = useState(null);
+      const [xboxValidateStatus, setXboxValidateStatus] = useState(null);
 
       useEffect(() => {
         if (!show) { setConfirmClear(false); setConfirmClearCovers(false); return; }
         setLocal({ ...settings });
+        // load securely stored API keys (if any)
+        (async () => {
+          try {
+            if (window.api?.getApiKey) {
+              const r = await window.api.getApiKey('steamgriddb');
+              if (r && r.ok) setSgSavedKey(r.secret);
+              else setSgSavedKey(null);
+              const rs = await window.api.getApiKey('steam'); if (rs && rs.ok) setSteamSavedKey(rs.secret);
+              const rg = await window.api.getApiKey('gog'); if (rg && rg.ok) setGogSavedKey(rg.secret);
+              const re = await window.api.getApiKey('epic'); if (re && re.ok) setEpicSavedKey(re.secret);
+              const rx = await window.api.getApiKey('xbox'); if (rx && rx.ok) setXboxSavedKey(rx.secret);
+            }
+          } catch (e) {}
+        })();
         (async () => {
           if (window.api?.getDataPath) { var p = await window.api.getDataPath(); setDataPath(p); }
           if (window.api?.getAppVersion) { var v = await window.api.getAppVersion(); setAppVersion(v); }
@@ -1135,9 +1251,118 @@
             <div style={{fontSize:'10px',color:'var(--text-2)',marginBottom:10,padding:'0 2px'}}>
               These keys let the art picker search additional sources for game covers, heroes, and screenshots. Free sources (Steam, DuckDuckGo, Wikipedia) always work without keys.
             </div>
+            <div style={{fontSize:'11px',color:'var(--text-3)',marginBottom:8,padding:'0 2px'}}>
+              <strong style={{color:'var(--accent)'}}>Warning:</strong> Pasting tokens or cookies can be sensitive and may violate a service's Terms of Service. Only paste credentials you control. Secrets are stored securely in your OS credential store (Keychain/Credential Manager).
+            </div>
             <div className="field" style={{marginBottom:10}}>
               <label>SteamGridDB API Key</label>
-              <input type="password" value={local.steamGridDbKey||''} onChange={e=>update('steamGridDbKey',e.target.value)} placeholder="Free key from steamgriddb.com/profile/preferences/api" />
+              <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                <input type="password" value={sgKey||local.steamGridDbKey||''} onChange={e=>setSgKey(e.target.value)} placeholder="Free key from steamgriddb.com/profile/preferences/api" style={{flex:1}} />
+                <button className="btn-flat" onClick={()=>{ window.api.steamGridDbLogin(); }}>{I.open}</button>
+              </div>
+              <div style={{display:'flex',gap:8,marginTop:8}}>
+                <button className="btn-sm" onClick={async ()=>{ const key = sgKey||local.steamGridDbKey||sgSavedKey; if(!key){flash('No key to validate'); return;} setSgValidateStatus('checking'); const r = await window.api.validateApiKey('steamgriddb', key); setSgValidateStatus(r.ok ? 'valid' : ('invalid: '+(r.error||'unknown'))); }}>
+                  Validate
+                </button>
+                <button className="btn-sm primary" onClick={async ()=>{ const key = sgKey||local.steamGridDbKey; if(!key){flash('Enter a key to save'); return;} const r = await window.api.saveApiKey('steamgriddb', key); if(r && r.ok){ setSgSavedKey(key); flash('API key saved securely'); } else { flash('Save failed: '+(r && r.error)); } }}>
+                  Save Securely
+                </button>
+                <button className="btn-sm danger" onClick={async ()=>{ const r = await window.api.deleteApiKey('steamgriddb'); if(r && r.ok){ setSgSavedKey(null); flash('Secure key deleted'); } else { flash('Delete failed'); } }}>
+                  Delete Secure Key
+                </button>
+                <button className="btn-flat" onClick={async ()=>{ if(!window.api?.readClipboard) return flash('Clipboard not available'); const txt = await window.api.readClipboard(); if(!txt) return flash('Clipboard empty'); setSgKey(txt.trim()); flash('Pasted key'); }}>
+                  Paste
+                </button>
+              </div>
+              <div style={{marginTop:8,fontSize:11,color:'var(--text-3)'}}>Saved key: {sgSavedKey ? (sgSavedKey.slice(0,6)+'...') : 'none'} {sgValidateStatus && <span style={{marginLeft:8, color: sgValidateStatus==='valid'?'var(--green)':'var(--red)'}}>{sgValidateStatus}</span>}</div>
+            </div>
+            <div className="field" style={{marginBottom:10}}>
+              <label>Steam API Key (optional)</label>
+              <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                <input type="password" value={steamKey||''} onChange={e=>setSteamKey(e.target.value)} placeholder="Steam Web API key (from steam.dev)" style={{flex:1}} />
+              </div>
+              <div style={{display:'flex',gap:8,marginTop:8}}>
+                <button className="btn-sm" onClick={async ()=>{ const key = steamKey||steamSavedKey; if(!key){flash('No key to validate'); return;} setSteamValidateStatus('checking'); const r = await window.api.validateApiKey('steam', key); setSteamValidateStatus(r.ok ? 'valid' : ('invalid: '+(r.error||'unknown'))); }}>
+                  Validate
+                </button>
+                <button className="btn-sm primary" onClick={async ()=>{ const key = steamKey; if(!key){flash('Enter a key to save'); return;} const r = await window.api.saveApiKey('steam', key); if(r && r.ok){ setSteamSavedKey(key); flash('API key saved securely'); } else { flash('Save failed: '+(r && r.error)); } }}>
+                  Save Securely
+                </button>
+                <button className="btn-sm danger" onClick={async ()=>{ const r = await window.api.deleteApiKey('steam'); if(r && r.ok){ setSteamSavedKey(null); flash('Secure key deleted'); } else { flash('Delete failed'); } }}>
+                  Delete Secure Key
+                </button>
+                <button className="btn-flat" onClick={async ()=>{ if(!window.api?.readClipboard) return flash('Clipboard not available'); const txt = await window.api.readClipboard(); if(!txt) return flash('Clipboard empty'); const candidate = txt.trim(); setSteamKey(candidate); // auto-validate & save
+                    setSteamValidateStatus('checking'); const vr = await window.api.validateApiKey('steam', candidate); if(vr && vr.ok){ const sr = await window.api.saveApiKey('steam', candidate); if(sr && sr.ok){ setSteamSavedKey(candidate); flash('Pasted key validated and saved'); } else { flash('Pasted key validated but save failed'); } } else { setSteamValidateStatus('invalid'); flash('Pasted key invalid'); } }}>
+                  Paste
+                </button>
+              </div>
+              <div style={{marginTop:8,fontSize:11,color:'var(--text-3)'}}>Saved key: {steamSavedKey ? (steamSavedKey.slice(0,6)+'...') : 'none'} {steamValidateStatus && <span style={{marginLeft:8, color: steamValidateStatus==='valid'?'var(--green)':'var(--red)'}}>{steamValidateStatus}</span>}</div>
+            </div>
+            <div className="field" style={{marginBottom:10}}>
+              <label>GOG Token / Cookie</label>
+              <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                <input type="password" value={gogKey||''} onChange={e=>setGogKey(e.target.value)} placeholder="Paste GOG bearer token or cookie string" style={{flex:1}} />
+              </div>
+              <div style={{display:'flex',gap:8,marginTop:8}}>
+                <button className="btn-sm" onClick={async ()=>{ const key = gogKey||gogSavedKey; if(!key){flash('No token to validate'); return;} setGogValidateStatus('checking'); const r = await window.api.validateApiKey('gog', key); setGogValidateStatus(r.ok ? 'valid' : ('invalid: '+(r.error||'unknown'))); }}>
+                  Validate
+                </button>
+                <button className="btn-sm primary" onClick={async ()=>{ const key = gogKey; if(!key){flash('Enter a token to save'); return;} const r = await window.api.saveApiKey('gog', key); if(r && r.ok){ setGogSavedKey(key); flash('Token saved securely'); } else { flash('Save failed: '+(r && r.error)); } }}>
+                  Save Securely
+                </button>
+                <button className="btn-sm danger" onClick={async ()=>{ const r = await window.api.deleteApiKey('gog'); if(r && r.ok){ setGogSavedKey(null); flash('Secure token deleted'); } else { flash('Delete failed'); } }}>
+                  Delete Secure Token
+                </button>
+                <button className="btn-flat" onClick={async ()=>{ if(!window.api?.readClipboard) return flash('Clipboard not available'); const txt = await window.api.readClipboard(); if(!txt) return flash('Clipboard empty'); const candidate = txt.trim(); setGogKey(candidate); setGogValidateStatus('checking'); const vr = await window.api.validateApiKey('gog', candidate); if(vr && vr.ok){ const sr = await window.api.saveApiKey('gog', candidate); if(sr && sr.ok){ setGogSavedKey(candidate); flash('Pasted token validated and saved'); } else { flash('Pasted token validated but save failed'); } } else { setGogValidateStatus('invalid'); flash('Pasted token invalid'); } }}>
+                  Paste
+                </button>
+              </div>
+              <div style={{marginTop:8,fontSize:11,color:'var(--text-3)'}}>Saved token: {gogSavedKey ? (gogSavedKey.slice(0,6)+'...') : 'none'} {gogValidateStatus && <span style={{marginLeft:8, color: gogValidateStatus==='valid'?'var(--green)':'var(--red)'}}>{gogValidateStatus}</span>}</div>
+            </div>
+            <div className="field" style={{marginBottom:10}}>
+              <label>Epic Account Token</label>
+              <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                <input type="password" value={epicKey||''} onChange={e=>setEpicKey(e.target.value)} placeholder="Paste Epic account bearer token" style={{flex:1}} />
+              </div>
+              <div style={{display:'flex',gap:8,marginTop:8}}>
+                <button className="btn-sm" onClick={async ()=>{ const key = epicKey||epicSavedKey; if(!key){flash('No token to validate'); return;} setEpicValidateStatus('checking'); const r = await window.api.validateApiKey('epic', key); setEpicValidateStatus(r.ok ? 'valid' : ('invalid: '+(r.error||'unknown'))); }}>
+                  Validate
+                </button>
+                <button className="btn-sm primary" onClick={async ()=>{ const key = epicKey; if(!key){flash('Enter a token to save'); return;} const r = await window.api.saveApiKey('epic', key); if(r && r.ok){ setEpicSavedKey(key); flash('Token saved securely'); } else { flash('Save failed: '+(r && r.error)); } }}>
+                  Save Securely
+                </button>
+                <button className="btn-sm danger" onClick={async ()=>{ const r = await window.api.deleteApiKey('epic'); if(r && r.ok){ setEpicSavedKey(null); flash('Secure token deleted'); } else { flash('Delete failed'); } }}>
+                  Delete Secure Token
+                </button>
+                <button className="btn-flat" onClick={async ()=>{ if(!window.api?.readClipboard) return flash('Clipboard not available'); const txt = await window.api.readClipboard(); if(!txt) return flash('Clipboard empty'); const candidate = txt.trim(); setEpicKey(candidate); setEpicValidateStatus('checking'); const vr = await window.api.validateApiKey('epic', candidate); if(vr && vr.ok){ const sr = await window.api.saveApiKey('epic', candidate); if(sr && sr.ok){ setEpicSavedKey(candidate); flash('Pasted token validated and saved'); } else { flash('Pasted token validated but save failed'); } } else { setEpicValidateStatus('invalid'); flash('Pasted token invalid'); } }}>
+                  Paste
+                </button>
+              </div>
+              <div style={{marginTop:8,fontSize:11,color:'var(--text-3)'}}>Saved token: {epicSavedKey ? (epicSavedKey.slice(0,6)+'...') : 'none'} {epicValidateStatus && <span style={{marginLeft:8, color: epicValidateStatus==='valid'?'var(--green)':'var(--red)'}}>{epicValidateStatus}</span>}</div>
+            </div>
+            <div className="field" style={{marginBottom:10}}>
+              <label>Xbox / Microsoft Tokens</label>
+              <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                <input type="password" value={xboxKey||''} onChange={e=>setXboxKey(e.target.value)} placeholder="Paste Xbox XSTS/XBL or MS access token" style={{flex:1}} />
+              </div>
+              <div style={{display:'flex',gap:8,marginTop:8}}>
+                <button className="btn-sm" onClick={async ()=>{ const key = xboxKey||xboxSavedKey; if(!key){flash('No token to validate'); return;} setXboxValidateStatus('checking'); const r = await window.api.validateApiKey('xbox', key); setXboxValidateStatus(r.ok ? 'valid' : ('invalid: '+(r.error||'unknown'))); }}>
+                  Validate
+                </button>
+                <button className="btn-sm primary" onClick={async ()=>{ const key = xboxKey; if(!key){flash('Enter a token to save'); return;} const r = await window.api.saveApiKey('xbox', key); if(r && r.ok){ setXboxSavedKey(key); flash('Token saved securely'); } else { flash('Save failed: '+(r && r.error)); } }}>
+                  Save Securely
+                </button>
+                <button className="btn-sm danger" onClick={async ()=>{ const r = await window.api.deleteApiKey('xbox'); if(r && r.ok){ setXboxSavedKey(null); flash('Secure token deleted'); } else { flash('Delete failed'); } }}>
+                  Delete Secure Token
+                </button>
+                <button className="btn-flat" onClick={async ()=>{ if(!window.api?.readClipboard) return flash('Clipboard not available'); const txt = await window.api.readClipboard(); if(!txt) return flash('Clipboard empty'); const candidate = txt.trim(); setXboxKey(candidate); setXboxValidateStatus('checking'); const vr = await window.api.validateApiKey('xbox', candidate); if(vr && vr.ok){ const sr = await window.api.saveApiKey('xbox', candidate); if(sr && sr.ok){ setXboxSavedKey(candidate); flash('Pasted token validated and saved'); } else { flash('Pasted token validated but save failed'); } } else { setXboxValidateStatus('invalid'); flash('Pasted token invalid'); } }}>
+                  Paste
+                </button>
+              </div>
+              <div style={{marginTop:8,fontSize:11,color:'var(--text-3)'}}>Saved token: {xboxSavedKey ? (xboxSavedKey.slice(0,6)+'...') : 'none'} {xboxValidateStatus && <span style={{marginLeft:8, color: xboxValidateStatus==='valid'?'var(--green)':'var(--red)'}}>{xboxValidateStatus}</span>}</div>
+            </div>
+            <div style={{padding:10,marginBottom:12,borderRadius:8,background:'rgba(255,255,255,0.02)',border:'1px solid rgba(255,255,255,0.02)',fontSize:11,color:'var(--text-3)'}}>
+              <strong style={{color:'var(--accent)'}}>Manual tokens warning:</strong> Pasting API keys, cookies, or access tokens grants the app access to your account data. Only paste tokens you trust and understand; tokens may expire or violate a service's terms of use. Cereal stores tokens securely in your OS credential store but does not transmit them elsewhere.
             </div>
             {local.metadataSource !== 'igdb' && <>
               <div className="field" style={{marginBottom:10}}>
@@ -1183,7 +1408,10 @@
               </div>
               <div className="settings-row" style={{background:'none',border:'none',padding:'4px 0',marginBottom:0}}>
                 <div className="settings-row-info"><div className="settings-row-label" style={{color:'var(--red)'}}>Reset Settings</div><div className="settings-row-desc">Restore all options to defaults</div></div>
-                <button className="btn-sm danger" onClick={doReset}>Reset</button>
+                <div style={{display:'flex',gap:8}}>
+                  <button className="btn-sm danger" onClick={doReset}>Reset</button>
+                  <button className="btn-sm" onClick={async ()=>{ if(!confirm('Re-run setup wizard? This will open the first-run setup flow. Continue?')) return; if (window.api?.saveSettings) { await window.api.saveSettings({ firstRun: true }); } if (typeof onRunWizard === 'function') onRunWizard(true); flash('Setup wizard will run'); }}>Run Setup Wizard</button>
+                </div>
               </div>
             </div>
           </div>
@@ -1199,6 +1427,8 @@
 
     /* ===== APP ===== */
     function App() {
+      const [importProgress, setImportProgress] = useState(null);
+      const [showWizard, setShowWizard] = useState(false);
       const [games, setGames] = useState([]);
       const [cats, setCats] = useState([]);
       const [tab, setTab] = useState('all');
@@ -1269,7 +1499,20 @@
           setChiakiSessions(prev => { var n={...prev}; if(evt.type==='disconnected'&&evt.reason!=='transient_error')delete n[evt.gameId]; else n[evt.gameId]={...(n[evt.gameId]||{}),...evt}; return n; });
         });
         // Listen for game list refreshes (e.g. auto-created PS games)
-        var unsubRefresh = window.api?.onGamesRefresh ? window.api.onGamesRefresh(g => setGames(g || [])) : null;
+        var unsubRefresh = null;
+        if (window.api?.onGamesRefresh) {
+          unsubRefresh = window.api.onGamesRefresh((g) => {
+            const incoming = g || [];
+            setGames(prev => {
+              const prevMap = new Map((prev||[]).map(x => [x.id, x]));
+              return incoming.map(ng => {
+                const prevG = prevMap.get(ng.id);
+                if (prevG && prevG._imgStamp) return { ...ng, _imgStamp: prevG._imgStamp };
+                return ng;
+              });
+            });
+          });
+        }
         return () => { unsub && unsub(); unsubRefresh && unsubRefresh(); };
       }, []);
 
@@ -1291,6 +1534,8 @@
                 if (s.filterPlatforms && Array.isArray(s.filterPlatforms)) setSelectedPlatforms(s.filterPlatforms);
                 if (s.filterCategories && Array.isArray(s.filterCategories)) setSelectedCategories(s.filterCategories);
                 if (s.filterHideSteamSoftware) setHideSteamSoftware(!!s.filterHideSteamSoftware);
+                // Show first-run setup wizard unless explicitly disabled
+                if (s.firstRun === false) setShowWizard(false); else setShowWizard(true);
               }
             }
           } else {
@@ -1326,7 +1571,123 @@
             ]);
           }
         })();
+        // listen for import progress events
+        let unsubImport = null;
+        if (window.api && window.api.onImportProgress) {
+          unsubImport = window.api.onImportProgress((data) => {
+            try { setImportProgress(data); } catch (e) {}
+          });
+        }
+        return () => { if (unsubImport) unsubImport(); };
       }, []);
+
+      // Startup Wizard component
+      function StartupWizard({ show, onClose }) {
+        const [accounts, setAccounts] = useState({});
+        const refreshAccounts = async () => { if (window.api?.getAccounts) { const a = await window.api.getAccounts(); setAccounts(a || {}); } };
+        useEffect(() => { if (show) refreshAccounts(); }, [show]);
+        const doAuth = async (which) => {
+          try {
+            if (!window.api) return;
+            const prev = !!(accounts && accounts[which] && accounts[which].connected);
+            if (which === 'steam') await window.api.steamAuth();
+            else if (which === 'gog') await window.api.gogAuth();
+            else if (which === 'epic') await window.api.epicAuth();
+            else if (which === 'xbox') await window.api.xboxAuth();
+            else if (which === 'steamgriddb') await window.api.steamGridDbLogin();
+            // Wait briefly then fetch fresh account state from main process
+            await new Promise(r => setTimeout(r, 600));
+            const fresh = await window.api.getAccounts();
+            await refreshAccounts();
+            const nowFresh = fresh && fresh[which] && fresh[which].connected;
+            if (!prev && nowFresh) { flash((which==='steamgriddb')? 'SteamGridDB opened' : (which+' connected')); }
+            else if (prev && !nowFresh) { flash((which==='steamgriddb')? 'SteamGridDB unchanged' : (which+' disconnected')); }
+          } catch (e) { console.error('Auth error', e); flash('Authentication error'); }
+        };
+        const finish = async () => {
+          if (window.api?.saveSettings) await window.api.saveSettings({ firstRun: false });
+          setShowWizard(false);
+          if (onClose) onClose();
+        };
+        if (!show) return null;
+        return (
+          <div className="modal-overlay">
+            <div className="modal-card">
+              <h2>Welcome — Quick Setup</h2>
+              <p>Sign in to your services to import libraries and improve metadata/art lookup.</p>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                <div className={"acct-card" + (accounts.steam?.connected? ' connected':'') } style={{display:'flex',alignItems:'center',gap:10}}>
+                  <div className="acct-avatar">{accounts.steam?.avatarUrl? <img src={accounts.steam.avatarUrl}/> : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="8" r="3" stroke="rgba(255,255,255,0.12)" strokeWidth="1.2"/><path d="M4 20c0-3.314 2.686-6 6-6h4c3.314 0 6 2.686 6 6" stroke="rgba(255,255,255,0.06)" strokeWidth="1.2" strokeLinecap="round"/></svg>}</div>
+                  <div style={{flex:1}}>
+                    <div className="acct-title">Steam</div>
+                    <div className="acct-status">{accounts.steam?.connected ? <span className="acct-connected-badge">✓ {accounts.steam.displayName||accounts.steam.gamertag||'Connected'}</span> : 'Not connected'}</div>
+                  </div>
+                  <div style={{marginTop:8}}><button className="btn-flat" onClick={()=>doAuth('steam')}>{accounts.steam?.connected? 'Re-auth' : 'Sign in'}</button></div>
+                </div>
+                <div className={"acct-card" + (accounts.gog?.connected? ' connected':'') } style={{display:'flex',alignItems:'center',gap:10}}>
+                  <div className="acct-avatar">{accounts.gog?.avatarUrl? <img src={accounts.gog.avatarUrl}/> : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="3" width="18" height="18" rx="4" stroke="rgba(255,255,255,0.06)" strokeWidth="1.2"/></svg>}</div>
+                  <div style={{flex:1}}>
+                    <div className="acct-title">GOG</div>
+                    <div className="acct-status">{accounts.gog?.connected ? <span className="acct-connected-badge">✓ {accounts.gog.displayName||'Connected'}</span> : 'Not connected'}</div>
+                  </div>
+                  <div style={{marginTop:8}}><button className="btn-flat" onClick={()=>doAuth('gog')}>{accounts.gog?.connected? 'Re-auth' : 'Sign in'}</button></div>
+                </div>
+                <div className={"acct-card" + (accounts.epic?.connected? ' connected':'') } style={{display:'flex',alignItems:'center',gap:10}}>
+                  <div className="acct-avatar">{accounts.epic?.avatarUrl? <img src={accounts.epic.avatarUrl}/> : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="3" width="18" height="18" rx="4" stroke="rgba(255,255,255,0.06)" strokeWidth="1.2"/></svg>}</div>
+                  <div style={{flex:1}}>
+                    <div className="acct-title">Epic</div>
+                    <div className="acct-status">{accounts.epic?.connected ? <span className="acct-connected-badge">✓ {accounts.epic.displayName||'Connected'}</span> : 'Not connected'}</div>
+                  </div>
+                  <div style={{marginTop:8}}><button className="btn-flat" onClick={()=>doAuth('epic')}>{accounts.epic?.connected? 'Re-auth' : 'Sign in'}</button></div>
+                </div>
+                <div className={"acct-card" + (accounts.xbox?.connected? ' connected':'') } style={{display:'flex',alignItems:'center',gap:10}}>
+                  <div className="acct-avatar">{accounts.xbox?.avatarUrl? <img src={accounts.xbox.avatarUrl}/> : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="3" width="18" height="18" rx="4" stroke="rgba(255,255,255,0.06)" strokeWidth="1.2"/></svg>}</div>
+                  <div style={{flex:1}}>
+                    <div className="acct-title">Xbox</div>
+                    <div className="acct-status">{accounts.xbox?.connected ? <span className="acct-connected-badge">✓ {accounts.xbox.gamertag||accounts.xbox.displayName||'Connected'}</span> : 'Not connected'}</div>
+                  </div>
+                  <div style={{marginTop:8}}><button className="btn-flat" onClick={()=>doAuth('xbox')}>{accounts.xbox?.connected? 'Re-auth' : 'Sign in'}</button></div>
+                </div>
+                <div style={{gridColumn:'1 / -1'}}>
+                  <div className="acct-card">
+                    <div className="acct-title">SteamGridDB (art)</div>
+                    <div className="acct-status">{(settings && settings.steamGridDbKey) ? 'API key set' : 'API key not set'}</div>
+                    <div style={{display:'flex',gap:8,marginTop:8}}>
+                      <button className="btn-flat" onClick={()=>doAuth('steamgriddb')}>Open SteamGridDB</button>
+                      <button className="btn-flat" onClick={async ()=>{
+                        try {
+                          if (!window.api?.readClipboard) return flash('Clipboard not available');
+                          const txt = await window.api.readClipboard();
+                          if (!txt || typeof txt !== 'string' || txt.trim().length < 10) { flash('No API key found on clipboard'); return; }
+                          // Save API key securely (OS credential store)
+                          if (window.api?.saveApiKey) {
+                            const r = await window.api.saveApiKey('steamgriddb', txt.trim());
+                            if (r && r.ok) { flash('SteamGridDB API key saved securely'); }
+                            else { flash('Could not save key securely'); }
+                          } else {
+                            flash('Secure storage not available');
+                          }
+                        } catch(e) { console.error(e); flash('Could not paste API key'); }
+                      }}>Paste API Key</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div style={{display:'flex',justifyContent:'flex-end',gap:8,marginTop:12}}>
+                <button className="btn-flat" onClick={finish}>Skip</button>
+                <button className="btn-accent" onClick={finish}>Done</button>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      // Global ArtPicker modal state
+      const [globalArtPicker, setGlobalArtPicker] = useState(null);
+      const artResolve = useRef(null);
+      const openArtPicker = (opts) => {
+        return new Promise(resolve => { artResolve.current = resolve; setGlobalArtPicker(opts); });
+      };
 
       // Persist selected filters to settings (debounced)
       useEffect(()=>{
@@ -1340,6 +1701,32 @@
         }, 300);
         return ()=>clearTimeout(t);
       }, [selectedPlatforms, selectedCategories, hideSteamSoftware]);
+
+      // When user enables hiding Steam software, try to fetch metadata for Steam games
+      // that haven't been classified yet so we can mark them as software if detected.
+      useEffect(()=>{
+        if (!hideSteamSoftware) return;
+        if (!window.api || !window.api.applyMetadata) return;
+        (async ()=>{
+          try{
+            flash('Checking Steam metadata for software entries...');
+            const steamGames = (games||[]).filter(g=>g.platform==='steam' && !g.software);
+            for(const g of steamGames){
+              try{
+                // applyMetadata will fetch and apply metadata; set force=false to only fill missing fields
+                await window.api.applyMetadata(g.id, false);
+                // small delay to avoid hitting rate limits
+                await new Promise(r=>setTimeout(r, 250));
+              }catch(e){}
+            }
+            // Refresh games list after attempts
+            if(window.api.getGames){
+              const fresh = await window.api.getGames(); if(fresh) setGames(fresh);
+            }
+            flash('Metadata check complete');
+          }catch(e){ console.error('Steam metadata apply error', e); }
+        })();
+      }, [hideSteamSoftware]);
 
       // Auto-sync playtime if enabled
       useEffect(() => {
@@ -1361,12 +1748,79 @@
         return () => window.removeEventListener('keydown', handler);
       }, [focusGame]);
 
+      const _updateGameInState = (updated) => {
+        try {
+          console.log('[UI] _updateGameInState', updated && updated.id);
+        } catch(e){}
+        if (!updated) return;
+          setGames(prev => prev.map(x => {
+            if (x.id !== updated.id) return x;
+            // Prefer stamp provided by main process; otherwise bump to force reload
+            const stamp = updated._imgStamp || Date.now();
+            console.log('[UI] applying update for', x.id, 'stamp', stamp);
+            return { ...updated, _imgStamp: stamp };
+          }));
+      };
+
       const doLaunch=async game=>{if(window.api){var r=await window.api.launchGame(game.id);flash(r.success?'Launching '+game.name:'Error: '+r.error);}else flash('Launching '+game.name+'...');};
       const doFav=async id=>{if(window.api){var u=await window.api.toggleFavorite(id);setGames(g=>g.map(x=>x.id===id?u:x));}else setGames(g=>g.map(x=>x.id===id?{...x,favorite:!x.favorite}:x));};
-      const doAdd=async f=>{if(window.api){var n=await window.api.addGame(f);setGames(g=>[...g,n]);}else setGames(g=>[...g,{...f,id:Date.now()+'',addedAt:new Date().toISOString(),playtimeMinutes:0,favorite:false}]);setShowAdd(false);setEditGame(null);flash('Game added');};
-      const doEdit=async f=>{if(window.api){var u=await window.api.updateGame(f);setGames(g=>g.map(x=>x.id===f.id?u:x));}else setGames(g=>g.map(x=>x.id===f.id?{...x,...f}:x));setShowAdd(false);setEditGame(null);flash('Game updated');};
+      const doAdd=async f=>{
+        let created = null;
+        if(window.api){
+          var n = await window.api.addGame(f);
+          if(n) {
+            if (n.coverUrl) n._imgStamp = Date.now();
+            setGames(g=>[...g,n]);
+            created = n;
+          }
+        } else {
+          const g = {...f,id:Date.now()+'',addedAt:new Date().toISOString(),playtimeMinutes:0,favorite:false,_imgStamp: f.coverUrl ? Date.now() : undefined };
+          setGames(prev => [...prev,g]);
+          created = g;
+        }
+        setShowAdd(false);setEditGame(null);flash('Game added');
+        return created;
+      };
+      const doEdit=async f=>{
+        let updated = null;
+        if(window.api){
+          var u = await window.api.updateGame(f);
+          if (u) {
+            _updateGameInState(u);
+            updated = u;
+          }
+        } else {
+          setGames(g=>g.map(x=>x.id===f.id?{...x,...f,_imgStamp: f.coverUrl?Date.now():x._imgStamp}:x));
+          updated = f;
+        }
+        setShowAdd(false);setEditGame(null);flash('Game updated');
+        return updated;
+      };
       const doDelete=async id=>{if(window.api)await window.api.deleteGame(id);setGames(g=>g.filter(x=>x.id!==id));setFocusGame(null);flash('Game removed');};
-      const doImport=async list=>{for(var g of list){if(window.api){var n=await window.api.addGame(g);setGames(prev=>[...prev,n]);}else setGames(prev=>[...prev,{...g,id:Date.now()+''+Math.random(),addedAt:new Date().toISOString(),playtimeMinutes:0,favorite:false}]);}setShowDetect(false);flash('Imported '+list.length+' games');};
+      const doImport=async list=>{
+        for (const g of list) {
+          if (window.api) {
+            try {
+              const n = await window.api.addGame(g);
+              if (n) {
+                setGames(prev => {
+                  // If main merged into an existing game (same id), update in-place
+                  const exists = prev.find(x => x.id === n.id);
+                  if (exists) return prev.map(x => x.id === n.id ? n : x);
+                  // Otherwise append new
+                  return [...prev, n];
+                });
+              }
+            } catch (e) {
+              console.error('Import addGame failed', e);
+            }
+          } else {
+            setGames(prev => [...prev, { ...g, id: Date.now() + '' + Math.random(), addedAt: new Date().toISOString(), playtimeMinutes: 0, favorite: false }]);
+          }
+        }
+        setShowDetect(false);
+        flash('Imported ' + list.length + ' games');
+      };
       const doSync=async()=>{if(!window.api||!window.api.syncPlaytime){flash('Sync not available');return;}flash('Syncing playtime...');var r=await window.api.syncPlaytime();if(r.games)setGames(r.games);if(r.updated&&r.updated.length>0)flash('Updated playtime for '+r.updated.length+' games');else flash('Playtime is up to date');};
       const doFetchAllMetadata=async()=>{if(!window.api?.fetchAllMetadata){flash('Metadata fetch not available');return;}flash('Fetching metadata for all games...');try{var r=await window.api.fetchAllMetadata();if(r.updated>0){var g=await window.api.getGames();setGames(g);flash('Updated metadata for '+r.updated+' of '+r.total+' games');}else{flash('All metadata is up to date');}}catch(e){flash('Metadata fetch failed');}};
       const onSettingsChange = s => {
@@ -1382,7 +1836,7 @@
       };
       const doEditFromFocus=game=>{setFocusGame(null);setEditGame(game);setShowAdd(true);};
 
-      const activePlatforms=useMemo(()=>{var s=new Set(filteredGames.map(g=>g.platform));return Object.keys(PLATFORMS).filter(k=>s.has(k));},[filteredGames]);
+      
       const isDimmed=game=>{if(tab==='all')return false;if(tab==='favorites')return !game.favorite;if(tab==='recent')return!game.lastPlayed;return game.platform!==tab;};
 
       const filteredGames=useMemo(()=>{
@@ -1400,12 +1854,22 @@
             return false;
           });
         }
-        if(hideSteamSoftware) {
+            if (hideSteamSoftware) {
           list = list.filter(g => {
             if (g.platform !== 'steam') return true;
             if (g.software === true) return false;
             if (g.type && typeof g.type === 'string' && g.type.toLowerCase().includes('soft')) return false;
-            if (g.categories && g.categories.some(c => typeof c === 'string' && c.toLowerCase().includes('software'))) return false;
+            // Treat categories like "Software" or "Utilities" (and common misspellings) as software
+            if (g.categories && g.categories.some(c => {
+              if (!c || typeof c !== 'string') return false;
+              const lc = c.toLowerCase();
+              return lc.includes('software') || lc.includes('utility') || lc.includes('utilities') || lc.includes('utillities');
+            })) return false;
+            // Name-based heuristics to catch redistributables, SDKs, tools, runtimes, etc.
+            try {
+              const name = (g.name || '').toLowerCase();
+              if (/redistributable|redistrib|common redistributables|steamworks|sdk|runtime|\bruntime\b|tools?|dedicated server|devkit|vr runtime|mod tools|soundtrack|redistributables/i.test(name)) return false;
+            } catch (e) {}
             return true;
           });
         }
@@ -1423,6 +1887,8 @@
         filteredGames.forEach(g=>{if(!groups[g.platform])groups[g.platform]=[];groups[g.platform].push(g);});
         return Object.keys(PLATFORMS).filter(k=>groups[k]).map(k=>({platform:k,games:groups[k]}));
       },[filteredGames]);
+
+      const activePlatforms=useMemo(()=>{var s=new Set(filteredGames.map(g=>g.platform));return Object.keys(PLATFORMS).filter(k=>s.has(k));},[filteredGames]);
 
       const orbData=useMemo(()=>{
         var groups={};filteredGames.forEach(g=>{if(!groups[g.platform])groups[g.platform]=[];groups[g.platform].push(g);});
@@ -1508,8 +1974,8 @@
                 <div key={o.game.id} className="orb" style={{left:o.x,top:o.y,'--drift-x':anim?o.driftX+'px':'0px','--drift-y':anim?o.driftY+'px':'0px','--drift-dur':o.driftDur+'s','--drift-delay':o.driftDelay+'s',animationPlayState:anim?'running':'paused'}}>
                   <div className={'orb-body'+(entered?' entered':'')+(dimmed?' dimmed':'')} style={{'--orb-size':o.size+'px','--orb-color':p?.color||'#555','--enter-delay':(!ready?o.enterDelay+'s':'0s')}} onClick={()=>{if(!dragInfo.current.moved)setFocusGame(o.game);}}>
                     <div className="orb-visual">
-                      {o.game.coverUrl?<img src={o.game.coverUrl} alt="" onError={e=>{e.target.style.display='none';e.target.nextSibling.style.display='flex';}}/>:null}
-                      <div className="orb-fallback" style={o.game.coverUrl?{display:'none'}:{}}><span style={{fontSize:o.size*0.38+'px'}}>{o.game.name.charAt(0)}</span></div>
+                      {(() => { const src = resolveGameImage(o.game, 'coverUrl'); return src ? <img key={src} src={src} alt="" onError={e=>{e.target.style.display='none';e.target.nextSibling.style.display='flex';}}/> : null; })()}
+                      <div className="orb-fallback" style={resolveGameImage(o.game,'coverUrl')?{display:'none'}:{}}><span style={{fontSize:o.size*0.38+'px'}}>{o.game.name.charAt(0)}</span></div>
                     </div>
                     {o.game.favorite&&<div className="orb-fav"><svg viewBox="0 0 24 24" fill="currentColor" width="8" height="8"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></div>}
                     <div className="orb-name">{o.game.name}{o.game.playtimeMinutes?' · '+fmtTime(o.game.playtimeMinutes):''}</div>
@@ -1526,7 +1992,7 @@
                   {gms.map((g,gi)=>{var dim=isDimmed(g);return(
                     <div key={g.id} className={'game-card'+(dim?' dimmed':'')} style={{animationDelay:gi*0.04+'s'}} onClick={()=>setFocusGame(g)}>
                       <div className="card-cover">
-                        {g.coverUrl?<img src={g.coverUrl} alt="" onError={e=>{e.target.style.display='none';e.target.nextSibling.style.display='flex';}}/>:null}
+                        {(() => { const src = resolveGameImage(g, 'coverUrl'); return src ? <img key={src} src={src} alt="" onError={e=>{e.target.style.display='none';e.target.nextSibling.style.display='flex';}}/> : null; })()}
                         <div className="card-cover-fallback" style={g.coverUrl?{display:'none'}:{}}>{g.name.charAt(0)}</div>
                         <div className="card-plat-badge" style={{background:'rgba(0,0,0,0.55)',color:p.color}}>{p.letter}</div>
                         {g.favorite&&<div className="card-fav"><svg viewBox="0 0 24 24" fill="currentColor" width="10" height="10"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></div>}
@@ -1599,17 +2065,42 @@
           </div>
           {games.length===0&&viewMode==='orbit'&&<div style={{position:'fixed',inset:0,zIndex:2,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',pointerEvents:'none'}}><div style={{width:36,height:36,border:'2px solid rgba(255,255,255,0.05)',borderTopColor:'var(--accent)',borderRadius:'50%',animation:'spin 0.8s linear infinite',marginBottom:16}}/><div style={{fontSize:11,color:'var(--text-4)',letterSpacing:1}}>Loading galaxy...</div></div>}
           {games.length===0&&<div className="empty-state"><div className="empty-icon">:/</div><div className="empty-title">No games yet</div><div className="empty-text">Add games manually or detect from installed platforms.</div><div style={{display:'flex',gap:'8px'}}><button className="btn-play" onClick={()=>{setEditGame(null);setShowAdd(true);}}>Add Game</button><button className="btn-ghost" onClick={()=>setShowDetect(true)}>Detect</button></div></div>}
-          <FocusView game={liveFocus} onClose={()=>setFocusGame(null)} onLaunch={doLaunch} onFav={doFav} onEdit={doEditFromFocus} onDelete={doDelete} onRefreshGame={g=>{setGames(prev=>prev.map(x=>x.id===g.id?g:x));setFocusGame(g);flash('Metadata updated');}} />
+          <FocusView game={liveFocus} onClose={()=>setFocusGame(null)} onLaunch={doLaunch} onFav={doFav} onEdit={doEditFromFocus} onDelete={doDelete} onRefreshGame={g=>{ _updateGameInState(g); setFocusGame(g); flash('Metadata updated'); }} />
           {Object.entries(chiakiSessions).filter(([,s])=>s.state==='gui').map(([gid,sess])=>{var g=games.find(x=>x.id===gid);if(!g)return null;return(<div key={gid} className="stream-float" onClick={()=>setShowChiaki(true)}><div className="stream-float-dot connecting"/><div className="stream-float-info"><div className="stream-float-name">{g.name}</div><div className="stream-float-meta">chiaki-ng GUI open</div></div><button className="stream-float-stop" onClick={async e=>{e.stopPropagation();if(window.api)await window.api.chiakiStopStream(gid);setChiakiSessions(p=>{var n={...p};delete n[gid];return n;});flash('Stream stopped');}}>Stop</button></div>);})}
           <StreamOverlay sessions={chiakiSessions} games={games} onStop={async gid=>{if(window.api)await window.api.chiakiStopStream(gid);setChiakiSessions(p=>{var n={...p};delete n[gid];return n;});flash('Stream stopped');}} />
           <SearchOverlay show={showSearch} onClose={()=>setShowSearch(false)} games={games} onSelect={g=>setFocusGame(g)}/>
-          <AddPanel show={showAdd} onClose={()=>{setShowAdd(false);setEditGame(null);}} onSave={editGame?doEdit:doAdd} categories={cats} editGame={editGame} flash={flash}/>
+          <AddPanel show={showAdd} onClose={()=>{setShowAdd(false);setEditGame(null);}} onSave={editGame?doEdit:doAdd} onUpdated={g=>{ _updateGameInState(g); setShowAdd(false); setEditGame(null); }} categories={cats} editGame={editGame} flash={flash} onOpenArtPicker={openArtPicker} />
           <DetectPanel show={showDetect} onClose={()=>setShowDetect(false)} onImport={doImport}/>
           <PlatformsPanel show={showPlatforms} onClose={()=>setShowPlatforms(false)} flash={flash} setGames={setGames} onOpenChiaki={()=>setShowChiaki(true)} onOpenXcloud={()=>setShowXcloud(true)}/>
           <ChiakiPanel show={showChiaki} onClose={()=>setShowChiaki(false)} flash={flash} games={games} setGames={setGames} chiakiSessions={chiakiSessions}/>
           <XcloudPanel show={showXcloud} onClose={()=>setShowXcloud(false)} flash={flash} games={games} setGames={setGames}/>
-          <SettingsPanel show={showSettings} onClose={()=>setShowSettings(false)} flash={flash} settings={settings} onSettingsChange={onSettingsChange} setGames={setGames} setCats={setCats} onOpenPlatforms={()=>{setShowSettings(false);setTimeout(()=>setShowPlatforms(true),150);}} onOpenDetect={()=>{setShowSettings(false);setTimeout(()=>setShowDetect(true),150);}} onSync={doSync} onFetchMetadata={doFetchAllMetadata}/>
+          <SettingsPanel show={showSettings} onClose={()=>setShowSettings(false)} flash={flash} settings={settings} onSettingsChange={onSettingsChange} setGames={setGames} setCats={setCats} onOpenPlatforms={()=>{setShowSettings(false);setTimeout(()=>setShowPlatforms(true),150);}} onOpenDetect={()=>{setShowSettings(false);setTimeout(()=>setShowDetect(true),150);}} onSync={doSync} onFetchMetadata={doFetchAllMetadata} onRunWizard={()=>setShowWizard(true)} />
+          <StartupWizard show={showWizard} onClose={()=>setShowWizard(false)} />
+          {globalArtPicker && (
+            <div className="modal-overlay">
+              <div className="modal-card" style={{width:820}}>
+                <ArtPicker gameName={globalArtPicker.gameName} platform={globalArtPicker.platform} field={globalArtPicker.field} onPick={(url)=>{ if(artResolve.current) artResolve.current(url); setGlobalArtPicker(null); }} onClose={()=>{ if(artResolve.current) artResolve.current(null); setGlobalArtPicker(null); }} />
+              </div>
+            </div>
+          )}
           {toast&&<Toast msg={toast} onDone={()=>setToast('')}/>}
+          {importProgress && importProgress.status && (
+            <div className="modal-overlay">
+              <div className="modal-card" style={{width:420}}>
+                <h3 style={{marginBottom:8}}>Importing {importProgress.provider}</h3>
+                <div style={{display:'flex',alignItems:'center',gap:12}}>
+                  <div style={{width:36,height:36,border:'2px solid rgba(255,255,255,0.06)',borderTopColor:'var(--accent)',borderRadius:50,animation:'spin 0.8s linear infinite'}}/>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:13,fontWeight:700}}>{importProgress.status === 'done' ? 'Completed' : 'In progress'}</div>
+                    <div style={{fontSize:12,color:'var(--text-3)',marginTop:6}}>{importProgress.processed || 0} processed • {importProgress.imported || 0} new • {importProgress.updated || 0} updated</div>
+                  </div>
+                </div>
+                <div style={{display:'flex',justifyContent:'flex-end',marginTop:12}}>
+                  <button className="btn-flat" onClick={()=>setImportProgress(null)}>Close</button>
+                </div>
+              </div>
+            </div>
+          )}
           {viewMode==='orbit'&&<div className="zoom-hud">
             <button className="zoom-btn" onClick={fitAll} title="Fit all"><span style={{display:'flex',width:14,height:14}}>{I.fit}</span></button>
             <button className="zoom-btn" onClick={zoomOut} title="Zoom out"><span style={{display:'flex',width:14,height:14}}>{I.zOut}</span></button>

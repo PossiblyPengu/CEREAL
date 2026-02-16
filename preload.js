@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('api', {
   getGames: () => ipcRenderer.invoke('games:getAll'),
   addGame: (game) => ipcRenderer.invoke('games:add', game),
   updateGame: (game) => ipcRenderer.invoke('games:update', game),
+  fetchCoverNow: (gameId) => ipcRenderer.invoke('covers:fetchNow', gameId),
   deleteGame: (id) => ipcRenderer.invoke('games:delete', id),
   toggleFavorite: (id) => ipcRenderer.invoke('games:toggleFavorite', id),
   launchGame: (id) => ipcRenderer.invoke('games:launch', id),
@@ -60,6 +61,8 @@ contextBridge.exposeInMainWorld('api', {
   applyMetadata: (gameId, force) => ipcRenderer.invoke('metadata:apply', gameId, force),
   fetchAllMetadata: () => ipcRenderer.invoke('metadata:fetchAll'),
   searchArt: (gameName, platform) => ipcRenderer.invoke('metadata:searchArt', gameName, platform),
+  steamGridDbLogin: () => ipcRenderer.invoke('steamgriddb:login'),
+  readClipboard: () => ipcRenderer.invoke('clipboard:readText'),
 
   // Playtime
   addPlaytime: (id, minutes) => ipcRenderer.invoke('playtime:add', id, minutes),
@@ -77,6 +80,12 @@ contextBridge.exposeInMainWorld('api', {
   xboxAuth: () => ipcRenderer.invoke('accounts:xbox:auth'),
   importXboxLibrary: () => ipcRenderer.invoke('accounts:xbox:import'),
 
+  // Import progress events (provider -> main -> renderer)
+  onImportProgress: (callback) => {
+    ipcRenderer.on('import:progress', (event, data) => callback(data));
+    return () => ipcRenderer.removeAllListeners('import:progress');
+  },
+
   // Settings
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (s) => ipcRenderer.invoke('settings:save', s),
@@ -87,4 +96,9 @@ contextBridge.exposeInMainWorld('api', {
   clearCovers: () => ipcRenderer.invoke('settings:clearCovers'),
   getDataPath: () => ipcRenderer.invoke('settings:getDataPath'),
   getAppVersion: () => ipcRenderer.invoke('settings:getAppVersion'),
+  // Secure API key storage
+  saveApiKey: (provider, apiKey) => ipcRenderer.invoke('keys:set', { service: `cereal-${provider}`, account: 'default', secret: apiKey }),
+  getApiKey: (provider) => ipcRenderer.invoke('keys:get', { service: `cereal-${provider}`, account: 'default' }),
+  deleteApiKey: (provider) => ipcRenderer.invoke('keys:delete', { service: `cereal-${provider}`, account: 'default' }),
+  validateApiKey: (provider, apiKey) => ipcRenderer.invoke('keys:validate', { provider, apiKey }),
 });

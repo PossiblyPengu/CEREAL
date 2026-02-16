@@ -1,10 +1,15 @@
 const { app, BrowserWindow, ipcMain, dialog, shell, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const keytar = require('keytar');
 const { execSync, spawn } = require('child_process');
 const readline = require('readline');
 const https = require('https');
 const crypto = require('crypto');
+const { pipeline } = require('stream');
+const { promisify } = require('util');
+const streamPipeline = promisify(pipeline);
+const providers = require(path.join(__dirname, 'providers'));
 
 // ─── Discord Rich Presence ─────────────────────────────────────────────────────
 const DiscordRPC = require('discord-rpc');
@@ -19,16 +24,7 @@ function connectDiscord() {
     discordRpc = new DiscordRPC.Client({ transport: 'ipc' });
     discordRpc.on('ready', () => {
       discordReady = true;
-      console.log('[Discord] Connected as', discordRpc.user?.username);
-      // If a game was already set before connection, push it now
-      if (discordCurrentGame) {
-        setDiscordPresence(discordCurrentGame.name, discordCurrentGame.platform, discordCurrentGame.startTimestamp);
-      }
-    });
-    discordRpc.on('disconnected', () => {
-      discordReady = false;
-      discordRpc = null;
-      console.log('[Discord] Disconnected');
+      console.log('[Discord] RPC ready');
     });
     discordRpc.login({ clientId: DISCORD_CLIENT_ID }).catch(err => {
       console.log('[Discord] Could not connect:', err.message);
@@ -222,6 +218,70 @@ function getBundledChiakiVersion() {
   const vf = path.join(dir, '.version');
   try { return fs.readFileSync(vf, 'utf-8').trim(); }
   catch (e) { return null; }
+}
+
+// --- Cover cache directory ---
+function getCoversDir() {
+  const dir = path.join(app.getPath('userData'), 'covers');
+  try { if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true }); } catch (e) {}
+  return dir;
+}
+
+async function downloadToFile(url, destPath) {
+  return new Promise((resolve, reject) => {
+    const req = https.get(url, (res) => {
+      if (res.statusCode && res.statusCode >= 400) return reject(new Error('HTTP ' + res.statusCode));
+      const file = fs.createWriteStream(destPath);
+      res.pipe(file);
+      file.on('finish', () => file.close(() => resolve(true)));
+      file.on('error', (err) => reject(err));
+    });
+    req.on('error', reject);
+  });
+}
+
+// Background fetch queue (simple FIFO)
+const coverQueue = [];
+let coverWorkerRunning = false;
+
+function enqueueCoverFetch(gameId) {
+  if (!gameId) return;
+  if (!coverQueue.includes(gameId)) coverQueue.push(gameId);
+  if (!coverWorkerRunning) processCoverQueue();
+}
+
+async function processCoverQueue() {
+  coverWorkerRunning = true;
+  while (coverQueue.length > 0) {
+    const gid = coverQueue.shift();
+    try {
+      const game = db.games.find(g => g.id === gid);
+      if (!game) continue;
+      // Skip if already has local cover
+      if (game.localCoverPath && fs.existsSync(game.localCoverPath)) continue;
+      // Prefer coverUrl, then headerUrl, then screenshots
+      const url = game.coverUrl || game.headerUrl || (game.screenshots && game.screenshots[0]);
+      if (!url) continue;
+      const ext = path.extname(new URL(url).pathname).split('?')[0] || '.jpg';
+      const name = 'cover_' + gid + ext;
+      const dest = path.join(getCoversDir(), name);
+      try {
+        await downloadToFile(url, dest);
+        game.localCoverPath = dest;
+        game._imgStamp = Date.now();
+        saveDB(db);
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('games:refresh', db.games);
+        console.log('[CoverFetcher] saved', dest);
+      } catch (e) {
+        console.log('[CoverFetcher] download failed for', url, e && e.message);
+      }
+      // small delay between downloads
+      await new Promise(r => setTimeout(r, 250));
+    } catch (e) {
+      console.error('Cover queue worker error', e && e.message);
+    }
+  }
+  coverWorkerRunning = false;
 }
 
 // ─── Chiaki Session Manager ──────────────────────────────────────────────────
@@ -1386,20 +1446,60 @@ function applyMetadataToGame(game, meta) {
   let changed = false;
 
   // Only fill in missing data — don't overwrite user customizations
-  if (!game.coverUrl && meta.coverUrl) { game.coverUrl = meta.coverUrl; changed = true; }
+  if (!game.coverUrl) {
+    const coverFallback = meta.coverUrl || meta.headerUrl || (meta.screenshots && meta.screenshots[0]) || '';
+    if (coverFallback) { game.coverUrl = coverFallback; changed = true; }
+  }
   if (!game.description && meta.description) { game.description = meta.description; changed = true; }
   if (!game.developer && meta.developer) { game.developer = meta.developer; changed = true; }
   if (!game.publisher && meta.publisher) { game.publisher = meta.publisher; changed = true; }
   if (!game.releaseDate && meta.releaseDate) { game.releaseDate = meta.releaseDate; changed = true; }
   if ((!game.categories || game.categories.length === 0) && meta.genres?.length) { game.categories = meta.genres; changed = true; }
-  if (!game.headerUrl && meta.headerUrl) { game.headerUrl = meta.headerUrl; changed = true; }
+  if (!game.headerUrl) {
+    const headerFallback = meta.headerUrl || meta.coverUrl || (meta.screenshots && meta.screenshots[0]) || '';
+    if (headerFallback) { game.headerUrl = headerFallback; changed = true; }
+  }
   if ((!game.screenshots || game.screenshots.length === 0) && meta.screenshots?.length) { game.screenshots = meta.screenshots; changed = true; }
   if (game.metacritic == null && meta.metacritic != null) { game.metacritic = meta.metacritic; changed = true; }
   if (!game.website && meta.website) { game.website = meta.website; changed = true; }
 
+  // Merge metadata categories/genres/type into game's categories (preserve existing user tags)
+  try {
+    const existing = (game.categories || []).filter(Boolean).map(c => String(c).trim());
+    const add = [];
+    if (meta.genres && Array.isArray(meta.genres)) {
+      for (const g of meta.genres) if (g) add.push(String(g).trim());
+    }
+    if (meta.categories && Array.isArray(meta.categories)) {
+      for (const c of meta.categories) if (c) add.push(String(c).trim());
+    }
+    if (meta.type && typeof meta.type === 'string') {
+      const t = meta.type.trim();
+      if (t && t.toLowerCase() !== 'game') add.push(t.charAt(0).toUpperCase() + t.slice(1));
+    }
+    if (add.length > 0) {
+      const merged = Array.from(new Map([...existing, ...add].map(x => [x.toLowerCase(), x])).values());
+      // If merged differs from existing, update
+      const existingNorm = existing.map(x => x.toLowerCase()).join('|');
+      const mergedNorm = merged.map(x => x.toLowerCase()).join('|');
+      if (mergedNorm !== existingNorm) {
+        game.categories = merged;
+        changed = true;
+      }
+    }
+  } catch (e) {}
+
   // If metadata indicates this Steam entry is non-game software, mark it
   if (meta._source === 'steam' && meta.isSoftware) {
     if (!game.software) { game.software = true; changed = true; }
+    // Also add a visible category tag so UI filters catch it
+    try {
+      const cats = game.categories || [];
+      if (!cats.some(c=>typeof c==='string' && c.toLowerCase()==='software')) {
+        game.categories = [...cats, 'Software'];
+        changed = true;
+      }
+    } catch(e){}
   }
 
   return changed;
@@ -1410,13 +1510,55 @@ ipcMain.handle('games:getAll', () => db.games);
 ipcMain.handle('games:getCategories', () => db.categories);
 
 ipcMain.handle('games:add', (event, game) => {
+  // Try to find an existing game to merge with (dedupe by platformId or canonical name)
+  function canonicalizeName(n) {
+    if (!n) return '';
+    return String(n).toLowerCase().replace(/\s*[-–:]\s*(deluxe|ultimate|gold|collector's|special|limited|complete|season pass|dlc|edition).*/i, '').replace(/[^a-z0-9]+/g, ' ').trim();
+  }
+
+  let existing = null;
+  try {
+    if (game.platform && game.platformId) {
+      existing = db.games.find(g => g.platform === game.platform && g.platformId && g.platformId === game.platformId);
+    }
+    if (!existing) {
+      const canon = canonicalizeName(game.name || '');
+      if (canon) existing = db.games.find(g => canonicalizeName(g.name) === canon && (!game.platform || g.platform === game.platform));
+    }
+  } catch (e) { existing = null; }
+
+  if (existing) {
+    // Merge into existing record instead of creating a duplicate
+    const prev = existing;
+    const merged = { ...prev, ...game };
+    try {
+      const coverChanged = (typeof game.coverUrl === 'string' && game.coverUrl !== prev.coverUrl);
+      const headerChanged = (typeof game.headerUrl === 'string' && game.headerUrl !== prev.headerUrl);
+      if (coverChanged || headerChanged) merged._imgStamp = Date.now(); else merged._imgStamp = prev._imgStamp;
+    } catch (e) { merged._imgStamp = prev._imgStamp; }
+    // Ensure platform/platformId are preserved
+    if (!merged.platform) merged.platform = prev.platform;
+    if (!merged.platformId) merged.platformId = prev.platformId;
+    db.games[db.games.findIndex(g => g.id === prev.id)] = merged;
+    saveDB(db);
+    console.log('[Main] games:update (dedupe merged)', merged.id, 'coverUrl=', merged.coverUrl, '_imgStamp=', merged._imgStamp);
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('games:refresh', db.games);
+    // If cover URL changed, enqueue fetch
+    try { enqueueCoverFetch(merged.id); } catch(e) {}
+    return merged;
+  }
+
+  // No existing match — create new
   game.id = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
   game.addedAt = new Date().toISOString();
   game.lastPlayed = null;
   game.playtimeMinutes = 0;
   game.favorite = false;
+  // Stamp new games that already have a cover to force immediate reloads in renderer
+  if (game.coverUrl) game._imgStamp = Date.now();
   db.games.push(game);
   saveDB(db);
+  console.log('[Main] games:add', game.id, 'coverUrl=', game.coverUrl, '_imgStamp=', game._imgStamp);
 
   // Auto-fetch metadata in the background
   fetchGameMetadata(game).then(meta => {
@@ -1428,14 +1570,30 @@ ipcMain.handle('games:add', (event, game) => {
     }
   }).catch(() => {});
 
+  // Enqueue cover fetch for newly added game
+  try { enqueueCoverFetch(game.id); } catch(e) {}
+
   return game;
 });
 
 ipcMain.handle('games:update', (event, updatedGame) => {
   const idx = db.games.findIndex(g => g.id === updatedGame.id);
   if (idx !== -1) {
-    db.games[idx] = { ...db.games[idx], ...updatedGame };
+    const prev = db.games[idx];
+    const merged = { ...prev, ...updatedGame };
+    // If cover/header changed on update, bump the stamp so renderer reloads
+    try {
+      const coverChanged = (typeof updatedGame.coverUrl === 'string' && updatedGame.coverUrl !== prev.coverUrl);
+      const headerChanged = (typeof updatedGame.headerUrl === 'string' && updatedGame.headerUrl !== prev.headerUrl);
+      if (coverChanged || headerChanged) merged._imgStamp = Date.now();
+      else merged._imgStamp = prev._imgStamp;
+    } catch (e) { merged._imgStamp = prev._imgStamp; }
+    db.games[idx] = merged;
+    console.log('[Main] games:update', merged.id, 'coverUrl=', merged.coverUrl, '_imgStamp=', merged._imgStamp, 'localCoverPath=', merged.localCoverPath);
     saveDB(db);
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('games:refresh', db.games);
+    // If cover URL changed, enqueue fetch
+    try { enqueueCoverFetch(updatedGame.id); } catch(e) {}
     return db.games[idx];
   }
   return null;
@@ -1455,6 +1613,71 @@ ipcMain.handle('games:toggleFavorite', (event, id) => {
     return game;
   }
   return null;
+});
+
+ipcMain.handle('covers:fetchNow', async (event, gameId) => {
+  try {
+    enqueueCoverFetch(gameId);
+    return { queued: true };
+  } catch (e) { return { error: e.message }; }
+});
+
+// --- Secure key storage and validation (uses OS credential store via keytar)
+ipcMain.handle('keys:set', async (event, {service, account, secret}) => {
+  try {
+    await keytar.setPassword(service, account, secret);
+    return {ok: true};
+  } catch (err) {
+    console.error('keys:set error', err);
+    return {ok: false, error: err && err.message};
+  }
+});
+
+ipcMain.handle('keys:get', async (event, {service, account}) => {
+  try {
+    const secret = await keytar.getPassword(service, account);
+    return {ok: true, secret};
+  } catch (err) {
+    console.error('keys:get error', err);
+    return {ok: false, error: err && err.message};
+  }
+});
+
+ipcMain.handle('keys:delete', async (event, {service, account}) => {
+  try {
+    const res = await keytar.deletePassword(service, account);
+    return {ok: res};
+  } catch (err) {
+    console.error('keys:delete error', err);
+    return {ok: false, error: err && err.message};
+  }
+});
+
+ipcMain.handle('keys:validate', async (event, {provider, apiKey}) => {
+  try {
+    // If provider module exposes validateKey, use it
+    if (providers && providers[provider] && typeof providers[provider].validateKey === 'function') {
+      try {
+        const res = await providers[provider].validateKey(apiKey);
+        return { ok: !!res.ok, provider, info: res.info, error: res.error };
+      } catch (e) { return { ok: false, provider, error: e && e.message }; }
+    }
+
+    // Fallback: legacy steam check
+    if (provider === 'steam') {
+      const url = `https://api.steampowered.com/ISteamWebAPIUtil/GetServerInfo/v1/?key=${encodeURIComponent(apiKey)}`;
+      const res = await httpGetJson(url);
+      if (res && res.status === 200 && res.data) {
+        return { ok: true, provider: 'steam', info: res.data };
+      }
+      return { ok: false, provider: 'steam', error: res && res.data };
+    }
+
+    return { ok: false, error: 'unknown-provider' };
+  } catch (err) {
+    console.error('keys:validate error', err);
+    return {ok: false, error: err && err.message};
+  }
 });
 
 // ─── Metadata Fetch ───────────────────────────────────────────────────────────
@@ -1697,34 +1920,31 @@ ipcMain.handle('metadata:searchArt', async (event, gameName, platform) => {
     return results;
   }
 
-  // Run ALL sources in parallel
-  const sources = [
-    searchSteam().catch(e => { console.log('[ArtSearch] Steam failed:', e.message); return []; }),
-    searchDuckDuckGo().catch(e => { console.log('[ArtSearch] DuckDuckGo failed:', e.message); return []; }),
-    searchWikidata().catch(e => { console.log('[ArtSearch] Wikidata failed:', e.message); return []; }),
-    searchWikipedia().catch(e => { console.log('[ArtSearch] Wikipedia failed:', e.message); return []; }),
-    searchRAWG().catch(e => { console.log('[ArtSearch] RAWG failed:', e.message); return []; }),
-    searchIGDB().catch(e => { console.log('[ArtSearch] IGDB failed:', e.message); return []; }),
-    searchSteamGridDB().catch(e => { console.log('[ArtSearch] SteamGridDB failed:', e.message); return []; }),
-  ];
-
-  const allResults = await Promise.all(sources);
-
-  // Merge and deduplicate — SteamGridDB first (primary cover source)
+  // Prefer SteamGridDB, but fall back to Steam store images when SGDB yields nothing
+  const sgdb = await searchSteamGridDB().catch(e => { console.log('[ArtSearch] SteamGridDB failed:', e.message); return []; });
   const images = [];
   const seen = new Set();
-  // Reorder: SteamGridDB (index 6) first, then the rest
-  const order = [6, 0, 5, 4, 1, 2, 3];
-  for (const idx of order) {
-    const batch = allResults[idx] || [];
-    for (const img of batch) {
-      if (img.url && !seen.has(img.url)) {
-        seen.add(img.url);
-        images.push(img);
-      }
+  for (const img of sgdb) {
+    if (img.url && !seen.has(img.url)) {
+      seen.add(img.url);
+      images.push(img);
     }
   }
-
+  if (images.length === 0) {
+    // Try Steam store as a fallback so users still get results for many titles
+    try {
+      const steamImgs = await searchSteam().catch(e => { console.log('[ArtSearch] Steam fallback failed:', e && e.message); return []; });
+      for (const img of steamImgs) {
+        if (img.url && !seen.has(img.url)) {
+          seen.add(img.url);
+          images.push(img);
+        }
+      }
+      if (images.length > 0) console.log('[ArtSearch] Using Steam fallback images');
+    } catch (e) {
+      console.log('[ArtSearch] Steam fallback threw:', e && e.message);
+    }
+  }
   return { images };
 });
 
@@ -1746,21 +1966,21 @@ ipcMain.handle('metadata:apply', async (event, gameId, force) => {
   try {
     const meta = await fetchGameMetadata(game);
     if (!meta) return { error: 'No metadata found' };
-    if (force) {
-      // Force-apply: overwrite all fields
-      if (meta.coverUrl) game.coverUrl = meta.coverUrl;
-      if (meta.description) game.description = meta.description;
-      if (meta.developer) game.developer = meta.developer;
-      if (meta.publisher) game.publisher = meta.publisher;
-      if (meta.releaseDate) game.releaseDate = meta.releaseDate;
-      if (meta.genres?.length) game.categories = meta.genres;
-      if (meta.headerUrl) game.headerUrl = meta.headerUrl;
-      if (meta.screenshots?.length) game.screenshots = meta.screenshots;
-      if (meta.metacritic != null) game.metacritic = meta.metacritic;
-      if (meta.website) game.website = meta.website;
-      saveDB(db);
-      return { success: true, game };
-    } else {
+      if (force) {
+        // Force-apply: overwrite all fields (with sensible fallbacks)
+        game.coverUrl = meta.coverUrl || meta.headerUrl || (meta.screenshots && meta.screenshots[0]) || game.coverUrl;
+        if (meta.description) game.description = meta.description;
+        if (meta.developer) game.developer = meta.developer;
+        if (meta.publisher) game.publisher = meta.publisher;
+        if (meta.releaseDate) game.releaseDate = meta.releaseDate;
+        if (meta.genres?.length) game.categories = meta.genres;
+        game.headerUrl = meta.headerUrl || meta.coverUrl || (meta.screenshots && meta.screenshots[0]) || game.headerUrl;
+        if (meta.screenshots?.length) game.screenshots = meta.screenshots;
+        if (meta.metacritic != null) game.metacritic = meta.metacritic;
+        if (meta.website) game.website = meta.website;
+        saveDB(db);
+        return { success: true, game };
+      } else {
       const changed = applyMetadataToGame(game, meta);
       if (changed) saveDB(db);
       return { success: true, game };
@@ -1783,6 +2003,44 @@ ipcMain.handle('metadata:fetchAll', async () => {
   }
   if (updated > 0) saveDB(db);
   return { updated, failed, total: db.games.length };
+});
+
+// ─── SteamGridDB Browser Login (opens external auth flow and prompts for API key)
+ipcMain.handle('steamgriddb:login', async () => {
+  try {
+    const { shell, dialog } = require('electron');
+    // Open SteamGridDB profile prefs where user can generate an API key
+    await shell.openExternal('https://www.steamgriddb.com/profile/preferences/api');
+    // Prompt user to paste the key
+    const { response, checkboxChecked } = await dialog.showMessageBox(mainWindow, {
+      type: 'info',
+      buttons: ['Paste API Key', 'Cancel'],
+      defaultId: 0,
+      message: 'SteamGridDB Login',
+      detail: 'This will open SteamGridDB in your browser. After generating an API key, click "Paste API Key" and paste it into the next prompt.'
+    });
+    if (response !== 0) return { cancelled: true };
+    const { canceled, result } = await dialog.showMessageBox(mainWindow, {
+      type: 'none',
+      buttons: ['OK'],
+      title: 'Paste API Key',
+      message: 'Paste your SteamGridDB API key into the settings page when prompted.'
+    });
+    // We can't read clipboard directly via dialog; instruct user to paste into settings input.
+    return { success: true };
+  } catch (e) {
+    return { error: e.message };
+  }
+});
+
+// Clipboard read helper for renderer (used to paste API keys)
+ipcMain.handle('clipboard:readText', () => {
+  try {
+    const { clipboard } = require('electron');
+    return clipboard.readText();
+  } catch (e) {
+    return '';
+  }
 });
 
 
@@ -2496,58 +2754,12 @@ ipcMain.handle('accounts:steam:auth', async () => {
 });
 
 ipcMain.handle('accounts:steam:import', async () => {
-  const acct = (db.accounts || {}).steam;
-  if (!acct?.steamId) return { error: 'Steam account not connected' };
+  if (!providers || !providers.steam || !providers.steam.importLibrary) return { error: 'Steam provider not available' };
   try {
-    // Fetch games from public profile XML endpoint
-    const r = await httpGetJson(`https://steamcommunity.com/profiles/${acct.steamId}/games/?tab=all&xml=1`);
-    const raw = r.raw || (typeof r.data === 'string' ? r.data : '');
-    if (!raw || raw.includes('<error>') || !raw.includes('<game>')) {
-      return { error: 'Could not fetch game list. Make sure your Steam profile and game details are set to Public in Steam Privacy Settings.' };
-    }
-    // Parse game entries from XML
-    const gameBlocks = raw.match(/<game>[\s\S]*?<\/game>/g) || [];
-    const imported = [];
-    const updated = [];
-    for (const block of gameBlocks) {
-      const appIdM = block.match(/<appID>(\d+)<\/appID>/);
-      if (!appIdM) continue;
-      const appId = appIdM[1];
-      // Name can be in CDATA or plain text
-      const nameM = block.match(/<name><!\[CDATA\[([\s\S]*?)\]\]><\/name>/) || block.match(/<name>([^<]+)<\/name>/);
-      const name = nameM ? nameM[1].trim() : 'Unknown Game';
-      const hoursM = block.match(/<hoursOnRecord>([\d.,]+)<\/hoursOnRecord>/);
-      const hours = hoursM ? parseFloat(hoursM[1].replace(',', '')) : 0;
-      const minutes = Math.round(hours * 60);
-      const existing = db.games.find(g => g.platform === 'steam' && g.platformId === appId);
-      if (existing) {
-        let changed = false;
-        if (minutes > (existing.playtimeMinutes || 0)) { existing.playtimeMinutes = minutes; changed = true; }
-        if (!existing.coverUrl) { existing.coverUrl = `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${appId}/library_600x900.jpg`; changed = true; }
-        if (changed) updated.push(existing.name);
-      } else {
-        db.games.push({
-          id: 'steam_' + appId + '_' + Date.now(),
-          name,
-          platform: 'steam',
-          platformId: appId,
-          coverUrl: `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${appId}/library_600x900.jpg`,
-          categories: [],
-          playtimeMinutes: minutes,
-          lastPlayed: null,
-          addedAt: new Date().toISOString(),
-          favorite: false,
-        });
-        imported.push(name);
-      }
-    }
-    if (!db.accounts) db.accounts = {};
-    if (db.accounts.steam) { db.accounts.steam.lastSync = new Date().toISOString(); db.accounts.steam.gameCount = gameBlocks.length; }
-    saveDB(db);
-    return { imported, updated, total: gameBlocks.length, games: db.games };
-  } catch (e) {
-    return { error: 'Import failed: ' + e.message };
-  }
+    const notify = (evt) => { try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('import:progress', { provider: 'steam', ...evt }); } catch(e) {} };
+    const res = await providers.steam.importLibrary({ db, saveDB, notify });
+    return res;
+  } catch (e) { return { error: 'Steam import failed: ' + e.message }; }
 });
 
 // ── GOG OAuth2 ──
@@ -2641,56 +2853,12 @@ async function refreshGogToken() {
 }
 
 ipcMain.handle('accounts:gog:import', async () => {
-  const acct = (db.accounts || {}).gog;
-  if (!acct?.accessToken) return { error: 'GOG account not connected' };
+  if (!providers || !providers.gog || !providers.gog.importLibrary) return { error: 'GOG provider not available' };
   try {
-    // Refresh token if expired
-    if (acct.expiresAt && Date.now() > acct.expiresAt - 60000) {
-      const ok = await refreshGogToken();
-      if (!ok) return { error: 'Token expired. Please sign in again.' };
-    }
-    // Fetch first page
-    const r = await httpGetJson('https://embed.gog.com/account/getFilteredProducts?mediaType=1&totalPages=1', { 'Authorization': 'Bearer ' + acct.accessToken });
-    if (!r.data?.products) return { error: 'Could not fetch GOG library (status ' + r.status + '). Try signing in again.' };
-    let allProducts = [...r.data.products];
-    const totalPages = r.data.totalPages || 1;
-    for (let page = 2; page <= Math.min(totalPages, 20); page++) {
-      const pr = await httpGetJson(`https://embed.gog.com/account/getFilteredProducts?mediaType=1&page=${page}`, { 'Authorization': 'Bearer ' + acct.accessToken });
-      if (pr.data?.products) allProducts.push(...pr.data.products);
-    }
-    const imported = [];
-    const updated = [];
-    for (const gp of allProducts) {
-      const gogId = String(gp.id);
-      const existing = db.games.find(g => g.platform === 'gog' && (g.platformId === gogId || g.name === gp.title));
-      if (existing) {
-        let changed = false;
-        if (!existing.platformId) { existing.platformId = gogId; changed = true; }
-        if (!existing.coverUrl && gp.image) { existing.coverUrl = 'https:' + gp.image + '_392.jpg'; changed = true; }
-        if (changed) updated.push(existing.name);
-      } else {
-        db.games.push({
-          id: 'gog_' + gogId + '_' + Date.now(),
-          name: gp.title,
-          platform: 'gog',
-          platformId: gogId,
-          coverUrl: gp.image ? 'https:' + gp.image + '_392.jpg' : '',
-          categories: [],
-          playtimeMinutes: 0,
-          lastPlayed: null,
-          addedAt: new Date().toISOString(),
-          favorite: false,
-        });
-        imported.push(gp.title);
-      }
-    }
-    if (!db.accounts) db.accounts = {};
-    if (db.accounts.gog) { db.accounts.gog.lastSync = new Date().toISOString(); db.accounts.gog.gameCount = allProducts.length; db.accounts.gog.displayName = r.data.username || acct.displayName; }
-    saveDB(db);
-    return { imported, updated, total: allProducts.length, games: db.games };
-  } catch (e) {
-    return { error: 'Import failed: ' + e.message };
-  }
+    const notify = (evt) => { try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('import:progress', { provider: 'gog', ...evt }); } catch(e) {} };
+    const res = await providers.gog.importLibrary({ db, saveDB, notify });
+    return res;
+  } catch (e) { return { error: 'GOG import failed: ' + e.message }; }
 });
 
 // ── Epic Games OAuth ──
@@ -2792,61 +2960,12 @@ async function refreshEpicToken() {
 }
 
 ipcMain.handle('accounts:epic:import', async () => {
-  const acct = (db.accounts || {}).epic;
-  if (!acct?.accessToken || !acct?.accountId) return { error: 'Epic account not connected' };
+  if (!providers || !providers.epic || !providers.epic.importLibrary) return { error: 'Epic provider not available' };
   try {
-    if (acct.expiresAt && Date.now() > acct.expiresAt - 60000) {
-      const ok = await refreshEpicToken();
-      if (!ok) return { error: 'Token expired. Please sign in again.' };
-    }
-    // Get library items (assets entitled to the account)
-    const r = await httpGetJson(
-      `https://library-service.live.use1a.on.epicgames.com/library/api/public/items?includeMetadata=true`,
-      { 'Authorization': 'Bearer ' + acct.accessToken }
-    );
-    const records = r.data?.records || r.data || [];
-    const imported = [];
-    const updated = [];
-    const processedIds = new Set();
-    for (const rec of records) {
-      const ns = rec.namespace || rec.catalogNamespace || '';
-      const catId = rec.catalogItemId || rec.catalogId || '';
-      const appName = rec.appName || '';
-      const title = rec.metadata?.title || rec.title || rec.appName || 'Unknown';
-      const keyId = ns || appName || catId;
-      if (!keyId || processedIds.has(keyId)) continue;
-      processedIds.add(keyId);
-      // Skip DLC / editions (heuristic: skip if title contains 'DLC', 'Pack', 'Edition' variants)
-      if (/\b(DLC|Season Pass|Expansion|Bundle|Upgrade)\b/i.test(title) && !/\bEdition\b/i.test(title)) continue;
-      const existing = db.games.find(g => g.platform === 'epic' && (g.platformId === ns || g.platformId === appName || g.platformId === catId || g.name === title));
-      if (existing) {
-        let changed = false;
-        if (!existing.platformId && ns) { existing.platformId = ns; changed = true; }
-        if (changed) updated.push(existing.name);
-      } else {
-        const imgUrl = rec.metadata?.keyImages?.find(k => k.type === 'DieselGameBox' || k.type === 'DieselGameBoxTall' || k.type === 'Thumbnail')?.url || '';
-        db.games.push({
-          id: 'epic_' + (ns || catId) + '_' + Date.now(),
-          name: title,
-          platform: 'epic',
-          platformId: ns || appName || catId,
-          coverUrl: imgUrl,
-          categories: [],
-          playtimeMinutes: 0,
-          lastPlayed: null,
-          addedAt: new Date().toISOString(),
-          favorite: false,
-        });
-        imported.push(title);
-      }
-    }
-    if (!db.accounts) db.accounts = {};
-    if (db.accounts.epic) { db.accounts.epic.lastSync = new Date().toISOString(); db.accounts.epic.gameCount = processedIds.size; }
-    saveDB(db);
-    return { imported, updated, total: processedIds.size, games: db.games };
-  } catch (e) {
-    return { error: 'Import failed: ' + e.message };
-  }
+    const notify = (evt) => { try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('import:progress', { provider: 'epic', ...evt }); } catch(e) {} };
+    const res = await providers.epic.importLibrary({ db, saveDB, notify });
+    return res;
+  } catch (e) { return { error: 'Epic import failed: ' + e.message }; }
 });
 
 // ── Xbox / Microsoft OAuth ──
@@ -2989,61 +3108,12 @@ async function refreshXboxTokens() {
 }
 
 ipcMain.handle('accounts:xbox:import', async () => {
-  const acct = (db.accounts || {}).xbox;
-  if (!acct?.xstsToken || !acct?.userHash || !acct?.xuid) return { error: 'Xbox account not connected' };
+  if (!providers || !providers.xbox || !providers.xbox.importLibrary) return { error: 'Xbox provider not available' };
   try {
-    if (acct.msExpiresAt && Date.now() > acct.msExpiresAt - 60000) {
-      const ok = await refreshXboxTokens();
-      if (!ok) return { error: 'Token expired. Please sign in again.' };
-    }
-    const xAuth = 'XBL3.0 x=' + acct.userHash + ';' + acct.xstsToken;
-    // Fetch title history (recently played games)
-    const r = await httpGetJson(
-      `https://titlehub.xboxlive.com/users/xuid(${acct.xuid})/titles/titlehistory/decoration/GamePass,Achievement,Image`,
-      { 'Authorization': xAuth, 'x-xbl-contract-version': '2', 'Accept-Language': 'en-US' }
-    );
-    const titles = r.data?.titles || [];
-    const imported = [];
-    const updated = [];
-    for (const t of titles) {
-      // Skip apps and non-games
-      if (!t.titleId || t.type === 'App' || t.type === 'WebApp') continue;
-      const titleId = String(t.titleId);
-      const name = t.name || 'Unknown';
-      const imgUrl = t.displayImage || t.images?.[0]?.url || '';
-      const lastPlayed = t.titleHistory?.lastTimePlayed || null;
-      const minutesPlayed = t.titleHistory?.totalMinutesPlayed || 0;
-      const existing = db.games.find(g => g.platform === 'xbox' && (g.platformId === titleId || g.name === name));
-      if (existing) {
-        let changed = false;
-        if (!existing.platformId) { existing.platformId = titleId; changed = true; }
-        if (minutesPlayed > (existing.playtimeMinutes || 0)) { existing.playtimeMinutes = minutesPlayed; changed = true; }
-        if (!existing.coverUrl && imgUrl) { existing.coverUrl = imgUrl; changed = true; }
-        if (lastPlayed && (!existing.lastPlayed || new Date(lastPlayed) > new Date(existing.lastPlayed))) { existing.lastPlayed = lastPlayed; changed = true; }
-        if (changed) updated.push(existing.name);
-      } else {
-        db.games.push({
-          id: 'xbox_' + titleId + '_' + Date.now(),
-          name,
-          platform: 'xbox',
-          platformId: titleId,
-          coverUrl: imgUrl,
-          categories: [],
-          playtimeMinutes: minutesPlayed,
-          lastPlayed: lastPlayed,
-          addedAt: new Date().toISOString(),
-          favorite: false,
-        });
-        imported.push(name);
-      }
-    }
-    if (!db.accounts) db.accounts = {};
-    if (db.accounts.xbox) { db.accounts.xbox.lastSync = new Date().toISOString(); db.accounts.xbox.gameCount = titles.filter(t => t.type !== 'App' && t.type !== 'WebApp').length; }
-    saveDB(db);
-    return { imported, updated, total: titles.length, games: db.games };
-  } catch (e) {
-    return { error: 'Import failed: ' + e.message };
-  }
+    const notify = (evt) => { try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('import:progress', { provider: 'xbox', ...evt }); } catch(e) {} };
+    const res = await providers.xbox.importLibrary({ db, saveDB, notify });
+    return res;
+  } catch (e) { return { error: 'Xbox import failed: ' + e.message }; }
 });
 
 // ─── chiaki-ng Configuration ──────────────────────────────────────────────────
