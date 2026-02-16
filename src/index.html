@@ -45,6 +45,7 @@
     .chip{padding:4px 12px;border-radius:14px;border:1px solid transparent;background:none;color:var(--text-3);font-size:10px;font-weight:500;font-family:inherit;white-space:nowrap;cursor:pointer;transition:all 0.2s}
     .chip:hover{color:var(--text-2);background:var(--glass)}
     .chip.active{background:var(--accent-soft);border-color:var(--accent-border);color:var(--accent)}
+    .chip.filter-active{background:linear-gradient(135deg,rgba(212,168,83,0.06),rgba(255,255,255,0.02));border-color:rgba(212,168,83,0.18);color:var(--accent)}
     .nav-actions{display:flex;gap:1px;margin-left:6px;flex-shrink:0}
     .nav-btn{width:30px;height:30px;border:none;background:none;border-radius:8px;color:var(--text-3);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.15s}
     .nav-btn:hover{background:var(--glass);color:var(--text)}
@@ -199,6 +200,13 @@
     .meta-toggle{display:flex;align-items:center;gap:8px;width:100%;padding:10px 0;border:none;background:none;color:var(--text-2);font-size:11px;font-weight:700;font-family:inherit;cursor:pointer;text-transform:uppercase;letter-spacing:0.5px;border-top:1px solid var(--glass-border);margin-top:4px}
     .meta-toggle svg{width:12px;height:12px;transition:transform 0.2s}
     .meta-toggle.open svg{transform:rotate(90deg)}
+    /* Themed toggle switch */
+    .toggle-row{display:flex;align-items:center;gap:12px}
+    .switch{width:44px;height:24px;border-radius:14px;background:var(--glass);border:1px solid var(--glass-border);position:relative;cursor:pointer;flex-shrink:0;transition:background 0.18s,border-color 0.18s}
+    .switch.on{background:linear-gradient(90deg,var(--accent-soft),rgba(255,255,255,0.02));border-color:var(--accent-border)}
+    .switch-knob{position:absolute;left:2px;top:2px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 2px 6px rgba(0,0,0,0.35);transition:left 0.18s,background 0.18s}
+    .switch.on .switch-knob{left:22px;background:var(--accent)}
+    .switch:focus{box-shadow:0 0 0 3px rgba(212,168,83,0.18);outline:none}
     .meta-section{overflow:hidden;transition:max-height 0.3s ease}
     .field-hint{font-size:9px;color:var(--text-4);margin-top:3px}
     .field select{cursor:pointer}
@@ -752,6 +760,12 @@
       const doXboxDisconnect = async () => { await window.api.removeAccount('xbox'); refreshAccounts(); flash('Xbox disconnected'); };
       var sc=accounts.steam?.connected, gc=accounts.gog?.connected, ec=accounts.epic?.connected, xc=accounts.xbox?.connected;
       var dot=s=>s==='connected'?'ok':s==='available'?'warn':s==='checking'?'warn':'off';
+      const [platFilter, setPlatFilter] = useState('');
+      const showPlat = (label) => {
+        var q = (platFilter||'').trim().toLowerCase();
+        if(!q) return true;
+        return (label||'').toLowerCase().includes(q);
+      };
       var PlatCard = ({ name, icon, iconBg, acct, connected, detected, loading, onAuth, onImport, onDisconnect, authLabel, extra }) => (
         <div style={{marginBottom:'16px'}}>
           <div className="conn-section">{name}</div>
@@ -789,10 +803,11 @@
       );
       return (
         <SidePanel show={show} onClose={onClose} title="Platforms" wide>
-          <PlatCard name="Steam" icon="S" iconBg="#1b2838" acct={accounts.steam} connected={sc} detected={platforms.steam.games} loading={steamLoading} onAuth={doSteamAuth} onImport={doSteamImport} onDisconnect={doSteamDisconnect} extra={sc&&<div style={{fontSize:'9px',color:'var(--text-4)',marginTop:'8px',lineHeight:1.5}}>Game list requires your Steam profile &amp; game details to be set to Public.</div>}/>
-          <PlatCard name="GOG" icon="G" iconBg="#3a1a50" acct={accounts.gog} connected={gc} detected={platforms.gog.games} loading={gogLoading} onAuth={doGogAuth} onImport={doGogImport} onDisconnect={doGogDisconnect}/>
-          <PlatCard name="Epic" icon="E" iconBg="#2a2a2a" acct={accounts.epic} connected={ec} detected={platforms.epic.games} loading={epicLoading} onAuth={doEpicAuth} onImport={doEpicImport} onDisconnect={doEpicDisconnect} authLabel="Sign in with Epic Games"/>
-          <PlatCard name="Xbox" icon="X" iconBg="#0e6a0e" acct={accounts.xbox} connected={xc} detected={platforms.xbox.games} loading={xboxLoading} onAuth={doXboxAuth} onImport={doXboxImport} onDisconnect={doXboxDisconnect} extra={<div style={{marginTop:'10px'}}><button className="btn-sm" onClick={()=>{onClose();onOpenXcloud();}} style={{width:'100%',display:'flex',alignItems:'center',justifyContent:'center',gap:'6px'}}><span style={{display:'flex',width:14,height:14}}>{I.globe}</span><span>Xbox Cloud Gaming</span></button></div>}/>
+          <div className="field" style={{marginBottom:12}}><label>Filter platforms</label><input value={platFilter} onChange={e=>setPlatFilter(e.target.value)} placeholder="Filter platforms..." /></div>
+          {showPlat('Steam') && <PlatCard name="Steam" icon="S" iconBg="#1b2838" acct={accounts.steam} connected={sc} detected={platforms.steam.games} loading={steamLoading} onAuth={doSteamAuth} onImport={doSteamImport} onDisconnect={doSteamDisconnect} extra={sc&&<div style={{fontSize:'9px',color:'var(--text-4)',marginTop:'8px',lineHeight:1.5}}>Game list requires your Steam profile &amp; game details to be set to Public.</div>}/>} 
+          {showPlat('GOG') && <PlatCard name="GOG" icon="G" iconBg="#3a1a50" acct={accounts.gog} connected={gc} detected={platforms.gog.games} loading={gogLoading} onAuth={doGogAuth} onImport={doGogImport} onDisconnect={doGogDisconnect}/>} 
+          {showPlat('Epic') && <PlatCard name="Epic" icon="E" iconBg="#2a2a2a" acct={accounts.epic} connected={ec} detected={platforms.epic.games} loading={epicLoading} onAuth={doEpicAuth} onImport={doEpicImport} onDisconnect={doEpicDisconnect} authLabel="Sign in with Epic Games"/>}
+          {showPlat('Xbox') && <PlatCard name="Xbox" icon="X" iconBg="#0e6a0e" acct={accounts.xbox} connected={xc} detected={platforms.xbox.games} loading={xboxLoading} onAuth={doXboxAuth} onImport={doXboxImport} onDisconnect={doXboxDisconnect} extra={<div style={{marginTop:'10px'}}><button className="btn-sm" onClick={()=>{onClose();onOpenXcloud();}} style={{width:'100%',display:'flex',alignItems:'center',justifyContent:'center',gap:'6px'}}><span style={{display:'flex',width:14,height:14}}>{I.globe}</span><span>Xbox Cloud Gaming</span></button></div>}/>} 
           <div style={{marginBottom:'16px'}}>
             <div className="conn-section">PlayStation</div>
             <div style={{padding:'14px',borderRadius:'10px',background:'var(--glass)',border:'1px solid var(--glass-border)'}}>
@@ -1187,6 +1202,11 @@
       const [games, setGames] = useState([]);
       const [cats, setCats] = useState([]);
       const [tab, setTab] = useState('all');
+      const [gameFilter, setGameFilter] = useState('');
+      const [selectedPlatforms, setSelectedPlatforms] = useState([]);
+      const [selectedCategories, setSelectedCategories] = useState([]);
+      const [showFilters, setShowFilters] = useState(false);
+      const [hideSteamSoftware, setHideSteamSoftware] = useState(false);
       const [focusGame, setFocusGame] = useState(null);
       const [showSearch, setShowSearch] = useState(false);
       const [showAdd, setShowAdd] = useState(false);
@@ -1260,13 +1280,17 @@
             setGames(g||[]); setCats(c||[]);
             if (window.api.getSettings) {
               var s = await window.api.getSettings();
-              if (s) {
+                if (s) {
                 setSettings(s);
                 if (s.defaultView) setViewMode(s.defaultView);
                 if (s.defaultTab) setTab(s.defaultTab);
                 if (s.theme) applyTheme(s.theme);
                 else if (s.accentColor) document.documentElement.style.setProperty('--accent', s.accentColor);
                 if (s.uiScale) applyUiScale(s.uiScale);
+                // Restore saved filters
+                if (s.filterPlatforms && Array.isArray(s.filterPlatforms)) setSelectedPlatforms(s.filterPlatforms);
+                if (s.filterCategories && Array.isArray(s.filterCategories)) setSelectedCategories(s.filterCategories);
+                if (s.filterHideSteamSoftware) setHideSteamSoftware(!!s.filterHideSteamSoftware);
               }
             }
           } else {
@@ -1303,6 +1327,19 @@
           }
         })();
       }, []);
+
+      // Persist selected filters to settings (debounced)
+      useEffect(()=>{
+        var t = setTimeout(async ()=>{
+          try{
+            if(window.api?.saveSettings){
+              await window.api.saveSettings({ filterPlatforms: selectedPlatforms, filterCategories: selectedCategories, filterHideSteamSoftware: hideSteamSoftware });
+            }
+          }catch(e){ console.error('saveSettings failed', e); }
+          setSettings(prev => ({ ...prev, filterPlatforms: selectedPlatforms, filterCategories: selectedCategories, filterHideSteamSoftware: hideSteamSoftware }));
+        }, 300);
+        return ()=>clearTimeout(t);
+      }, [selectedPlatforms, selectedCategories, hideSteamSoftware]);
 
       // Auto-sync playtime if enabled
       useEffect(() => {
@@ -1345,11 +1382,50 @@
       };
       const doEditFromFocus=game=>{setFocusGame(null);setEditGame(game);setShowAdd(true);};
 
-      const activePlatforms=useMemo(()=>{var s=new Set(games.map(g=>g.platform));return Object.keys(PLATFORMS).filter(k=>s.has(k));},[games]);
+      const activePlatforms=useMemo(()=>{var s=new Set(filteredGames.map(g=>g.platform));return Object.keys(PLATFORMS).filter(k=>s.has(k));},[filteredGames]);
       const isDimmed=game=>{if(tab==='all')return false;if(tab==='favorites')return !game.favorite;if(tab==='recent')return!game.lastPlayed;return game.platform!==tab;};
 
+      const filteredGames=useMemo(()=>{
+        var list=[...games];
+        if(tab==='favorites')list=list.filter(g=>g.favorite);
+        else if(tab==='recent')list=list.filter(g=>g.lastPlayed).sort((a,b)=>new Date(b.lastPlayed)-new Date(a.lastPlayed));
+        else if(tab!=='all')list=list.filter(g=>g.platform===tab);
+        var q = (gameFilter||'').trim().toLowerCase();
+        if(q) {
+          list = list.filter(g => {
+            if((g.name||'').toLowerCase().includes(q)) return true;
+            var platLabel = (PLATFORMS[g.platform]?.label||'').toLowerCase();
+            if(platLabel.includes(q)) return true;
+            if((g.categories||[]).some(c=>c.toLowerCase().includes(q))) return true;
+            return false;
+          });
+        }
+        if(hideSteamSoftware) {
+          list = list.filter(g => {
+            if (g.platform !== 'steam') return true;
+            if (g.software === true) return false;
+            if (g.type && typeof g.type === 'string' && g.type.toLowerCase().includes('soft')) return false;
+            if (g.categories && g.categories.some(c => typeof c === 'string' && c.toLowerCase().includes('software'))) return false;
+            return true;
+          });
+        }
+        if(selectedPlatforms && selectedPlatforms.length>0) {
+          list = list.filter(g => selectedPlatforms.includes(g.platform));
+        }
+        if(selectedCategories && selectedCategories.length>0) {
+          list = list.filter(g => (g.categories||[]).some(c=>selectedCategories.includes(c)));
+        }
+        return list;
+      },[games,tab,gameFilter,selectedPlatforms,selectedCategories,hideSteamSoftware]);
+
+      const groupedByPlatform=useMemo(()=>{
+        var groups={};
+        filteredGames.forEach(g=>{if(!groups[g.platform])groups[g.platform]=[];groups[g.platform].push(g);});
+        return Object.keys(PLATFORMS).filter(k=>groups[k]).map(k=>({platform:k,games:groups[k]}));
+      },[filteredGames]);
+
       const orbData=useMemo(()=>{
-        var groups={};games.forEach(g=>{if(!groups[g.platform])groups[g.platform]=[];groups[g.platform].push(g);});
+        var groups={};filteredGames.forEach(g=>{if(!groups[g.platform])groups[g.platform]=[];groups[g.platform].push(g);});
         var allPt=games.map(g=>g.playtimeMinutes||0);
         var maxPt=Math.max(...allPt,1);
         var result=[];var idx=0;
@@ -1392,7 +1468,7 @@
           }
         }
         return result;
-      },[games]);
+      },[filteredGames]);
 
       const stars=useMemo(()=>{var count=settings.starDensity==='low'?100:settings.starDensity==='high'?350:200;var s=[];for(var i=0;i<count;i++){var bright=Math.random()>0.85;s.push({x:Math.random()*100,y:Math.random()*100,sz:bright?1.5+Math.random()*2:0.6+Math.random()*1.5,op:bright?0.2+Math.random()*0.4:0.06+Math.random()*0.16,tw:Math.random()>0.4,twDur:3+Math.random()*6,twDel:Math.random()*8});}return s;},[settings.starDensity]);
       const galaxyStars=useMemo(()=>{var count=settings.starDensity==='low'?250:settings.starDensity==='high'?800:500;var s=[];for(var i=0;i<count;i++){var bright=Math.random()>0.9;var hue=Math.random()>0.82?(Math.random()>0.5?'rgb(180,200,255)':'rgb(255,220,180)'):'white';s.push({x:Math.random()*GALAXY_W,y:Math.random()*GALAXY_H,sz:bright?2+Math.random()*3:0.3+Math.random()*2.5,op:bright?0.15+Math.random()*0.3:0.03+Math.random()*0.12,hue:hue,tw:Math.random()>0.45,twDur:2.5+Math.random()*7,twDel:Math.random()*10});}return s;},[settings.starDensity]);
@@ -1400,19 +1476,7 @@
 
       var liveFocus=focusGame?games.find(g=>g.id===focusGame.id)||focusGame:null;
 
-      const filteredGames=useMemo(()=>{
-        var list=[...games];
-        if(tab==='favorites')list=list.filter(g=>g.favorite);
-        else if(tab==='recent')list=list.filter(g=>g.lastPlayed).sort((a,b)=>new Date(b.lastPlayed)-new Date(a.lastPlayed));
-        else if(tab!=='all')list=list.filter(g=>g.platform===tab);
-        return list;
-      },[games,tab]);
-
-      const groupedByPlatform=useMemo(()=>{
-        var groups={};
-        filteredGames.forEach(g=>{if(!groups[g.platform])groups[g.platform]=[];groups[g.platform].push(g);});
-        return Object.keys(PLATFORMS).filter(k=>groups[k]).map(k=>({platform:k,games:groups[k]}));
-      },[filteredGames]);
+      
 
       return (
         <div style={{width:'100%',height:'100%',position:'relative'}}>
@@ -1486,8 +1550,43 @@
             <button className={'chip'+(tab==='all'?' active':'')} onClick={()=>{setTab('all');if(viewMode==='orbit')fitAll();}}>All</button>
             <button className={'chip'+(tab==='favorites'?' active':'')} onClick={()=>setTab('favorites')}>Fav</button>
             <button className={'chip'+(tab==='recent'?' active':'')} onClick={()=>setTab('recent')}>Recent</button>
-            {activePlatforms.map(p=>(<button key={p} className={'chip'+(tab===p?' active':'')} onClick={()=>{var nt=tab===p?'all':p;setTab(nt);if(viewMode==='orbit'){if(nt==='all')fitAll();else{var c=CLUSTER_CENTERS[p];if(c)flyTo(c.x,c.y,1.6);}}}}><span style={{width:5,height:5,borderRadius:'50%',background:PLATFORMS[p].color,display:'inline-block',marginRight:5,verticalAlign:'middle'}}/>{PLATFORMS[p].label}</button>))}
+            {activePlatforms.map(p=>(<button key={p} className={'chip'+(tab===p?' active':'') + (selectedPlatforms.includes(p)?' filter-active':'')} onClick={()=>{var nt=tab===p?'all':p;setTab(nt);if(viewMode==='orbit'){if(nt==='all')fitAll();else{var c=CLUSTER_CENTERS[p];if(c)flyTo(c.x,c.y,1.6);}}}}><span style={{width:5,height:5,borderRadius:'50%',background:PLATFORMS[p].color,display:'inline-block',marginRight:5,verticalAlign:'middle'}}/>{PLATFORMS[p].label}</button>))}
             <div className="nav-sep"/>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginLeft:8,position:'relative'}}>
+              <input value={gameFilter} onChange={e=>setGameFilter(e.target.value)} placeholder="Filter games..." style={{padding:'6px 10px',borderRadius:8,border:'1px solid var(--glass-border)',background:'var(--glass)',color:'var(--text-2)',fontSize:11,width:180}} />
+              <button className="btn-sm" onClick={()=>setGameFilter('')} style={{padding:'6px 8px'}}>Clear</button>
+              <button className="btn-sm" onClick={()=>setShowFilters(s=>!s)} style={{padding:'6px 8px',position:'relative'}} title="Advanced filters">
+                Filters
+                { (selectedPlatforms.length + selectedCategories.length + (hideSteamSoftware?1:0)) > 0 && (
+                  <span style={{position:'absolute',top:-6,right:-6,minWidth:18,height:18,display:'inline-flex',alignItems:'center',justifyContent:'center',borderRadius:18,background:'var(--accent)',color:'#07070d',fontSize:11,fontWeight:700,padding:'0 6px',boxShadow:'0 4px 12px rgba(0,0,0,0.45)'}}>{selectedPlatforms.length + selectedCategories.length + (hideSteamSoftware?1:0)}</span>
+                )}
+              </button>
+              {showFilters && <div style={{position:'absolute',top:40,left:0,minWidth:320,background:'var(--surface)',border:'1px solid var(--glass-border)',borderRadius:10,padding:12,boxShadow:'0 8px 32px rgba(0,0,0,0.6)',zIndex:200}} onClick={e=>e.stopPropagation()}>
+                <div style={{fontSize:12,fontWeight:700,color:'var(--text)',marginBottom:8}}>Platforms</div>
+                <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:10}}>
+                  {Object.keys(PLATFORMS).map(pk=>{
+                    const active = selectedPlatforms.includes(pk);
+                    return <button key={pk} className={'tag'+(active?' sel':'')} onClick={()=>{
+                      setSelectedPlatforms(prev=>{ if(prev.includes(pk)) return prev.filter(x=>x!==pk); return [...prev,pk]; });
+                    }}>{PLATFORMS[pk].label}</button>;
+                  })}
+                </div>
+                <div style={{fontSize:12,fontWeight:700,color:'var(--text)',marginBottom:8}}>Categories</div>
+                <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                  {(cats||[]).map(c=>{const active=selectedCategories.includes(c);return <button key={c} className={'tag'+(active?' sel':'')} onClick={()=>{setSelectedCategories(prev=>{ if(prev.includes(c)) return prev.filter(x=>x!==c); return [...prev,c]; });}}>{c}</button>})}
+                </div>
+                <div style={{marginTop:10}} className="toggle-row">
+                  <div role="switch" aria-checked={hideSteamSoftware} tabIndex={0} className={'switch'+(hideSteamSoftware?' on':'')} onClick={()=>setHideSteamSoftware(s=>!s)} onKeyDown={e=>{ if(e.key==='Enter'||e.key===' ') { e.preventDefault(); setHideSteamSoftware(s=>!s); } }}>
+                    <div className="switch-knob" />
+                  </div>
+                  <div style={{fontSize:13,color:'var(--text-2)',fontWeight:600}}>Hide Steam software</div>
+                </div>
+                <div style={{display:'flex',justifyContent:'flex-end',gap:8,marginTop:10}}>
+                  <button className="btn-sm" onClick={()=>{setSelectedPlatforms([]);setSelectedCategories([]);}}>Reset</button>
+                  <button className="btn-sm primary" onClick={()=>setShowFilters(false)}>Done</button>
+                </div>
+              </div>}
+            </div>
             <div className="view-toggle">
               <button className={viewMode==='orbit'?'active':''} onClick={()=>setViewMode('orbit')} title="Orbit view">{I.orbit}</button>
               <button className={viewMode==='cards'?'active':''} onClick={()=>setViewMode('cards')} title="Card view">{I.grid}</button>
@@ -1520,7 +1619,15 @@
         </div>
       );
     }
-    ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+    try {
+      ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+    } catch (err) {
+      console.error('Render error', err);
+      const root = document.getElementById('root');
+      if (root) root.innerHTML = '<div style="padding:24px;color:#e8e4de;background:#07070d;font-family:Segoe UI">' +
+        '<h2 style="color:#d4a853">App render failed</h2><pre style="white-space:pre-wrap;color:#b0aaa0">' +
+        (err && err.stack ? err.stack : (err && err.message ? err.message : String(err))) + '</pre></div>';
+    }
   </script>
 </body>
 </html>

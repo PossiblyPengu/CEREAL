@@ -875,6 +875,18 @@ async function fetchSteamMetadata(appId) {
     const data = await httpGet(`https://store.steampowered.com/api/appdetails?appids=${appId}&l=english`);
     const info = data?.[appId]?.data;
     if (!info) return null;
+    // Heuristic: detect if the Steam entry is non-game software
+    let isSoftware = false;
+    if (info.type && typeof info.type === 'string' && info.type.toLowerCase() !== 'game') isSoftware = true;
+    if (!isSoftware && info.categories && Array.isArray(info.categories)) {
+      try {
+        if (info.categories.some(c => (c.description || '').toLowerCase().includes('software') || (c.description || '').toLowerCase().includes('utility') || (c.description || '').toLowerCase().includes('application'))) isSoftware = true;
+      } catch (e) { /* ignore */ }
+    }
+    if (!isSoftware && info.genres && Array.isArray(info.genres)) {
+      try { if (info.genres.some(g => (g.description || '').toLowerCase().includes('software'))) isSoftware = true; } catch(e){}
+    }
+
     return {
       description: (info.short_description || '').slice(0, 500),
       developer: (info.developers || [])[0] || '',
@@ -887,6 +899,7 @@ async function fetchSteamMetadata(appId) {
       metacritic: info.metacritic?.score || null,
       website: info.website || '',
       _source: 'steam',
+      isSoftware,
     };
   } catch (e) {
     console.log('[Metadata] Steam fetch failed for', appId, e.message);
@@ -1188,6 +1201,113 @@ async function fetchGiantBombMetadata(gameName, platform) {
   }
 }
 
+// ─── Platform-specific Store Fetchers (best-effort, public endpoints) ─────────
+async function fetchEpicMetadata(gameName) {
+  try {
+    const q = encodeURIComponent(gameName);
+    const url = `https://store-site-backend-static.ak.epicgames.com/api/en-US/content/products?locale=en-US&country=US&search=${q}`;
+    const data = await httpGet(url);
+    const el = data?.elements?.[0] || (data?.catalog?.searchStore?.elements && data.catalog.searchStore.elements[0]);
+    if (!el) return null;
+    const title = el.title || el.offerMappings?.[0]?.pageSlug || gameName;
+    return {
+      description: (el.description || el.longDescription || '').slice(0, 500),
+      developer: (el.developer || el.seller || '') || '',
+      publisher: el.publisher || '',
+      releaseDate: el.effectiveDate || '',
+      genres: (el.categories || []).map(c => c.path || c.title || c).slice(0,5),
+      coverUrl: el.keyImages?.find(k => k.type === 'Code')?.url || el.keyImages?.[0]?.url || '',
+      headerUrl: el.keyImages?.find(k => k.type === 'OfferImageWide')?.url || '',
+      screenshots: [],
+      metacritic: null,
+      website: el.productSlug ? `https://www.epicgames.com/store/en-US/p/${el.productSlug}` : '',
+      _source: 'epic',
+    };
+  } catch (e) {
+    console.log('[Metadata] Epic fetch failed for', gameName, e.message);
+    return null;
+  }
+}
+
+async function fetchGOGMetadata(gameName) {
+  try {
+    const q = encodeURIComponent(gameName);
+    const url = `https://catalog.gog.com/v1/products?search=${q}&limit=6&country=US`;
+    const data = await httpGet(url);
+    const item = data?.products?.[0] || (Array.isArray(data) && data[0]);
+    if (!item) return null;
+    return {
+      description: (item.description && (item.description.split('\n')[0])) || '',
+      developer: item.developer || '',
+      publisher: item.publisher || '',
+      releaseDate: item.releaseDate || item.release_date || '',
+      genres: (item.genres || []).map(g => g.name || g).slice(0,5),
+      coverUrl: item.image?.med || item.image?.small || '',
+      headerUrl: item.image?.full || '',
+      screenshots: [],
+      metacritic: null,
+      website: item.url || '',
+      _source: 'gog',
+    };
+  } catch (e) {
+    console.log('[Metadata] GOG fetch failed for', gameName, e.message);
+    return null;
+  }
+}
+
+async function fetchPSNMetadata(gameName) {
+  try {
+    const q = encodeURIComponent(gameName);
+    const url = `https://store.playstation.com/store/api/search/v3?platform=ps5,ps4&query=${q}&size=6&store=us`;
+    const data = await httpGet(url);
+    const item = data?.results?.[0] || (Array.isArray(data) && data[0]);
+    if (!item) return null;
+    return {
+      description: (item.short_description || item.long_description || '').slice(0, 500),
+      developer: item.developer || '',
+      publisher: item.publisher || '',
+      releaseDate: item.releaseDate || item.release_date || '',
+      genres: (item.genres || []).map(g => g.name || g).slice(0,5),
+      coverUrl: item.thumbnail || item.image || '',
+      headerUrl: item.hero || '',
+      screenshots: [],
+      metacritic: null,
+      website: item.url || '',
+      _source: 'psn',
+    };
+  } catch (e) {
+    console.log('[Metadata] PSN fetch failed for', gameName, e.message);
+    return null;
+  }
+}
+
+async function fetchXboxMetadata(gameName) {
+  try {
+    const q = encodeURIComponent(gameName);
+    const url = `https://displaycatalog.mp.microsoft.com/v7.0/products?market=US&languages=en-US&query=${q}&take=6`;
+    const data = await httpGet(url);
+    const prod = data?.Products?.[0] || (Array.isArray(data) && data[0]);
+    if (!prod) return null;
+    const title = prod.LocalizedProperties?.[0] || {};
+    return {
+      description: (title.ProductDescription || '').slice(0,500),
+      developer: prod.Publisher || '',
+      publisher: prod.Publisher || '',
+      releaseDate: prod.ReleaseDate || '',
+      genres: (prod.Genres || []).map(g => g.Name || g).slice(0,5),
+      coverUrl: title.Images?.find(i=>i.Type===0)?.Uri || '',
+      headerUrl: title.Images?.find(i=>i.Type===1)?.Uri || '',
+      screenshots: [],
+      metacritic: null,
+      website: prod.ProductUrl || '',
+      _source: 'xbox',
+    };
+  } catch (e) {
+    console.log('[Metadata] Xbox fetch failed for', gameName, e.message);
+    return null;
+  }
+}
+
 async function fetchGameMetadata(game) {
   if (!game || !game.name) return null;
 
@@ -1200,13 +1320,31 @@ async function fetchGameMetadata(game) {
 
   const ms = getMetadataSettings();
   let meta = null;
-
-  // Steam games with known appId: always hit Steam API directly first
-  if (game.platform === 'steam' && game.platformId) {
-    meta = await fetchSteamMetadata(game.platformId);
+  // Try platform-specific sources first (prefer platform store data when possible)
+  if (game.platform === 'steam') {
+    if (game.platformId) {
+      meta = await fetchSteamMetadata(game.platformId);
+    }
+    // If no appId or steam lookup failed, try a Steam name search
+    if (!meta) meta = await fetchSteamSearchMetadata(game.name);
+  } else if (game.platform) {
+    // Try platform store fetchers first (Epic, GOG, PSN, Xbox)
+    try {
+      if (game.platform === 'epic') meta = await fetchEpicMetadata(game.name);
+      else if (game.platform === 'gog') meta = await fetchGOGMetadata(game.name);
+      else if (game.platform === 'psn' || game.platform === 'psremote') meta = await fetchPSNMetadata(game.name);
+      else if (game.platform === 'xbox') meta = await fetchXboxMetadata(game.name);
+    } catch (e) { meta = null; }
+    // Fallback to third-party aggregators when platform store lookup fails
+    if (!meta) {
+      try { meta = await fetchRAWGMetadata(game.name, game.platform); } catch (e) { meta = null; }
+      if (!meta) {
+        try { meta = await fetchIGDBMetadata(game.name, game.platform); } catch (e) { meta = null; }
+      }
+    }
   }
 
-  // Use the preferred metadata source
+  // Fallback: Use the preferred metadata source configured by the user
   if (!meta) {
     switch (ms.source) {
       case 'steam':
@@ -1258,6 +1396,11 @@ function applyMetadataToGame(game, meta) {
   if ((!game.screenshots || game.screenshots.length === 0) && meta.screenshots?.length) { game.screenshots = meta.screenshots; changed = true; }
   if (game.metacritic == null && meta.metacritic != null) { game.metacritic = meta.metacritic; changed = true; }
   if (!game.website && meta.website) { game.website = meta.website; changed = true; }
+
+  // If metadata indicates this Steam entry is non-game software, mark it
+  if (meta._source === 'steam' && meta.isSoftware) {
+    if (!game.software) { game.software = true; changed = true; }
+  }
 
   return changed;
 }
