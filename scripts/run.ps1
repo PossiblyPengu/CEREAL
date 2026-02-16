@@ -90,35 +90,11 @@ if (-not (Test-Path "node_modules")) {
     Log "  [OK] node_modules present" Green
 }
 
-# --- 3. Download chiaki-ng if needed ------------------------------------------
-$ChiakiExe = Join-Path $ProjectRoot "resources\chiaki-ng\chiaki.exe"
-$ChiakiReady = Test-Path $ChiakiExe
-
-if ($RebuildChiaki) {
-    LogStep "Re-downloading chiaki-ng..."
-    & powershell -ExecutionPolicy Bypass -File "$ProjectRoot\scripts\setup-chiaki.ps1" -Force
-    if ($LASTEXITCODE -ne 0) {
-        Log "  [FAIL] chiaki-ng download failed (exit $LASTEXITCODE)" Red
-        Log "    Continuing without chiaki-ng..." Yellow
-    } else {
-        Log "  [OK] chiaki-ng downloaded" Green
-    }
-} elseif (-not $ChiakiReady -and -not $SkipChiaki) {
-    LogStep "chiaki-ng not found -- downloading..."
-    & powershell -ExecutionPolicy Bypass -File "$ProjectRoot\scripts\setup-chiaki.ps1"
-    if ($LASTEXITCODE -ne 0) {
-        Log "  [WARN] chiaki-ng download failed, continuing without it" Yellow
-        Log "    PlayStation Remote Play will be unavailable." Gray
-    } else {
-        Log "  [OK] chiaki-ng ready" Green
-    }
-} else {
-    if ($ChiakiReady) {
-        if ($Verbose) { Log "  [OK] chiaki-ng found at resources/chiaki-ng/" Green }
-    } else {
-        Log "  [WARN] chiaki-ng not present (skipped)" Yellow
-    }
-}
+# --- 3. chiaki-ng integration removed -----------------------------------------
+LogStep "chiaki-ng integration removed"
+Log "  chiaki-ng scripts and bundled binaries have been removed from the workspace." Yellow
+Log "  PlayStation Remote Play integration is disabled. You can re-add chiaki later." Yellow
+$ChiakiReady = $false
 
 # --- 4. Launch Electron -------------------------------------------------------
 LogStep "Starting Cereal Launcher..."

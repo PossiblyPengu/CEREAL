@@ -435,6 +435,7 @@
       custom: { x: 2500, y: 1350 },
     };
     function platformLabel(p) { return PLATFORMS[p]?.label || p; }
+    function coverErr(game) { return e => { var t=e.target.dataset.tried||'0'; if(game.platform==='steam'&&game.platformId){if(t==='0'){e.target.dataset.tried='1';e.target.src=`https://cdn.cloudflare.steamstatic.com/steam/apps/${game.platformId}/library_600x900.jpg`;}else if(t==='1'){e.target.dataset.tried='2';e.target.src=`https://cdn.cloudflare.steamstatic.com/steam/apps/${game.platformId}/header.jpg`;}else{e.target.style.display='none';e.target.nextSibling.style.display='flex';}}else{e.target.style.display='none';e.target.nextSibling.style.display='flex';} }; }
     function fmtTime(m) { if (!m) return 'No playtime'; if (m < 60) return m + ' min'; var h = Math.floor(m/60), r = m%60; return r ? h+'h '+r+'m' : h+'h'; }
     function fmtDate(d) { if (!d) return ''; try { return new Date(d).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }); } catch(e) { return ''; } }
 
@@ -532,7 +533,7 @@
           <button className="focus-close" onClick={onClose}>&times;</button>
           <div className="focus-content" onClick={e => e.stopPropagation()}>
             <div className="focus-art">
-              {game.coverUrl ? <img src={game.coverUrl} alt="" onError={e=>{e.target.style.display='none';e.target.nextSibling.style.display='flex';}} /> : null}
+              {game.coverUrl ? <img src={game.coverUrl} alt="" onError={coverErr(game)} /> : null}
               <div className="focus-art-fallback" style={game.coverUrl?{display:'none'}:{}}>{game.name.charAt(0)}</div>
             </div>
             <div className="focus-details">
@@ -870,9 +871,37 @@
       useEffect(() => { if(!show)return;(async()=>{ if(window.api){var st=await window.api.getChiakiStatus();var cfg=await window.api.getChiakiConfig();setChiakiStatus(st);setChiakiConfig(cfg||{executablePath:'',consoles:[],cerealMode:true});}else{setChiakiStatus({status:'bundled',version:'1.6.4'});setChiakiConfig({executablePath:'',consoles:[{nickname:'PS5-Living-Room',host:'192.168.1.50',profile:'default'}],cerealMode:true});}})(); }, [show]);
       var addConsole=async()=>{if(!newConsole.nickname||!newConsole.host)return;var u={...chiakiConfig,consoles:[...(chiakiConfig.consoles||[]),newConsole]};if(window.api)await window.api.saveChiakiConfig(u);setChiakiConfig(u);setNewConsole({nickname:'',host:'',profile:''});setShowAddConsole(false);flash('Console added');};
       var removeConsole=async idx=>{var u={...chiakiConfig,consoles:chiakiConfig.consoles.filter((_,i)=>i!==idx)};if(window.api)await window.api.saveChiakiConfig(u);setChiakiConfig(u);flash('Console removed');};
-      var doDiscover=async()=>{setDiscovering(true);setDiscovered([]);if(window.api){var r=await window.api.chiakiDiscoverConsoles();setDiscovered(r.consoles||[]);}else{await new Promise(r=>setTimeout(r,2000));setDiscovered([{name:'PS5-FEC1',host:'192.168.1.50'},{name:'PS5-Bedroom',host:'192.168.1.75'}]);}setDiscovering(false);};
+      const [discoverIncludeConfigured, setDiscoverIncludeConfigured] = useState(false);
+      var doDiscover=async()=>{setDiscovering(true);setDiscovered([]);
+        if(window.api){
+          try{
+            var r = await window.api.chiakiDiscoverConsoles({includeConfigured:discoverIncludeConfigured});
+            var consoles = (r.consoles||[]).map(c=>({...c, name: c.name||c.nickname||c.runningTitle}));
+            setDiscovered(consoles);
+            console.log('[chiaki] discovered (initial):', JSON.parse(JSON.stringify(consoles)));
+            // Try probing each host for richer info (host-name / running title)
+            try{
+              await Promise.all(consoles.map(async (c,idx)=>{
+                try{
+                  var p = await window.api.chiakiProbeConsole(c.host);
+                  console.log('[chiaki] probe result for', c.host, p);
+                  if (p && p.success && p.console) {
+                    var better = p.console.name || p.console.runningTitle || p.console.host;
+                    if (better) {
+                      consoles[idx] = {...consoles[idx], name: better, nickname: consoles[idx].nickname||p.console.name||p.console.runningTitle};
+                    }
+                  }
+                }catch(e){}
+              }));
+              setDiscovered([...consoles]);
+              console.log('[chiaki] discovered (after probe):', JSON.parse(JSON.stringify(consoles)));
+            }catch(e){}
+          }catch(e){ setDiscovered([]); }
+        }else{await new Promise(r=>setTimeout(r,2000));var demo=[{name:'PS5-FEC1',host:'192.168.1.50'},{name:'PS5-Bedroom',host:'192.168.1.75'}];setDiscovered(demo);console.log('[chiaki] discovered (demo):', JSON.parse(JSON.stringify(demo)));}
+        setDiscovering(false);
+      };
       var doRegister=async()=>{if(!regForm.host||!regForm.pin)return;setRegistering('working');if(window.api){var r=await window.api.chiakiRegisterConsole(regForm);setRegResult(r);setRegistering(r.success?'success':'failed');if(r.success)flash('Console registered!');}else{await new Promise(r=>setTimeout(r,2000));setRegResult({success:true,registKey:'DEMO_KEY_123',morning:'DEMO_MORNING_456'});setRegistering('success');flash('Console registered! (demo)');}};
-      var addDiscoveredAsConsole=c=>{setNewConsole({nickname:c.name,host:c.host,profile:''});setShowAddConsole(true);setActiveTab('consoles');};
+      var addDiscoveredAsConsole=c=>{setNewConsole({nickname:c.nickname||c.name||c.runningTitle||c.host,host:c.host,profile:''});setShowAddConsole(true);setActiveTab('consoles');};
       var configureStream=g=>{setStreamingGame(g);setStreamCfg({nickname:g.chiakiNickname||(chiakiConfig.consoles?.[0]?.nickname||''),host:g.chiakiHost||(chiakiConfig.consoles?.[0]?.host||''),profile:g.chiakiProfile||'',fullscreen:g.chiakiFullscreen!==false,registKey:g.chiakiRegistKey||'',morning:g.chiakiMorning||''});};
       var saveStream=async()=>{if(!streamingGame)return;if(window.api){var u=await window.api.setChiakiStream(streamingGame.id,streamCfg);if(u)setGames(g=>g.map(x=>x.id===streamingGame.id?u:x));}setStreamingGame(null);flash('Stream config saved');};
       var startStream=async g=>{if(window.api){var r=await window.api.chiakiStartStream(g.id);flash(r.success?'Starting stream: '+g.name:'Error: '+r.error);}else flash('Starting stream: '+g.name+' (demo)');};
@@ -887,18 +916,33 @@
           <div style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'14px',padding:'10px 14px',borderRadius:'8px',background:'var(--glass)'}}><span style={{display:'flex',width:14,height:14,color:'var(--text-3)'}}>{I.gear}</span><span style={{flex:1,fontSize:'11px',color:'var(--text-2)'}}>Cereal integration mode</span><button className={'btn-sm'+(chiakiConfig.cerealMode?' primary':'')} onClick={toggleCerealMode} style={{fontSize:'10px',padding:'3px 10px'}}>{chiakiConfig.cerealMode?'ON':'OFF'}</button></div>
           <div className="sub-tabs">{['consoles','games','discover','register'].map(t=><button key={t} className={'sub-tab'+(activeTab===t?' active':'')} onClick={()=>setActiveTab(t)}>{t}</button>)}</div>
           {activeTab==='consoles'&&<>
-            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'10px'}}><div className="conn-section" style={{margin:0}}>Registered Consoles</div><button className="btn-sm" onClick={()=>setShowAddConsole(!showAddConsole)}>+ Add</button></div>
             {showAddConsole&&<div style={{padding:'14px',borderRadius:'10px',background:'var(--glass)',border:'1px solid var(--glass-border)',marginBottom:'12px'}}><div className="field-row"><div className="field"><label>Nickname</label><input value={newConsole.nickname} onChange={e=>setNewConsole(p=>({...p,nickname:e.target.value}))} placeholder="PS5-Living-Room"/></div><div className="field"><label>Host IP</label><input value={newConsole.host} onChange={e=>setNewConsole(p=>({...p,host:e.target.value}))} placeholder="192.168.1.x"/></div></div><div className="field"><label>Profile</label><input value={newConsole.profile} onChange={e=>setNewConsole(p=>({...p,profile:e.target.value}))} placeholder="default"/></div><div style={{display:'flex',gap:'8px',justifyContent:'flex-end'}}><button className="btn-flat" onClick={()=>setShowAddConsole(false)}>Cancel</button><button className="btn-accent" onClick={addConsole}>Add</button></div></div>}
-            {(chiakiConfig.consoles||[]).length===0&&!showAddConsole&&<div style={{textAlign:'center',padding:'20px',color:'var(--text-4)',fontSize:'11px'}}>No consoles.</div>}
-            {(chiakiConfig.consoles||[]).map((c,i)=><div key={i} className="conn-card"><div className="conn-icon" style={{background:'#003087'}}>PS</div><div className="conn-info"><div className="conn-name">{c.nickname}</div><div className="conn-detail">{c.host}{c.profile?' / '+c.profile:''}</div></div><button className="btn-sm danger" onClick={()=>removeConsole(i)}><span style={{display:'flex',width:12,height:12}}>{I.trash}</span></button></div>)}
+            {(chiakiConfig.consoles||[]).length===0&&!showAddConsole&&<div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',textAlign:'center',padding:'40px 20px',gap:'12px'}}><div style={{fontSize:'36px',opacity:0.3,marginBottom:'4px'}}>🎮</div><div style={{fontSize:'13px',fontWeight:600,color:'var(--text-2)',marginBottom:'4px'}}>No consoles registered</div><div style={{fontSize:'11px',color:'var(--text-3)',maxWidth:'340px',lineHeight:1.5,marginBottom:'8px'}}>Add your PS4 or PS5 manually, scan your network for consoles, or register a new console with chiaki-ng.</div><div style={{display:'flex',gap:'8px',justifyContent:'center'}}><button className="btn-accent" onClick={()=>setShowAddConsole(true)} style={{fontSize:'11px',padding:'8px 16px'}}>Add Console</button><button className="btn-flat" onClick={()=>setActiveTab('discover')} style={{fontSize:'11px',padding:'8px 16px'}}>Discover</button></div></div>}
+            {(chiakiConfig.consoles||[]).length>0&&<div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'10px'}}><div className="conn-section" style={{margin:0}}>Registered Consoles</div><button className="btn-sm" onClick={()=>setShowAddConsole(!showAddConsole)}>+ Add</button></div>}
+            {(chiakiConfig.consoles||[]).map((c,i)=><div key={i} className="conn-card"><div className="conn-icon" style={{background:'#003087'}}>PS</div><div className="conn-info"><div className="conn-name">{c.nickname}</div><div className="conn-detail">{c.host}{c.profile?' / '+c.profile:''}</div></div><div style={{display:'flex',gap:8}}><button className="btn-sm" onClick={async ()=>{ flash('Probing '+c.host+'...'); var r = await window.api.chiakiProbeConsole(c.host); if(r && r.success){ flash('Reachable: '+(r.console&&r.console.name?r.console.name:c.host)); } else { flash('Unreachable: '+(r && r.error ? r.error : 'no response')); } }}>Probe</button><button className="btn-sm danger" onClick={()=>removeConsole(i)}><span style={{display:'flex',width:12,height:12}}>{I.trash}</span></button></div></div>)}
           </>}
           {activeTab==='games'&&<>
             {psGames.length===0&&<div style={{textAlign:'center',padding:'20px',color:'var(--text-4)',fontSize:'11px'}}>No PlayStation games.</div>}
             {psGames.map(g=>{var sess=chiakiSessions[g.id];return(<div key={g.id} className="conn-card" style={{flexWrap:'wrap'}}><div className="conn-icon" style={{background:'#003087'}}>PS</div><div className="conn-info"><div className="conn-name">{g.name}</div><div className="conn-detail">{sess?<span style={{color:sess.state==='streaming'?'var(--green)':'var(--accent)'}}>{sess.state==='streaming'?'LIVE':sess.state.toUpperCase()}{sess.streamInfo?.resolution?' / '+sess.streamInfo.resolution:''}{sess.quality?.bitrate?' / '+sess.quality.bitrate.toFixed(1)+' Mbps':''}</span>:(g.chiakiHost?'To '+g.chiakiNickname+' ('+g.chiakiHost+')':'Not configured')}</div></div><div className="conn-actions">{sess&&sess.state!=='disconnected'?<button className="btn-sm danger" onClick={()=>stopStream(g.id)}>Stop</button>:g.chiakiHost&&<button className="btn-sm primary" onClick={()=>startStream(g)} disabled={chiakiMissing}>Stream</button>}<button className="btn-sm" onClick={()=>configureStream(g)}>Config</button></div></div>);})}
             {streamingGame&&<div style={{marginTop:'12px',padding:'14px',borderRadius:'10px',background:'var(--glass)',border:'1px solid var(--accent-border)'}}><div style={{fontSize:'12px',fontWeight:600,color:'var(--text)',marginBottom:'10px'}}>Config: {streamingGame.name}</div><div className="field-row"><div className="field"><label>Console</label><select value={streamCfg.nickname} onChange={e=>{var con=(chiakiConfig.consoles||[]).find(c=>c.nickname===e.target.value);setStreamCfg(p=>({...p,nickname:e.target.value,host:con?.host||p.host}));}}><option value="">Select...</option>{(chiakiConfig.consoles||[]).map(c=><option key={c.nickname} value={c.nickname}>{c.nickname}</option>)}</select></div><div className="field"><label>Host</label><input value={streamCfg.host} onChange={e=>setStreamCfg(p=>({...p,host:e.target.value}))}/></div></div><div className="field-row"><div className="field"><label>Profile</label><input value={streamCfg.profile} onChange={e=>setStreamCfg(p=>({...p,profile:e.target.value}))} placeholder="default"/></div><div className="field"><label>Fullscreen</label><select value={streamCfg.fullscreen?'yes':'no'} onChange={e=>setStreamCfg(p=>({...p,fullscreen:e.target.value==='yes'}))}><option value="yes">Yes</option><option value="no">No</option></select></div></div><div className="field-row"><div className="field"><label>Regist Key</label><input value={streamCfg.registKey} onChange={e=>setStreamCfg(p=>({...p,registKey:e.target.value}))} placeholder="From registration"/></div><div className="field"><label>Morning</label><input value={streamCfg.morning} onChange={e=>setStreamCfg(p=>({...p,morning:e.target.value}))} placeholder="From registration"/></div></div><div style={{display:'flex',gap:'8px',justifyContent:'flex-end'}}><button className="btn-flat" onClick={()=>setStreamingGame(null)}>Cancel</button><button className="btn-accent" onClick={saveStream}>Save</button></div></div>}
           </>}
-          {activeTab==='discover'&&<><div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'12px'}}><span style={{fontSize:'11px',color:'var(--text-3)'}}>Scan for PlayStation consoles</span><button className="btn-sm primary" onClick={doDiscover} disabled={discovering||chiakiMissing}>{discovering?<><span className="spinner" style={{marginRight:6}}/>Scanning</>:'Scan Network'}</button></div>{discovered.map((c,i)=><div key={i} className="conn-card"><div className="conn-icon" style={{background:'#003087'}}>PS</div><div className="conn-info"><div className="conn-name">{c.name||'PlayStation'}</div><div className="conn-detail">{c.host}</div></div><button className="btn-sm primary" onClick={()=>addDiscoveredAsConsole(c)}>Add</button><button className="btn-sm" onClick={()=>{setRegForm(p=>({...p,host:c.host}));setActiveTab('register');}}>Register</button></div>)}{!discovering&&discovered.length===0&&<div style={{textAlign:'center',padding:'28px',color:'var(--text-4)',fontSize:'11px'}}>Click Scan to find consoles.</div>}</>}
-          {activeTab==='register'&&<><div style={{fontSize:'11px',color:'var(--text-3)',marginBottom:'14px',lineHeight:1.6}}>Register your console with chiaki-ng.</div><div className="field"><label>Console IP</label><input value={regForm.host} onChange={e=>setRegForm(p=>({...p,host:e.target.value}))} placeholder="192.168.1.x"/></div><div className="field"><label>PSN Account ID</label><input value={regForm.psnAccountId} onChange={e=>setRegForm(p=>({...p,psnAccountId:e.target.value}))} placeholder="Base64 ID"/></div><div className="field"><label>Link Code</label><input value={regForm.pin} onChange={e=>setRegForm(p=>({...p,pin:e.target.value}))} placeholder="8-digit code"/></div>{registering==='working'&&<div className="detect-status scanning" style={{display:'flex',alignItems:'center',gap:'8px',justifyContent:'center'}}><span className="spinner"/>Registering...</div>}{registering==='success'&&regResult&&<div className="detect-status done">Registered!{regResult.registKey?' Key: '+regResult.registKey.slice(0,12)+'...':''}</div>}{registering==='failed'&&regResult&&<div className="detect-status err">{regResult.error||'Registration failed'}</div>}<div style={{display:'flex',justifyContent:'flex-end',marginTop:'12px'}}><button className="btn-accent" onClick={doRegister} disabled={registering==='working'||chiakiMissing}>Register</button></div></>}
+            {activeTab==='discover'&&<><div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'12px'}}><div style={{display:'flex',alignItems:'center',gap:8}}><span style={{fontSize:'11px',color:'var(--text-3)'}}>Scan for PlayStation consoles</span><label style={{fontSize:11,color:'var(--text-3)',display:'flex',alignItems:'center',gap:6}}><input type="checkbox" checked={discoverIncludeConfigured} onChange={e=>setDiscoverIncludeConfigured(e.target.checked)}/> Include configured consoles (internet)</label></div><button className="btn-sm primary" onClick={doDiscover} disabled={discovering||chiakiMissing}>{discovering?<><span className="spinner" style={{marginRight:6}}/>Scanning</>:'Scan Network'}</button></div>{discovered.map((c,i)=><div key={i} className="conn-card"><div className="conn-icon" style={{background:'#003087'}}>PS</div><div className="conn-info"><div className="conn-name">{c.nickname||c.runningTitle||c.name||c.host||'PlayStation'}</div><div className="conn-detail">{c.host}</div></div><button className="btn-sm primary" onClick={()=>addDiscoveredAsConsole(c)}>Add</button><button className="btn-sm" onClick={()=>{setRegForm(p=>({...p,host:c.host}));setActiveTab('register');}}>Register</button></div>)}{!discovering&&discovered.length===0&&<div style={{textAlign:'center',padding:'28px',color:'var(--text-4)',fontSize:'11px'}}>Click Scan to find consoles.</div>}</>}
+          {activeTab==='register'&&<>
+            <div style={{fontSize:'11px',color:'var(--text-3)',marginBottom:'14px',lineHeight:1.6}}>Register your console with chiaki-ng.</div>
+            <div className="field"><label>Console IP</label><input value={regForm.host} onChange={e=>setRegForm(p=>({...p,host:e.target.value}))} placeholder="192.168.1.x"/></div>
+                <div className="field">
+              <label>PSN Account ID</label>
+              <div style={{display:'flex',gap:8}}>
+                <input value={regForm.psnAccountId} onChange={e=>setRegForm(p=>({...p,psnAccountId:e.target.value}))} placeholder="Base64 ID" style={{flex:1}}/>
+                <button className="btn-sm" onClick={async ()=>{ if(!window.api?.psnAuth){ flash('PSN auth not available'); return; } var r = await window.api.psnAuth(); if(r && r.success && r.psnAccountId){ setRegForm(p=>({...p,psnAccountId:r.psnAccountId})); flash('PSN Account ID detected'); try{ var cfg = await window.api.getChiakiConfig(); cfg = cfg || {}; cfg.psnAccountId = r.psnAccountId; await window.api.saveChiakiConfig(cfg); }catch(e){ console.error('save psn id', e); } } else { flash('PSN auth failed: ' + (r && r.error ? r.error : 'unknown')); } }}>Sign in to PSN</button>
+              </div>
+            </div>
+            <div className="field"><label>Link Code</label><input value={regForm.pin} onChange={e=>setRegForm(p=>({...p,pin:e.target.value}))} placeholder="8-digit code"/></div>
+            {registering==='working'&&<div className="detect-status scanning" style={{display:'flex',alignItems:'center',gap:'8px',justifyContent:'center'}}><span className="spinner"/>Registering...</div>}
+            {registering==='success'&&regResult&&<div className="detect-status done">Registered!{regResult.registKey?' Key: '+regResult.registKey.slice(0,12)+'...':''}</div>}
+            {registering==='failed'&&regResult&&<div className="detect-status err">{regResult.error||'Registration failed'}</div>}
+            <div style={{display:'flex',justifyContent:'flex-end',marginTop:'12px'}}><button className="btn-accent" onClick={doRegister} disabled={registering==='working'||chiakiMissing}>Register</button></div>
+          </>}
         </SidePanel>
       );
     }
@@ -927,6 +971,9 @@
       const [appVersion, setAppVersion] = useState('1.0.0');
       const [confirmClear, setConfirmClear] = useState(false);
       const [confirmClearCovers, setConfirmClearCovers] = useState(false);
+      const [psnAccount, setPsnAccount] = useState(null);
+      const [probeHistory, setProbeHistory] = useState([]);
+      const [oauthBusy, setOauthBusy] = useState(false);
 
       useEffect(() => {
         if (!show) { setConfirmClear(false); setConfirmClearCovers(false); return; }
@@ -934,6 +981,9 @@
         (async () => {
           if (window.api?.getDataPath) { var p = await window.api.getDataPath(); setDataPath(p); }
           if (window.api?.getAppVersion) { var v = await window.api.getAppVersion(); setAppVersion(v); }
+          // Load PSN info and probe history when settings open
+          try { if (window.api?.psnGetAccount) { var a = await window.api.psnGetAccount(); setPsnAccount(a?.psnAccountId || null); } } catch(e) {}
+          try { if (window.api?.getProbeHistory) { var h = await window.api.getProbeHistory(); setProbeHistory(h?.history || []); } } catch(e) {}
         })();
       }, [show, settings]);
 
@@ -1141,6 +1191,51 @@
           </div>
 
           <div className="settings-section">
+            <div className="settings-section-title">PlayStation / PSN</div>
+            <div className="field">
+              <label>Detected PSN Account</label>
+              <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                <input value={psnAccount||''} placeholder="Not set" onChange={e=>setPsnAccount(e.target.value)} />
+                <button className="btn-sm primary" onClick={async ()=>{ await window.api.psnSetAccount(psnAccount); flash('PSN Account saved'); }}>Save</button>
+                <button className="btn-sm" onClick={async ()=>{ var r = await window.api.psnAuth(); if (r?.success) { setPsnAccount(r.psnAccountId); await window.api.psnSetAccount(r.psnAccountId); flash('PSN Account detected and saved'); } else { flash('Browser sign-in failed: ' + (r?.error||'no id')); } }}>Sign in (Browser)</button>
+                <button className="btn-sm" onClick={async ()=>{
+                  try {
+                    setOauthBusy(true);
+                    const info = await window.api.psnOAuthInfo();
+                    if (!info || !info.supported) { flash('OAuth not configured; see PSN OAuth docs'); setOauthBusy(false); return; }
+                    const r = await window.api.startPsnOAuth();
+                    setOauthBusy(false);
+                    if (r?.success) {
+                      // Code received; renderer can exchange for tokens if desired
+                      flash('Authorization code received — complete token exchange in settings');
+                      console.log('PSN OAuth code:', r.code);
+                    } else {
+                      flash('OAuth failed: ' + (r?.error||'unknown'));
+                    }
+                  } catch(e) { setOauthBusy(false); flash('OAuth error: '+e.message); }
+                }} disabled={oauthBusy}>{oauthBusy? 'Starting...' : 'Start OAuth (PKCE)'}</button>
+              </div>
+              <div className="field-hint">Detected PSN account (from browser) or set manually. OAuth PKCE scaffold available if client credentials are configured.</div>
+            </div>
+
+            <div className="field">
+              <label>Probe History</label>
+              <div style={{maxHeight:200,overflowY:'auto',padding:8,borderRadius:8,background:'var(--glass)'}}>
+                {probeHistory.length === 0 && <div style={{fontSize:11,color:'var(--text-4)'}}>No probes recorded yet.</div>}
+                {probeHistory.map((h, idx) => (
+                  <div key={idx} style={{display:'flex',justifyContent:'space-between',gap:8,padding:'6px 4px',borderBottom:'1px solid rgba(255,255,255,0.02)'}}>
+                    <div style={{fontSize:12}}>{h.host}</div>
+                    <div style={{fontSize:11,color: h.success ? 'var(--green)' : 'var(--text-4)'}}>{h.success ? 'OK' : 'Failed'} • {new Date(h.ts).toLocaleString()}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{marginTop:8,display:'flex',gap:8}}>
+                <button className="btn-sm" onClick={async ()=>{ await window.api.clearProbeHistory(); setProbeHistory([]); flash('Probe history cleared'); }}>Clear History</button>
+              </div>
+            </div>
+
+            <div style={{height:8}} />
+
             <div className="settings-section-title">Library Data</div>
             <div className="settings-row">
               <div className="settings-row-info"><div className="settings-row-label">Export Library</div><div className="settings-row-desc">Save games and settings to a file</div></div>
@@ -1329,7 +1424,7 @@
       const doAdd=async f=>{if(window.api){var n=await window.api.addGame(f);setGames(g=>[...g,n]);}else setGames(g=>[...g,{...f,id:Date.now()+'',addedAt:new Date().toISOString(),playtimeMinutes:0,favorite:false}]);setShowAdd(false);setEditGame(null);flash('Game added');};
       const doEdit=async f=>{if(window.api){var u=await window.api.updateGame(f);setGames(g=>g.map(x=>x.id===f.id?u:x));}else setGames(g=>g.map(x=>x.id===f.id?{...x,...f}:x));setShowAdd(false);setEditGame(null);flash('Game updated');};
       const doDelete=async id=>{if(window.api)await window.api.deleteGame(id);setGames(g=>g.filter(x=>x.id!==id));setFocusGame(null);flash('Game removed');};
-      const doImport=async list=>{for(var g of list){if(window.api){var n=await window.api.addGame(g);setGames(prev=>[...prev,n]);}else setGames(prev=>[...prev,{...g,id:Date.now()+''+Math.random(),addedAt:new Date().toISOString(),playtimeMinutes:0,favorite:false}]);}setShowDetect(false);flash('Imported '+list.length+' games');};
+      const doImport=async list=>{var added=[];for(var g of list){if(window.api){var n=await window.api.addGame(g);if(n)added.push(n);}else added.push({...g,id:Date.now()+''+Math.random(),addedAt:new Date().toISOString(),playtimeMinutes:0,favorite:false});}if(added.length)setGames(prev=>[...prev,...added]);setShowDetect(false);flash(added.length?'Imported '+added.length+' game'+(added.length===1?'':'s'):'All games already in library');};
       const doSync=async()=>{if(!window.api||!window.api.syncPlaytime){flash('Sync not available');return;}flash('Syncing playtime...');var r=await window.api.syncPlaytime();if(r.games)setGames(r.games);if(r.updated&&r.updated.length>0)flash('Updated playtime for '+r.updated.length+' games');else flash('Playtime is up to date');};
       const doFetchAllMetadata=async()=>{if(!window.api?.fetchAllMetadata){flash('Metadata fetch not available');return;}flash('Fetching metadata for all games...');try{var r=await window.api.fetchAllMetadata();if(r.updated>0){var g=await window.api.getGames();setGames(g);flash('Updated metadata for '+r.updated+' of '+r.total+' games');}else{flash('All metadata is up to date');}}catch(e){flash('Metadata fetch failed');}};
       const onSettingsChange = s => {
@@ -1431,7 +1526,7 @@
                 <div className="nebula" style={{left:c.x+100,top:c.y-80,width:350,height:350,background:col,opacity:0.03}}/>
                 <div className="nebula" style={{left:c.x-60,top:c.y+70,width:280,height:280,background:col,opacity:0.02}}/>
                 {[90,150,220,300].map(r=><div key={r} className="orbit-ring" style={{left:c.x,top:c.y,width:r*2,height:r*2,borderColor:r<160?'rgba(255,255,255,0.04)':'rgba(255,255,255,0.018)'}}/>)}
-                <div className="galaxy-sun" style={{left:c.x,top:c.y}}>
+                <div className="galaxy-sun" role={plat==='psn'?'button':undefined} tabIndex={plat==='psn'?0:-1} style={{left:c.x,top:c.y, pointerEvents:(plat==='psn'?'auto':'none'), cursor:(plat==='psn'?'pointer':'default')}} onClick={()=>{ try { if(plat==='psn' && typeof setShowChiaki === 'function') { setShowChiaki(true); } } catch(e) { console.error('galaxy-sun click handler error', e); } }} onKeyDown={(e)=>{ if(plat==='psn' && (e.key==='Enter' || e.key===' ')) { e.preventDefault(); try { if(typeof setShowChiaki === 'function') setShowChiaki(true); } catch(err){ console.error(err); } } }} title={plat==='psn'?'Open PlayStation Remote Play (chiaki-ng)':'Cluster'}>
                   <div className="galaxy-sun-flare" style={{width:200,height:200,background:'radial-gradient(circle,'+col+' 0%,transparent 70%)',opacity:0.1,left:'50%',top:'50%',transform:'translate(-50%,-50%)',position:'absolute'}}/>
                   <div className="galaxy-sun-corona" style={{width:130,height:130,background:'radial-gradient(circle,'+col+' 0%,transparent 65%)',opacity:0.35}}/>
                   <div className="galaxy-sun-core" style={{width:56,height:56,background:'radial-gradient(circle at 35% 35%,rgba(255,255,255,0.2),'+col+')',border:'2px solid rgba(255,255,255,0.1)',boxShadow:'0 0 30px '+col+',0 0 60px '+col}}>
@@ -1444,7 +1539,7 @@
                 <div key={o.game.id} className="orb" style={{left:o.x,top:o.y,'--drift-x':anim?o.driftX+'px':'0px','--drift-y':anim?o.driftY+'px':'0px','--drift-dur':o.driftDur+'s','--drift-delay':o.driftDelay+'s',animationPlayState:anim?'running':'paused'}}>
                   <div className={'orb-body'+(entered?' entered':'')+(dimmed?' dimmed':'')} style={{'--orb-size':o.size+'px','--orb-color':p?.color||'#555','--enter-delay':(!ready?o.enterDelay+'s':'0s')}} onClick={()=>{if(!dragInfo.current.moved)setFocusGame(o.game);}}>
                     <div className="orb-visual">
-                      {o.game.coverUrl?<img src={o.game.coverUrl} alt="" onError={e=>{e.target.style.display='none';e.target.nextSibling.style.display='flex';}}/>:null}
+                      {o.game.coverUrl?<img src={o.game.coverUrl} alt="" onError={coverErr(o.game)}/>:null}
                       <div className="orb-fallback" style={o.game.coverUrl?{display:'none'}:{}}><span style={{fontSize:o.size*0.38+'px'}}>{o.game.name.charAt(0)}</span></div>
                     </div>
                     {o.game.favorite&&<div className="orb-fav"><svg viewBox="0 0 24 24" fill="currentColor" width="8" height="8"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></div>}
@@ -1462,7 +1557,7 @@
                   {gms.map((g,gi)=>{var dim=isDimmed(g);return(
                     <div key={g.id} className={'game-card'+(dim?' dimmed':'')} style={{animationDelay:gi*0.04+'s'}} onClick={()=>setFocusGame(g)}>
                       <div className="card-cover">
-                        {g.coverUrl?<img src={g.coverUrl} alt="" onError={e=>{e.target.style.display='none';e.target.nextSibling.style.display='flex';}}/>:null}
+                        {g.coverUrl?<img src={g.coverUrl} alt="" onError={coverErr(g)}/>:null}
                         <div className="card-cover-fallback" style={g.coverUrl?{display:'none'}:{}}>{g.name.charAt(0)}</div>
                         <div className="card-plat-badge" style={{background:'rgba(0,0,0,0.55)',color:p.color}}>{p.letter}</div>
                         {g.favorite&&<div className="card-fav"><svg viewBox="0 0 24 24" fill="currentColor" width="10" height="10"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></div>}

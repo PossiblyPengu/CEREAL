@@ -1,99 +1,57 @@
+# build-chiaki.ps1 — Windows bootstrap: launches chiaki-ng build inside MSYS2 MinGW64
+#
+# Usage:
+#   .\scripts\build-chiaki.ps1 [-Msys2Root C:\msys64]
+
 param(
-    [switch]$Clean
+    [string]$Msys2Root = "C:\msys64"
 )
 
-$ErrorActionPreference = 'Stop'
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$RepoRoot = Resolve-Path (Join-Path $ScriptDir '..')
-$VendorDir = Join-Path $RepoRoot 'vendor\chiaki-ng'
-$BuildDir = Join-Path $VendorDir 'build-windows'
-$ResourcesDir = Join-Path $RepoRoot 'resources\chiaki-ng'
+$ErrorActionPreference = "Stop"
 
-Write-Host ""; Write-Host '============================================================' -ForegroundColor Cyan
-Write-Host '  Cereal - build chiaki-ng (Windows)' -ForegroundColor Cyan
-Write-Host '============================================================' -ForegroundColor Cyan
+# ── Locate MSYS2 ─────────────────────────────────────────────────────────────
+$bash    = "$Msys2Root\usr\bin\bash.exe"
+$cygpath = "$Msys2Root\usr\bin\cygpath.exe"
 
-if (-not (Test-Path $VendorDir)) {
-    Write-Host "ERROR: vendor/chiaki-ng not found. Initialize submodules first." -ForegroundColor Red
-    Write-Host "  git submodule update --init --recursive" -ForegroundColor Gray
+if (-not (Test-Path $bash)) {
+    Write-Host "ERROR: MSYS2 not found at $Msys2Root" -ForegroundColor Red
+    Write-Host "  Install from https://www.msys2.org/ then re-run." -ForegroundColor Red
     exit 1
 }
 
-if ($Clean -and (Test-Path $BuildDir)) {
-    Write-Host 'Cleaning previous build...' -ForegroundColor White
-    Remove-Item $BuildDir -Recurse -Force
-}
+# ── Locate project root ───────────────────────────────────────────────────────
+$scriptDir   = Split-Path -Parent $MyInvocation.MyCommand.Path
+$projectRoot = Split-Path -Parent $scriptDir
 
-New-Item -ItemType Directory -Path $BuildDir -Force | Out-Null
-
-# Detect CMake
-$cmake = Get-Command cmake -ErrorAction SilentlyContinue
-if (-not $cmake) {
-    Write-Host 'ERROR: CMake not found in PATH. Install CMake and try again.' -ForegroundColor Red
+# ── Convert to MSYS2 path via cygpath (most reliable method) ─────────────────
+$msysRoot = & $cygpath --unix $projectRoot
+if ([string]::IsNullOrWhiteSpace($msysRoot)) {
+    Write-Host "ERROR: cygpath could not convert: $projectRoot" -ForegroundColor Red
     exit 1
 }
 
-# Prefer Ninja if available
-$ninja = Get-Command ninja -ErrorAction SilentlyContinue
-if ($ninja) { $gen = 'Ninja' } else { $gen = $null }
+# ── Launch build ──────────────────────────────────────────────────────────────
+Write-Host ""
+Write-Host "============================================================" -ForegroundColor Cyan
+Write-Host "  Cereal - chiaki-ng source build (Windows)" -ForegroundColor Cyan
+Write-Host "============================================================" -ForegroundColor Cyan
+Write-Host "  MSYS2 : $Msys2Root" -ForegroundColor Gray
+Write-Host "  Root  : $msysRoot" -ForegroundColor Gray
+Write-Host ""
 
-Write-Host "Configuring chiaki-ng (generator: $($gen -or 'default'))..." -ForegroundColor White
+$env:MSYSTEM        = "MINGW64"
+$env:CHERE_INVOKING = "1"
 
-$cmakeArgs = @(
-    '-S', "${VendorDir}",
-    '-B', "${BuildDir}",
-    '-DCMAKE_BUILD_TYPE=Release'
-)
-if ($gen) { $cmakeArgs += '-G'; $cmakeArgs += $gen }
+& $bash -lc "cd '$msysRoot' && bash scripts/build-chiaki.sh"
 
-# Bootstrap vcpkg and install dependencies
-Write-Host 'Bootstrapping dependencies via vcpkg...' -ForegroundColor White
-& "$ScriptDir\bootstrap-chiaki-deps.ps1"
-
-# Add vcpkg toolchain if available
-$vcpkgToolchain = Join-Path $RepoRoot 'vendor\vcpkg\scripts\buildsystems\vcpkg.cmake'
-if (Test-Path $vcpkgToolchain) {
-    Write-Host "Using vcpkg toolchain: $vcpkgToolchain" -ForegroundColor White
-    $cmakeArgs += '-DCMAKE_TOOLCHAIN_FILE=' + $vcpkgToolchain
+if ($LASTEXITCODE -ne 0) {
+    Write-Host ""
+    Write-Host "  Build failed (exit $LASTEXITCODE)" -ForegroundColor Red
+    exit $LASTEXITCODE
 }
 
-& cmake @cmakeArgs
-
-Write-Host 'Building chiaki-ng...' -ForegroundColor White
-try {
-    & cmake --build $BuildDir --config Release --parallel
-} catch {
-    Write-Host "Build failed: $_" -ForegroundColor Red
-    exit 1
-}
-
-# Locate built chiaki executable
-$exe = Get-ChildItem -Path $BuildDir -Filter 'chiaki.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-if (-not $exe) {
-    Write-Host 'ERROR: chiaki.exe not found in build output.' -ForegroundColor Red
-    exit 1
-}
-
-$exeDir = $exe.DirectoryName
-
-Write-Host "Found chiaki.exe in: $exeDir" -ForegroundColor Green
-
-Write-Host "Copying runtime files to resources/chiaki-ng/..." -ForegroundColor White
-if (Test-Path $ResourcesDir) { Remove-Item $ResourcesDir -Recurse -Force }
-New-Item -ItemType Directory -Path $ResourcesDir -Force | Out-Null
-
-Get-ChildItem -Path $exeDir -Recurse | ForEach-Object {
-    $rel = Resolve-Path -Path $_.FullName
-}
-
-Copy-Item -Path (Join-Path $exeDir '*') -Destination $ResourcesDir -Recurse -Force
-
-Write-Host ''
-Write-Host '============================================================' -ForegroundColor Green
-Write-Host '  chiaki-ng built and copied to resources/chiaki-ng/' -ForegroundColor Green
-Write-Host "  Source: $VendorDir" -ForegroundColor Gray
-Write-Host "  Build dir: $BuildDir" -ForegroundColor Gray
-Write-Host '============================================================' -ForegroundColor Green
-Write-Host ''
-
-exit 0
+Write-Host ""
+Write-Host "============================================================" -ForegroundColor Green
+Write-Host "  chiaki-ng build complete!" -ForegroundColor Green
+Write-Host "  Run: npm start" -ForegroundColor Green
+Write-Host "============================================================" -ForegroundColor Green

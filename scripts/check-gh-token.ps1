@@ -1,0 +1,1 @@
+if ($env:GITHUB_TOKEN) { Write-Host 'GITHUB_TOKEN is set' } else { Write-Host 'GITHUB_TOKEN is NOT set' }

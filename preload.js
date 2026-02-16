@@ -22,18 +22,29 @@ contextBridge.exposeInMainWorld('api', {
   detectXbox: () => ipcRenderer.invoke('detect:xbox'),
 
   // chiaki-ng (PlayStation Remote Play)
-  getChiakiStatus: () => ipcRenderer.invoke('chiaki:status'),
-  getChiakiConfig: () => ipcRenderer.invoke('chiaki:getConfig'),
-  saveChiakiConfig: (config) => ipcRenderer.invoke('chiaki:saveConfig', config),
-  setChiakiStream: (gameId, streamConfig) => ipcRenderer.invoke('games:setChiakiStream', gameId, streamConfig),
+  // chiaki-ng (PlayStation Remote Play) - REMOVED
+  getChiakiStatus: () => Promise.resolve({ status: 'removed' }),
+  getChiakiConfig: () => Promise.resolve({ executablePath: '', consoles: [] }),
+  saveChiakiConfig: (config) => Promise.resolve({ error: 'chiaki removed' }),
+  setChiakiStream: (gameId, streamConfig) => Promise.resolve({ error: 'chiaki removed' }),
 
-  // chiaki-ng deep integration
-  chiakiStartStream: (gameId) => ipcRenderer.invoke('chiaki:startStream', gameId),
-  chiakiStopStream: (gameId) => ipcRenderer.invoke('chiaki:stopStream', gameId),
-  chiakiGetSessions: () => ipcRenderer.invoke('chiaki:getSessions'),
-  chiakiOpenGui: () => ipcRenderer.invoke('chiaki:openGui'),
-  chiakiRegisterConsole: (opts) => ipcRenderer.invoke('chiaki:registerConsole', opts),
-  chiakiDiscoverConsoles: () => ipcRenderer.invoke('chiaki:discoverConsoles'),
+  // chiaki-ng deep integration - REMOVED (stubs)
+  chiakiStartStream: (gameId) => Promise.resolve({ success: false, error: 'chiaki removed' }),
+  chiakiStopStream: (gameId) => Promise.resolve({ success: false, error: 'chiaki removed' }),
+  chiakiGetSessions: () => Promise.resolve([]),
+  chiakiOpenGui: () => Promise.resolve({ success: false, error: 'chiaki removed' }),
+  chiakiRegisterConsole: (opts) => Promise.resolve({ success: false, error: 'chiaki removed' }),
+  chiakiDiscoverConsoles: (opts) => Promise.resolve({ success: false, consoles: [], error: 'chiaki removed' }),
+  psnAuth: () => ipcRenderer.invoke('psn:auth'),
+  // PSN account and probe history
+  psnGetAccount: () => ipcRenderer.invoke('psn:getAccount'),
+  psnSetAccount: (id) => ipcRenderer.invoke('psn:setAccount', id),
+  getProbeHistory: () => ipcRenderer.invoke('psn:getProbeHistory'),
+  recordProbe: (entry) => ipcRenderer.invoke('psn:recordProbe', entry),
+  clearProbeHistory: () => ipcRenderer.invoke('psn:clearProbeHistory'),
+  chiakiProbeConsole: (host) => Promise.resolve({ success: false, error: 'chiaki removed' }),
+  psnOAuthInfo: () => ipcRenderer.invoke('psn:oauth:info'),
+  startPsnOAuth: (opts) => ipcRenderer.invoke('psn:oauth:start', opts),
   chiakiSetStreamBounds: (opts) => ipcRenderer.invoke('chiaki:setStreamBounds', opts),
   onChiakiEvent: (callback) => {
     ipcRenderer.on('chiaki:event', (event, data) => callback(data));

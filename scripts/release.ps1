@@ -23,6 +23,7 @@ param(
   [switch]$DryRun,
   [switch]$SkipGit,
   [switch]$SkipBuild,
+  [switch]$AllowExisting,
   [string]$Notes,
   [string]$Token = $env:GITHUB_TOKEN
 )
@@ -54,8 +55,8 @@ elseif ($Major) { $parts = $currentVersion -split '\.'; $newVersion = "$([int]$p
 elseif ($Minor) { $parts = $currentVersion -split '\.'; $newVersion = "$($parts[0]).$([int]$parts[1] + 1).0" }
 elseif ($Patch) { $parts = $currentVersion -split '\.'; $newVersion = "$($parts[0]).$($parts[1]).$([int]$parts[2] + 1)" }
 else {
-  # Interactive mode: ask user which bump to perform
-  if ($Host -and $Host.UI -and $Host.UI.SupportsUserInteraction) {
+  # Interactive mode: ask user which bump to perform. Try prompting; if stdin unavailable, fail.
+  try {
     Write-Host ""; Write-Host 'Select version bump:' -ForegroundColor Yellow
     $parts = $currentVersion -split '\.'
     $majorNum = [int]$parts[0]; $minorNum = [int]$parts[1]; $patchNum = [int]$parts[2]
@@ -66,21 +67,24 @@ else {
     Write-Host "  [Q] Quit"
     Write-Host ""
     $choice = Read-Host 'Choice'
-    switch ($choice) {
-      '1' { $newVersion = "$majorNum.$minorNum.$($patchNum + 1)" }
-      '2' { $newVersion = "$majorNum.$($minorNum + 1).0" }
-      '3' { $newVersion = "$($majorNum + 1).0.0" }
-      '4' {
-        $inputVer = Read-Host 'Enter version (X.Y.Z or X.Y.Z-prerelease)'
-        if ($inputVer -match '^\d+\.\d+\.\d+(-[A-Za-z0-9\.-]+)?$') { $newVersion = $inputVer } else { Write-Host 'Invalid version format' -ForegroundColor Red; exit 1 }
-      }
-      'q' { exit 0 }
-      'Q' { exit 0 }
-      default { Write-Host 'Invalid choice' -ForegroundColor Red; exit 1 }
-    }
-  } else {
+  } catch {
     Write-Host 'No bump specified; use -Patch/-Minor/-Major/-Version or -Bump' -ForegroundColor Red
     exit 1
+  }
+
+  switch ($choice) {
+    '1' { $newVersion = "$majorNum.$minorNum.$($patchNum + 1)" }
+    '2' { $newVersion = "$majorNum.$($minorNum + 1).0" }
+    '3' { $newVersion = "$($majorNum + 1).0.0" }
+    '4' {
+      try {
+        $inputVer = Read-Host 'Enter version (X.Y.Z or X.Y.Z-prerelease)'
+      } catch { Write-Host 'Interactive input not available' -ForegroundColor Red; exit 1 }
+      if ($inputVer -match '^\d+\.\d+\.\d+(-[A-Za-z0-9\.-]+)?$') { $newVersion = $inputVer } else { Write-Host 'Invalid version format' -ForegroundColor Red; exit 1 }
+    }
+    'q' { exit 0 }
+    'Q' { exit 0 }
+    default { Write-Host 'Invalid choice' -ForegroundColor Red; exit 1 }
   }
 }
 
@@ -114,6 +118,20 @@ if ($DryRun) {
   exit 0
 }
 
+# Define dist path early
+$dist = Join-Path $RepoRoot 'dist'
+
+# If dist already contains artifacts, don't run the build (use existing artifacts)
+if (-not $SkipBuild) {
+  if (Test-Path $dist) {
+    $existingFiles = Get-ChildItem -Path $dist -Recurse -File -ErrorAction SilentlyContinue
+    if ($existingFiles -and $existingFiles.Count -gt 0) {
+      Write-Host 'Found existing dist/ artifacts; skipping build.' -ForegroundColor Yellow
+      $SkipBuild = $true
+    }
+  }
+}
+
 # Update package.json
 $backup = Get-Content $pkgFile -Raw
 try {
@@ -130,12 +148,40 @@ function Resolve-NpmExe {
 
 function Run-Npm { param([string[]]$Args) if (-not $Args -or $Args.Count -eq 0) { Write-Host 'Run-Npm: no args' -ForegroundColor Yellow; return 1 } $npm = Resolve-NpmExe; & $npm @Args; return $LASTEXITCODE }
 
+function Run-Npm {
+  param(
+    [Parameter(ValueFromRemainingArguments=$true)]
+    [string[]]$Args
+  )
+  $npmExe = 'npm'
+  try {
+    $npmCmdInfo = Get-Command npm.cmd -ErrorAction SilentlyContinue
+    if ($npmCmdInfo -and $npmCmdInfo.Path) { $npmExe = $npmCmdInfo.Path }
+    else {
+      $npmInfo = Get-Command npm -ErrorAction SilentlyContinue
+      if ($npmInfo -and $npmInfo.Path) { $npmExe = $npmInfo.Path }
+    }
+  } catch { }
+
+  if (-not $Args -or $Args.Count -eq 0) { Write-Host 'Run-Npm: no args' -ForegroundColor Yellow; return 1 }
+
+  # If a single argument contains spaces, split it into tokens
+  if ($Args.Count -eq 1 -and $Args[0] -match '\s') {
+    $argArray = $Args[0] -split '\s+'
+  } else {
+    $argArray = $Args
+  }
+  try {
+    & $npmExe @argArray
+    return $LASTEXITCODE
+  } catch {
+    Write-Host "npm invocation failed: $_" -ForegroundColor Yellow
+    return 1
+  }
+}
+
 # Build
 if (-not $SkipBuild) {
-  Write-Host 'Running setup:chiaki (best-effort)...' -ForegroundColor White
-  $rc = Run-Npm 'run','setup:chiaki'
-  if ($rc -ne 0) { Write-Host 'setup:chiaki failed (continuing)' -ForegroundColor Yellow }
-
   Write-Host 'Running npm run build...' -ForegroundColor White
   $rc = Run-Npm 'run','build'
   if ($rc -ne 0) { Write-Host 'npm run build failed' -ForegroundColor Red; Set-Content $pkgFile $backup -NoNewline -Encoding UTF8; exit $rc }
@@ -155,39 +201,79 @@ if (-not $SkipGit) {
   if ($LASTEXITCODE -ne 0) { Write-Host 'Nothing to commit or commit failed' -ForegroundColor Yellow }
 
   $existing = git -C $RepoRoot tag -l $tagName
-  if ($existing) { Write-Host "Tag $tagName already exists; aborting" -ForegroundColor Red; Set-Content $pkgFile $backup -NoNewline -Encoding UTF8; exit 1 }
-
-  git -C $RepoRoot tag -a $tagName -m "Release $tagName"
-  if ($LASTEXITCODE -ne 0) { Write-Host 'Tag creation failed' -ForegroundColor Red; Set-Content $pkgFile $backup -NoNewline -Encoding UTF8; exit 1 }
-  git -C $RepoRoot push origin --follow-tags
-  if ($LASTEXITCODE -ne 0) { Write-Host 'Git push failed' -ForegroundColor Red; Set-Content $pkgFile $backup -NoNewline -Encoding UTF8; exit 1 }
+  if ($existing) {
+    if ($AllowExisting) {
+      Write-Host "Tag $tagName already exists; will upload artifacts to existing release" -ForegroundColor Yellow
+    } else {
+      Write-Host "Tag $tagName already exists; aborting" -ForegroundColor Red; Set-Content $pkgFile $backup -NoNewline -Encoding UTF8; exit 1
+    }
+  } else {
+    git -C $RepoRoot tag -a $tagName -m "Release $tagName"
+    if ($LASTEXITCODE -ne 0) { Write-Host 'Tag creation failed' -ForegroundColor Red; Set-Content $pkgFile $backup -NoNewline -Encoding UTF8; exit 1 }
+    git -C $RepoRoot push origin --follow-tags
+    if ($LASTEXITCODE -ne 0) { Write-Host 'Git push failed' -ForegroundColor Red; Set-Content $pkgFile $backup -NoNewline -Encoding UTF8; exit 1 }
+  }
 } else { Write-Host 'Skipping git actions as requested' -ForegroundColor Yellow }
 
 # Create GitHub release (prefer gh)
 function Use-Gh { return $null -ne (Get-Command gh -ErrorAction SilentlyContinue) }
 if (Use-Gh) {
-  Write-Host "Creating release $tagName with gh..." -ForegroundColor Cyan
-  $args = @('release','create',$tagName) + $artifactPaths + @('--repo',$Repo,'--title',$tagName)
-  if ($Notes) { $args += '--notes'; $args += $Notes }
-  & gh @args
-  if ($LASTEXITCODE -ne 0) { Write-Host 'gh release failed' -ForegroundColor Red; Set-Content $pkgFile $backup -NoNewline -Encoding UTF8; exit 1 }
+  if ($existing -and $AllowExisting) {
+    Write-Host "Uploading artifacts to existing release $tagName with gh..." -ForegroundColor Cyan
+    $args = @('release','upload',$tagName) + $artifactPaths + @('--repo',$Repo,'--clobber')
+    if ($Notes) { Write-Host 'Note: gh upload does not set release notes when uploading to existing release' -ForegroundColor Yellow }
+    & gh @args
+    if ($LASTEXITCODE -ne 0) { Write-Host 'gh release upload failed' -ForegroundColor Red; Set-Content $pkgFile $backup -NoNewline -Encoding UTF8; exit 1 }
+  } else {
+    Write-Host "Creating release $tagName with gh..." -ForegroundColor Cyan
+    $args = @('release','create',$tagName) + $artifactPaths + @('--repo',$Repo,'--title',$tagName)
+    if ($Notes) { $args += '--notes'; $args += $Notes }
+    & gh @args
+    if ($LASTEXITCODE -ne 0) { Write-Host 'gh release failed' -ForegroundColor Red; Set-Content $pkgFile $backup -NoNewline -Encoding UTF8; exit 1 }
+  }
 } else {
   if (-not $Token) { Write-Host 'GITHUB_TOKEN required for REST release' -ForegroundColor Red; Set-Content $pkgFile $backup -NoNewline -Encoding UTF8; exit 1 }
-  Write-Host "Creating release $tagName via REST API..." -ForegroundColor Cyan
-  $createUrl = 'https://api.github.com/repos/{0}/releases' -f $Repo
   $hdr = @{ Authorization = ('token {0}' -f $Token); 'User-Agent' = 'cereal-launcher' }
-  $bodyObj = @{ tag_name = $tagName; name = $tagName; body = $Notes; draft = $false; prerelease = $false }
-  $resp = Invoke-RestMethod -Method Post -Uri $createUrl -Headers $hdr -Body ($bodyObj | ConvertTo-Json -Depth 4) -ContentType 'application/json'
-  if (-not $resp.upload_url) { Write-Host 'Failed to create release' -ForegroundColor Red; Set-Content $pkgFile $backup -NoNewline -Encoding UTF8; exit 1 }
-  $uploadUrlTemplate = $resp.upload_url
-  foreach ($p in $artifactPaths) {
-    $fileName = [IO.Path]::GetFileName($p)
-    $uploadUrl = $uploadUrlTemplate -replace '\{\?name,label\}', ('?name={0}' -f $fileName)
-    $ctype = 'application/octet-stream'
-    if ($fileName -match '\.zip$') { $ctype = 'application/zip' }
-    Write-Host "Uploading $fileName..." -ForegroundColor White
-    $uploadHdr = @{ Authorization = ('token {0}' -f $Token); 'Content-Type' = $ctype; 'User-Agent' = 'cereal-launcher' }
-    try { Invoke-RestMethod -Method Post -Uri $uploadUrl -Headers $uploadHdr -InFile $p -ErrorAction Stop } catch { Write-Host "Upload failed for $($fileName): $($_)" -ForegroundColor Red; Set-Content $pkgFile $backup -NoNewline -Encoding UTF8; exit 1 }
+  if ($existing -and $AllowExisting) {
+    Write-Host "Uploading artifacts to existing release $tagName via REST API..." -ForegroundColor Cyan
+    # Get release by tag
+    try {
+      $resp = Invoke-RestMethod -Method Get -Uri ('https://api.github.com/repos/{0}/releases/tags/{1}' -f $Repo, $tagName) -Headers $hdr -ErrorAction Stop
+    } catch {
+      Write-Host ("Failed to find release for tag {0}: {1}" -f $tagName, $_) -ForegroundColor Red
+      Set-Content $pkgFile $backup -NoNewline -Encoding UTF8
+      exit 1
+    }
+    if (-not $resp.upload_url) { Write-Host 'Release found but has no upload_url' -ForegroundColor Red; Set-Content $pkgFile $backup -NoNewline -Encoding UTF8; exit 1 }
+    $uploadUrlTemplate = $resp.upload_url
+    foreach ($p in $artifactPaths) {
+      $fileName = [IO.Path]::GetFileName($p)
+      $uploadUrl = $uploadUrlTemplate -replace '\{\?name,label\}', ('?name={0}' -f $fileName)
+      $ctype = 'application/octet-stream'
+      switch ([IO.Path]::GetExtension($fileName).ToLower()) {
+        '.zip' { $ctype = 'application/zip' }
+        '.exe' { $ctype = 'application/vnd.microsoft.portable-executable' }
+      }
+      Write-Host ('Uploading {0}' -f $fileName) -ForegroundColor White
+      $uploadHdr = @{ Authorization = ('token {0}' -f $Token); 'Content-Type' = $ctype; 'User-Agent' = 'cereal-launcher' }
+      try { Invoke-RestMethod -Method Post -Uri $uploadUrl -Headers $uploadHdr -InFile $p -ErrorAction Stop } catch { Write-Host "Upload failed for $($fileName): $($_)" -ForegroundColor Red; Set-Content $pkgFile $backup -NoNewline -Encoding UTF8; exit 1 }
+    }
+  } else {
+    Write-Host "Creating release $tagName via REST API..." -ForegroundColor Cyan
+    $createUrl = 'https://api.github.com/repos/{0}/releases' -f $Repo
+    $bodyObj = @{ tag_name = $tagName; name = $tagName; body = $Notes; draft = $false; prerelease = $false }
+    $resp = Invoke-RestMethod -Method Post -Uri $createUrl -Headers $hdr -Body ($bodyObj | ConvertTo-Json -Depth 4) -ContentType 'application/json'
+    if (-not $resp.upload_url) { Write-Host 'Failed to create release' -ForegroundColor Red; Set-Content $pkgFile $backup -NoNewline -Encoding UTF8; exit 1 }
+    $uploadUrlTemplate = $resp.upload_url
+    foreach ($p in $artifactPaths) {
+      $fileName = [IO.Path]::GetFileName($p)
+      $uploadUrl = $uploadUrlTemplate -replace '\{\?name,label\}', ('?name={0}' -f $fileName)
+      $ctype = 'application/octet-stream'
+      if ($fileName -match '\.zip$') { $ctype = 'application/zip' }
+      Write-Host "Uploading $fileName..." -ForegroundColor White
+      $uploadHdr = @{ Authorization = ('token {0}' -f $Token); 'Content-Type' = $ctype; 'User-Agent' = 'cereal-launcher' }
+      try { Invoke-RestMethod -Method Post -Uri $uploadUrl -Headers $uploadHdr -InFile $p -ErrorAction Stop } catch { Write-Host "Upload failed for $($fileName): $($_)" -ForegroundColor Red; Set-Content $pkgFile $backup -NoNewline -Encoding UTF8; exit 1 }
+    }
   }
 }
 

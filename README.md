@@ -40,14 +40,11 @@ cereal-launcher/
 └── .gitmodules
 ```
 
-## Prerequisites
+│   └── (chiaki components removed)
 
 ### For the Electron app
 - Node.js 18+
-- npm
-
-### For building chiaki-ng from source
-- **MSYS2** — https://www.msys2.org/
+│   └── (chiaki runtime removed)
 - ~10 GB disk space (MSYS2 packages + Qt6 + build artifacts)
 - ~15 min build time on a modern machine
 
@@ -61,9 +58,12 @@ git clone --recursive https://github.com/youruser/cereal-launcher.git
 cd cereal-launcher
 
 # 2. Install Node dependencies
-npm install
+### Note: PlayStation integration removed
 
-# 3. Build chiaki-ng from source (first time takes ~15 min)
+PlayStation Remote Play integration (via `chiaki-ng`) has been removed from
+this repository and is not included in the development or packaged builds.
+If you need to re-enable it, refer to the original `chiaki-ng` project and the
+previous build scripts for guidance.
 #    From PowerShell:
 .\scripts\build-chiaki.ps1
 
@@ -120,27 +120,9 @@ Packaged app:  {process.resourcesPath}/chiaki-ng/chiaki.exe
 Dev mode:      {__dirname}/resources/chiaki-ng/chiaki.exe
 Fallback:      System-installed chiaki-ng (Program Files, etc.)
 ```
-
-### Launching PlayStation games
-When a game with `platform: 'psremote'` is launched:
+ (PlayStation integration details removed.)
 
 1. If the game has `chiakiNickname` + `chiakiHost` set →
-   runs `chiaki.exe stream <nickname> <host>` (direct connect)
-2. Otherwise → opens the chiaki-ng GUI for console selection/registration
-
-The `PATH` is augmented with the chiaki-ng directory so all DLLs resolve.
-
-## Updating chiaki-ng
-
-```bash
-cd vendor/chiaki-ng
-git fetch --tags
-git checkout v1.x.x          # desired version
-cd ../..
-bash scripts/build-chiaki.sh  # rebuild
-```
-
-## Licensing
 
 The Cereal launcher is MIT-licensed. The bundled chiaki-ng component is
 AGPL v3. See [LICENSES.md](LICENSES.md) for details.

@@ -6,6 +6,9 @@ const readline = require('readline');
 const https = require('https');
 const crypto = require('crypto');
 
+// Feature toggle: disable all chiaki integration at runtime
+const DISABLE_CHAIKI = true;
+
 // ─── Discord Rich Presence ─────────────────────────────────────────────────────
 const DiscordRPC = require('discord-rpc');
 const DISCORD_CLIENT_ID = '1338877643523145789'; // Cereal Launcher app ID
@@ -787,6 +790,14 @@ function createWindow() {
 
 app.whenReady().then(() => {
   db = loadDB();
+
+  // Ensure chiaki-related config container exists
+  db.chiakiConfig = db.chiakiConfig || { consoles: [], psnAccountId: null, probeHistory: [] };
+  // Default settings container
+  db.settings = db.settings || {};
+  // Enable system/browser-based auth flows by default (user can toggle in settings)
+  if (typeof db.settings.useSystemBrowserAuth === 'undefined') db.settings.useSystemBrowserAuth = true;
+
   createWindow();
 
   // Auto-connect Discord if enabled
@@ -881,7 +892,7 @@ async function fetchSteamMetadata(appId) {
       publisher: (info.publishers || [])[0] || '',
       releaseDate: info.release_date?.date || '',
       genres: (info.genres || []).map(g => g.description),
-      coverUrl: `https://shared.steamstatic.com/store_item_assets/steam/apps/${appId}/library_600x900_2x.jpg`,
+      coverUrl: `https://cdn.cloudflare.steamstatic.com/steam/apps/${appId}/library_600x900.jpg`,
       headerUrl: info.header_image || `https://shared.steamstatic.com/store_item_assets/steam/apps/${appId}/library_hero.jpg`,
       screenshots: (info.screenshots || []).slice(0, 4).map(s => s.path_full),
       metacritic: info.metacritic?.score || null,
@@ -890,6 +901,45 @@ async function fetchSteamMetadata(appId) {
     };
   } catch (e) {
     console.log('[Metadata] Steam fetch failed for', appId, e.message);
+    return null;
+  }
+}
+
+// ─── SteamGridDB Art (cover + hero) ──────────────────────────────────────────
+async function fetchSteamGridDBArt(game) {
+  const key = (db.settings || {}).steamGridDbKey;
+  if (!key) return null;
+  const headers = { 'Authorization': 'Bearer ' + key };
+  const sgdbGet = url => new Promise((resolve, reject) => {
+    https.get(url, { headers }, res => {
+      let d = '';
+      res.on('data', c => d += c);
+      res.on('end', () => { try { resolve(JSON.parse(d)); } catch(e) { reject(e); } });
+      res.on('error', reject);
+    }).on('error', reject);
+  });
+  try {
+    let gameId = null;
+    if (game.platform === 'steam' && game.platformId) {
+      const r = await sgdbGet(`https://www.steamgriddb.com/api/v2/games/steam/${game.platformId}`);
+      if (r?.success && r.data?.id) gameId = r.data.id;
+    }
+    if (!gameId) {
+      const q = encodeURIComponent(game.name);
+      const r = await sgdbGet(`https://www.steamgriddb.com/api/v2/search/autocomplete/${q}`);
+      if (r?.success && r.data?.length) gameId = r.data[0].id;
+    }
+    if (!gameId) return null;
+    const [grids, heroes] = await Promise.allSettled([
+      sgdbGet(`https://www.steamgriddb.com/api/v2/grids/game/${gameId}?dimensions=600x900&limit=1`),
+      sgdbGet(`https://www.steamgriddb.com/api/v2/heroes/game/${gameId}?limit=1`),
+    ]);
+    const art = {};
+    if (grids.status === 'fulfilled' && grids.value?.data?.[0]?.url) art.coverUrl = grids.value.data[0].url;
+    if (heroes.status === 'fulfilled' && heroes.value?.data?.[0]?.url) art.headerUrl = heroes.value.data[0].url;
+    return Object.keys(art).length ? art : null;
+  } catch(e) {
+    console.log('[SGDB] Art fetch failed for', game.name, e.message);
     return null;
   }
 }
@@ -1230,11 +1280,29 @@ async function fetchGameMetadata(game) {
         meta = await fetchGiantBombMetadata(game.name, game.platform);
         if (!meta) meta = await fetchSteamSearchMetadata(game.name);
         break;
+      case 'steamgriddb':
+        // SGDB is art-only — use Steam for text metadata, SGDB art overlay happens below
+        meta = await fetchSteamSearchMetadata(game.name);
+        if (!meta) meta = await fetchWikipediaMetadata(game.name);
+        break;
       default:
         meta = await fetchSteamSearchMetadata(game.name);
         if (!meta) meta = await fetchWikipediaMetadata(game.name);
         break;
     }
+  }
+
+  // If SGDB key is set, overlay art from SteamGridDB (always preferred over CDN templates)
+  if (ms.steamGridDbKey) {
+    try {
+      const art = await fetchSteamGridDBArt(game);
+      if (art) {
+        if (!meta) meta = {};
+        if (art.coverUrl) meta.coverUrl = art.coverUrl;
+        if (art.headerUrl) meta.headerUrl = art.headerUrl;
+        meta._sgdbArt = true;
+      }
+    } catch(e) {}
   }
 
   if (meta) {
@@ -1247,14 +1315,14 @@ function applyMetadataToGame(game, meta) {
   if (!meta) return false;
   let changed = false;
 
-  // Only fill in missing data — don't overwrite user customizations
-  if (!game.coverUrl && meta.coverUrl) { game.coverUrl = meta.coverUrl; changed = true; }
+  // Art from SGDB always wins; other fields only fill in what's missing
+  if (meta.coverUrl && (meta._sgdbArt || !game.coverUrl)) { if (game.coverUrl !== meta.coverUrl) { game.coverUrl = meta.coverUrl; changed = true; } }
+  if (meta.headerUrl && (meta._sgdbArt || !game.headerUrl)) { if (game.headerUrl !== meta.headerUrl) { game.headerUrl = meta.headerUrl; changed = true; } }
   if (!game.description && meta.description) { game.description = meta.description; changed = true; }
   if (!game.developer && meta.developer) { game.developer = meta.developer; changed = true; }
   if (!game.publisher && meta.publisher) { game.publisher = meta.publisher; changed = true; }
   if (!game.releaseDate && meta.releaseDate) { game.releaseDate = meta.releaseDate; changed = true; }
   if ((!game.categories || game.categories.length === 0) && meta.genres?.length) { game.categories = meta.genres; changed = true; }
-  if (!game.headerUrl && meta.headerUrl) { game.headerUrl = meta.headerUrl; changed = true; }
   if ((!game.screenshots || game.screenshots.length === 0) && meta.screenshots?.length) { game.screenshots = meta.screenshots; changed = true; }
   if (game.metacritic == null && meta.metacritic != null) { game.metacritic = meta.metacritic; changed = true; }
   if (!game.website && meta.website) { game.website = meta.website; changed = true; }
@@ -1267,6 +1335,12 @@ ipcMain.handle('games:getAll', () => db.games);
 ipcMain.handle('games:getCategories', () => db.categories);
 
 ipcMain.handle('games:add', (event, game) => {
+  // Deduplicate: match by platformId+platform if available, else by name+platform
+  const dup = game.platformId
+    ? db.games.find(g => g.platform === game.platform && g.platformId === game.platformId)
+    : db.games.find(g => g.name === game.name && g.platform === game.platform);
+  if (dup) return null;
+
   game.id = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
   game.addedAt = new Date().toISOString();
   game.lastPlayed = null;
@@ -2280,6 +2354,54 @@ const STEAM_OPENID_URL = 'https://steamcommunity.com/openid/login';
 const STEAM_RETURN_URL = 'https://cereal-launcher.local/steam-callback';
 
 ipcMain.handle('accounts:steam:auth', async () => {
+  // Support external system browser auth when enabled in settings
+  if (db.settings?.useSystemBrowserAuth) {
+    return new Promise((resolve) => {
+      try {
+        const http = require('http');
+        const server = http.createServer(async (req, res) => {
+          try {
+            const url = new URL(req.url, `http://127.0.0.1:${server.address().port}`);
+            if (url.pathname === '/steam-callback') {
+              res.writeHead(200, { 'Content-Type': 'text/html' });
+              res.end('<html><body><h3>Authentication complete. You may close this tab and return to the app.</h3></body></html>');
+              server.close();
+              const claimedId = url.searchParams.get('openid.claimed_id') || '';
+              const idMatch = claimedId.match(/(\d{17})$/);
+              if (!idMatch) return resolve({ error: 'Could not extract Steam ID' });
+              const steamId = idMatch[1];
+              try {
+                const r = await httpGetJson(`https://steamcommunity.com/profiles/${steamId}/?xml=1`);
+                const raw = r.raw || '';
+                const getName = t => { const m = raw.match(new RegExp('<' + t + '><!\\[CDATA\\[([\\s\\S]*?)\\]\\]></' + t + '>')); return m ? m[1] : null; };
+                const getTag = t => { const m = raw.match(new RegExp('<' + t + '>([^<]*)</' + t + '>')); return m ? m[1] : null; };
+                const displayName = getName('steamID') || getTag('steamID') || 'Steam User';
+                const avatarUrl = getTag('avatarMedium') || getTag('avatarFull') || '';
+                if (!db.accounts) db.accounts = {};
+                db.accounts.steam = { steamId, displayName, avatarUrl, connected: true };
+                saveDB(db);
+                return resolve({ success: true, steamId, displayName, avatarUrl });
+              } catch (e) { return resolve({ error: e.message }); }
+            } else {
+              res.writeHead(404).end();
+            }
+          } catch (e) { res.writeHead(500).end(); server.close(); resolve({ error: e.message }); }
+        });
+        server.listen(0, '127.0.0.1', () => {
+          const port = server.address().port;
+          const params = new URLSearchParams({
+            'openid.ns': 'http://specs.openid.net/auth/2.0',
+            'openid.mode': 'checkid_setup',
+            'openid.return_to': `http://127.0.0.1:${port}/steam-callback`,
+            'openid.realm': `http://127.0.0.1:${port}/`,
+            'openid.identity': 'http://specs.openid.net/auth/2.0/identifier_select',
+            'openid.claimed_id': 'http://specs.openid.net/auth/2.0/identifier_select',
+          });
+          shell.openExternal(STEAM_OPENID_URL + '?' + params.toString());
+        });
+      } catch (e) { return resolve({ error: e.message }); }
+    });
+  }
   return new Promise((resolve) => {
     const params = new URLSearchParams({
       'openid.ns': 'http://specs.openid.net/auth/2.0',
@@ -2380,15 +2502,16 @@ ipcMain.handle('accounts:steam:import', async () => {
       if (existing) {
         let changed = false;
         if (minutes > (existing.playtimeMinutes || 0)) { existing.playtimeMinutes = minutes; changed = true; }
-        if (!existing.coverUrl) { existing.coverUrl = `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${appId}/library_600x900.jpg`; changed = true; }
+        if (!existing.coverUrl && !(db.settings || {}).steamGridDbKey) { existing.coverUrl = `https://cdn.cloudflare.steamstatic.com/steam/apps/${appId}/library_600x900.jpg`; changed = true; }
         if (changed) updated.push(existing.name);
       } else {
+        const cdnCover = (db.settings || {}).steamGridDbKey ? '' : `https://cdn.cloudflare.steamstatic.com/steam/apps/${appId}/library_600x900.jpg`;
         db.games.push({
           id: 'steam_' + appId + '_' + Date.now(),
           name,
           platform: 'steam',
           platformId: appId,
-          coverUrl: `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${appId}/library_600x900.jpg`,
+          coverUrl: cdnCover,
           categories: [],
           playtimeMinutes: minutes,
           lastPlayed: null,
@@ -2551,10 +2674,63 @@ ipcMain.handle('accounts:gog:import', async () => {
 });
 
 // ── Epic Games OAuth ──
+// Replace `EPIC_CLIENT_ID` with your registered Epic OAuth client ID.
+// Register the redirect URI `http://127.0.0.1:53211/epic-callback` in the
+// Epic developer console so system-browser OAuth will succeed.
 const EPIC_CLIENT_ID = 'xyza7891muomRmynIITa';
-const EPIC_REDIRECT = 'https://localhost/epic-callback';
+const EPIC_LOCAL_PORT = 53211; // fixed local port — register this redirect in Epic
+const EPIC_REDIRECT = `http://127.0.0.1:${EPIC_LOCAL_PORT}/epic-callback`;
 
 ipcMain.handle('accounts:epic:auth', async () => {
+  // External browser flow (local redirect) when enabled
+  if (db.settings?.useSystemBrowserAuth) {
+    return new Promise((resolve) => {
+      try {
+        const http = require('http');
+        const server = http.createServer(async (req, res) => {
+          try {
+            const url = new URL(req.url, `http://127.0.0.1:${server.address().port}`);
+            if (url.pathname === '/epic-callback') {
+              res.writeHead(200, { 'Content-Type': 'text/html' });
+              res.end('<html><body><h3>Authentication complete. You may close this tab and return to the app.</h3></body></html>');
+              server.close();
+              const code = url.searchParams.get('code');
+              const returnedState = url.searchParams.get('state');
+              if (!code) return resolve({ error: 'No authorization code received' });
+              if (returnedState && !validateOAuthState(returnedState)) return resolve({ error: 'Security validation failed (state mismatch)' });
+              const basicAuth = Buffer.from(EPIC_CLIENT_ID + ':').toString('base64');
+              try {
+                const r = await httpPost('https://account-public-service-prod.ol.epicgames.com/account/api/oauth/token', {
+                  grant_type: 'authorization_code', code, redirect_uri: `http://127.0.0.1:${server.address().port}/epic-callback`
+                }, { 'Authorization': 'Basic ' + basicAuth });
+                if (r.data?.access_token) {
+                  if (!db.accounts) db.accounts = {};
+                  db.accounts.epic = {
+                    accessToken: r.data.access_token,
+                    refreshToken: r.data.refresh_token,
+                    expiresAt: Date.now() + (r.data.expires_in || 3600) * 1000,
+                    accountId: r.data.account_id,
+                    displayName: r.data.displayName || r.data.display_name || 'Epic User',
+                    connected: true,
+                  };
+                  saveDB(db);
+                  return resolve({ success: true, displayName: db.accounts.epic.displayName });
+                } else {
+                  return resolve({ error: 'Token exchange failed' });
+                }
+              } catch (e) { return resolve({ error: e.message }); }
+            } else { res.writeHead(404).end(); }
+          } catch (e) { res.writeHead(500).end(); server.close(); resolve({ error: e.message }); }
+        });
+        server.listen(EPIC_LOCAL_PORT, '127.0.0.1', () => {
+          const port = EPIC_LOCAL_PORT;
+          const oauthState = generateOAuthState();
+          const authUrl = `https://www.epicgames.com/id/authorize?client_id=${EPIC_CLIENT_ID}&response_type=code&redirect_uri=${encodeURIComponent(EPIC_REDIRECT)}&scope=basic_profile&state=${oauthState}`;
+          shell.openExternal(authUrl);
+        });
+      } catch (e) { return resolve({ error: e.message }); }
+    });
+  }
   return new Promise((resolve) => {
     const oauthState = generateOAuthState();
     const authSession = session.fromPartition('auth:epic:' + Date.now());
@@ -2713,6 +2889,58 @@ const MS_REDIRECT = 'https://login.microsoftonline.com/common/oauth2/nativeclien
 const MS_SCOPE = 'XboxLive.signin XboxLive.offline_access openid profile';
 
 ipcMain.handle('accounts:xbox:auth', async () => {
+  // Try external browser local-redirect when enabled; otherwise fall back to embedded
+  if (db.settings?.useSystemBrowserAuth) {
+    return new Promise((resolve) => {
+      try {
+        const http = require('http');
+        const server = http.createServer(async (req, res) => {
+          try {
+            const url = new URL(req.url, `http://127.0.0.1:${server.address().port}`);
+            if (url.pathname === '/ms-callback') {
+              res.writeHead(200, { 'Content-Type': 'text/html' });
+              res.end('<html><body><h3>Authentication complete. You may close this tab and return to the app.</h3></body></html>');
+              server.close();
+              const code = url.searchParams.get('code');
+              const error = url.searchParams.get('error');
+              const returnedState = url.searchParams.get('state');
+              if (error) return resolve({ error: url.searchParams.get('error_description') || error });
+              if (!code) return resolve({ error: 'No authorization code' });
+              if (returnedState && !validateOAuthState(returnedState)) return resolve({ error: 'Security validation failed (state mismatch)' });
+              try {
+                const msR = await httpPost('https://login.microsoftonline.com/consumers/oauth2/v2.0/token', {
+                  client_id: MS_CLIENT_ID, grant_type: 'authorization_code', code, redirect_uri: `http://127.0.0.1:${server.address().port}/ms-callback`, scope: MS_SCOPE,
+                });
+                if (!msR.data?.access_token) return resolve({ error: 'MS token exchange failed' });
+                // Continue with Xbox auth chain (same as embedded flow)
+                const xblR = await httpPost('https://user.auth.xboxlive.com/user/authenticate', JSON.stringify({ Properties: { AuthMethod: 'RPS', SiteName: 'user.auth.xboxlive.com', RpsTicket: 'd=' + msR.data.access_token }, RelyingParty: 'http://auth.xboxlive.com', TokenType: 'JWT' }), { 'Content-Type': 'application/json', 'x-xbl-contract-version': '1' });
+                if (!xblR.data?.Token) return resolve({ error: 'Xbox Live auth failed' });
+                const xblToken = xblR.data.Token;
+                const userHash = xblR.data.DisplayClaims?.xui?.[0]?.uhs || '';
+                const xstsR = await httpPost('https://xsts.auth.xboxlive.com/xsts/authorize', JSON.stringify({ Properties: { SandboxId: 'RETAIL', UserTokens: [xblToken] }, RelyingParty: 'http://xboxlive.com', TokenType: 'JWT' }), { 'Content-Type': 'application/json', 'x-xbl-contract-version': '1' });
+                if (!xstsR.data?.Token) return resolve({ error: 'XSTS auth failed' });
+                const xstsToken = xstsR.data.Token;
+                const gamertag = xstsR.data.DisplayClaims?.xui?.[0]?.gtg || '';
+                const xuid = xstsR.data.DisplayClaims?.xui?.[0]?.xid || '';
+                let avatarUrl = '';
+                try { const profR = await httpGetJson(`https://profile.xboxlive.com/users/xuid(${xuid})/profile/settings?settings=GameDisplayPicRaw`, { 'Authorization': 'XBL3.0 x=' + userHash + ';' + xstsToken, 'x-xbl-contract-version': '3' }); avatarUrl = profR.data?.profileUsers?.[0]?.settings?.[0]?.value || ''; } catch(e) {}
+                db.accounts = db.accounts || {};
+                db.accounts.xbox = { msAccessToken: msR.data.access_token, msRefreshToken: msR.data.refresh_token, msExpiresAt: Date.now() + (msR.data.expires_in || 3600) * 1000, xblToken, xstsToken, userHash, xuid, gamertag, avatarUrl, connected: true };
+                saveDB(db);
+                return resolve({ success: true, gamertag, avatarUrl });
+              } catch (e) { return resolve({ error: 'Xbox auth chain failed: ' + e.message }); }
+            } else { res.writeHead(404).end(); }
+          } catch (e) { res.writeHead(500).end(); server.close(); resolve({ error: e.message }); }
+        });
+        server.listen(0, '127.0.0.1', () => {
+          const port = server.address().port;
+          const oauthState = generateOAuthState();
+          const authUrl = `https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize?client_id=${MS_CLIENT_ID}&response_type=code&redirect_uri=${encodeURIComponent(`http://127.0.0.1:${port}/ms-callback`)}&scope=${encodeURIComponent(MS_SCOPE)}&response_mode=query&state=${oauthState}`;
+          shell.openExternal(authUrl);
+        });
+      } catch (e) { return resolve({ error: e.message }); }
+    });
+  }
   return new Promise((resolve) => {
     const oauthState = generateOAuthState();
     const authSession = session.fromPartition('auth:xbox:' + Date.now());
@@ -2905,6 +3133,7 @@ ipcMain.handle('accounts:xbox:import', async () => {
 
 // ─── chiaki-ng Configuration ──────────────────────────────────────────────────
 ipcMain.handle('chiaki:status', () => {
+  if (DISABLE_CHAIKI) return { status: 'removed' };
   const bundledExe = getBundledChiakiExe();
   const bundledVersion = getBundledChiakiVersion();
 
@@ -2933,10 +3162,12 @@ ipcMain.handle('chiaki:status', () => {
 });
 
 ipcMain.handle('chiaki:getConfig', () => {
+  if (DISABLE_CHAIKI) return { executablePath: '', consoles: [] };
   return db.chiakiConfig || { executablePath: '', consoles: [] };
 });
 
 ipcMain.handle('chiaki:saveConfig', (event, config) => {
+  if (DISABLE_CHAIKI) return { error: 'chiaki removed' };
   db.chiakiConfig = config;
   saveDB(db);
   return config;
@@ -2959,6 +3190,7 @@ ipcMain.handle('games:setChiakiStream', (event, gameId, streamConfig) => {
 
 // ─── Chiaki Stream Management (deep integration) ─────────────────────────────
 ipcMain.handle('chiaki:startStream', (event, gameId) => {
+  if (DISABLE_CHAIKI) return { success: false, error: 'chiaki removed' };
   const game = db.games.find(g => g.id === gameId);
   if (!game) return { success: false, error: 'Game not found' };
 
@@ -2976,14 +3208,17 @@ ipcMain.handle('chiaki:startStream', (event, gameId) => {
 });
 
 ipcMain.handle('chiaki:stopStream', (event, gameId) => {
+  if (DISABLE_CHAIKI) return { success: false, error: 'chiaki removed' };
   return { success: stopChiakiSession(gameId) };
 });
 
 ipcMain.handle('chiaki:getSessions', () => {
+  if (DISABLE_CHAIKI) return [];
   return getActiveSessions();
 });
 
 ipcMain.handle('chiaki:openGui', () => {
+  if (DISABLE_CHAIKI) return { success: false, error: 'chiaki removed' };
   const chiakiExe = resolveChiakiExe();
   if (!chiakiExe) return { success: false, error: 'chiaki-ng not found' };
 
@@ -2994,6 +3229,7 @@ ipcMain.handle('chiaki:openGui', () => {
 });
 
 ipcMain.handle('chiaki:registerConsole', (event, { host, psnAccountId, pin }) => {
+  if (DISABLE_CHAIKI) return Promise.resolve({ success: false, error: 'chiaki removed' });
   // Use chiaki-ng CLI to register a console
   const chiakiExe = resolveChiakiExe();
   if (!chiakiExe) return { success: false, error: 'chiaki-ng not found' };
@@ -3023,7 +3259,8 @@ ipcMain.handle('chiaki:registerConsole', (event, { host, psnAccountId, pin }) =>
   });
 });
 
-ipcMain.handle('chiaki:discoverConsoles', () => {
+ipcMain.handle('chiaki:discoverConsoles', (event, opts) => {
+  if (DISABLE_CHAIKI) return Promise.resolve({ success: false, consoles: [], error: 'chiaki removed' });
   // Native UDP discovery — PS4/PS5 respond to SRCH broadcasts on port 987.
   // The pre-built chiaki-ng binary is GUI-only and has no CLI discover command.
   const dgram = require('dgram');
@@ -3082,13 +3319,361 @@ ipcMain.handle('chiaki:discoverConsoles', () => {
         });
       }
 
-      // Collect responses for 3 seconds
-      setTimeout(() => {
-        try { sock.close(); } catch(e) {}
-        resolve({ success: true, consoles: [...found.values()] });
-      }, 3000);
+        // Collect responses for 3 seconds, then attempt reverse-DNS fallbacks
+        setTimeout(() => {
+          (async () => {
+            try { sock.close(); } catch(e) {}
+
+            // Include configured consoles (useful for remote/public IPs) when requested
+            const results = [...found.values()];
+            try {
+              if (opts && opts.includeConfigured) {
+                const cfg = db.chiakiConfig && db.chiakiConfig.consoles ? db.chiakiConfig.consoles : [];
+                for (const c of cfg) {
+                  if (!c || !c.host) continue;
+                  // Avoid duplicates by host
+                  if (!results.find(x => x.host === c.host)) {
+                    results.push({ host: c.host, name: c.nickname || c.name || c.host });
+                  }
+                }
+              }
+            } catch(e) { console.error('chiaki:discoverConsoles includeConfigured error', e); }
+
+            // Try reverse-DNS lookup for entries that lack a friendly name
+            try {
+              const dns = require('dns').promises;
+              await Promise.all(results.map(async (c) => {
+                if (!c.name || String(c.name).trim() === '') {
+                  try {
+                    const names = await dns.reverse(c.host).catch(() => []);
+                    if (names && names.length) c.name = names[0];
+                  } catch (e) {}
+                }
+              }));
+            } catch (e) { /* ignore DNS failures */ }
+
+            resolve({ success: true, consoles: results });
+          })();
+        }, 3000);
     });
   });
+});
+
+// Prototype PSN browser-login flow to extract PSN Account ID (onlineId)
+ipcMain.handle('psn:auth', async () => {
+  const { BrowserWindow } = require('electron');
+  return new Promise((resolve) => {
+    let resolved = false;
+    const authWin = new BrowserWindow({
+      width: 900,
+      height: 720,
+      show: true,
+      modal: true,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+      }
+    });
+
+    // Start at Sony/PlayStation sign-in page; users sign in interactively.
+    const startUrl = 'https://id.sonyentertainmentnetwork.com/signin/';
+    authWin.loadURL(startUrl).catch(() => {});
+
+    const tryExtract = async () => {
+      try {
+        const js = `(() => {
+          try {
+            function parseCookies() {
+              const raw = document.cookie || '';
+              const out = {};
+              raw.split(';').forEach(s => {
+                const idx = s.indexOf('=');
+                if (idx === -1) return;
+                const k = s.slice(0, idx).trim();
+                const v = decodeURIComponent(s.slice(idx + 1).trim());
+                out[k] = v;
+              });
+              return out;
+            }
+
+            const candidates = [];
+            const cookies = parseCookies();
+            // Common cookie keys
+            ['onlineId','online_id','account-username','accountName','username','npck','npck-2020'].forEach(k => { if (cookies[k]) candidates.push(cookies[k]); });
+
+            // session/local storage
+            try { if (sessionStorage && sessionStorage.getItem('onlineId')) candidates.push(sessionStorage.getItem('onlineId')); } catch(e) {}
+            try {
+              if (localStorage) {
+                ['onlineId','online_id','username','accountName','profileName','psnOnlineId','userName'].forEach(k => { try { const v = localStorage.getItem(k); if (v) candidates.push(v); } catch(e){} });
+              }
+            } catch(e) {}
+
+            // DOM selectors
+            const sels = ['[data-onlineid]','.profile-onlineid','.account-name','.accountName','.user-name','#onlineId','.userDisplayName','.display-name','.profile-name','.username','.accountNameValue'];
+            for (const s of sels) {
+              try { const el = document.querySelector(s); if (el && el.textContent && el.textContent.trim()) candidates.push(el.textContent.trim()); } catch(e) {}
+            }
+
+            // meta tags
+            const metas = ['onlineid','psn-online-id','account','og:title','profile:username'];
+            for (const m of metas) { try { const meta = document.querySelector('meta[name="'+m+'"]') || document.querySelector('meta[property="'+m+'"]'); if (meta && meta.content) candidates.push(meta.content); } catch(e) {} }
+
+            // Search scripts for JSON containing online id
+            try {
+              for (const s of document.scripts) {
+                const t = s.textContent || '';
+                const m = t.match(/online(?:Id|ID|id)["']?\s*[:=]\s*["']([\w\-\.\@ ]{3,64})["']/i);
+                if (m && m[1]) candidates.push(m[1]);
+                const m2 = t.match(/"onlineId"\s*:\s*"([^"]{3,64})"/i);
+                if (m2 && m2[1]) candidates.push(m2[1]);
+              }
+            } catch(e) {}
+
+            // window globals
+            try {
+              const w = window.__INITIAL_STATE__ || window.__APP_STATE__ || window.appState || window.__ONLINE_ID__ || window.PSN || window.__PROFILE__;
+              if (w) {
+                const maybe = (w.onlineId || w.onlineID || w.user || w.account || w.profile || w.username || w.displayName);
+                if (typeof maybe === 'string') candidates.push(maybe);
+                if (typeof maybe === 'object' && maybe) candidates.push(maybe.onlineId || maybe.username || maybe.displayName || maybe.name);
+              }
+            } catch(e) {}
+
+            // Deduplicate and pick first plausible candidate
+            const seen = new Set();
+            for (const c of candidates) {
+              if (!c) continue;
+              const s = String(c).trim();
+              if (!s || seen.has(s)) continue;
+              seen.add(s);
+              if (/^[\w\-\.\@ ]{3,64}$/.test(s)) return { id: s };
+            }
+            for (const c of candidates) if (c && String(c).trim()) return { id: String(c).trim() };
+            return { id: null };
+          } catch(e) { return { id: null }; }
+        })()`;
+        const res = await authWin.webContents.executeJavaScript(js, true);
+        if (res && res.id) {
+          resolved = true;
+          try { authWin.close(); } catch (e) {}
+          resolve({ success: true, psnAccountId: res.id });
+        }
+      } catch (e) {
+        // ignore
+      }
+    };
+
+    authWin.webContents.on('did-finish-load', tryExtract);
+    authWin.webContents.on('did-navigate', tryExtract);
+
+    authWin.on('closed', () => {
+      if (!resolved) resolve({ success: false, error: 'Window closed' });
+    });
+
+    // Timeout after 2 minutes
+    setTimeout(() => {
+      if (!resolved) {
+        try { authWin.close(); } catch (e) {}
+        resolve({ success: false, error: 'Timeout waiting for PSN login' });
+      }
+    }, 120000);
+  });
+});
+
+// Probe a single console by sending a directed SRCH packet and waiting for reply
+ipcMain.handle('chiaki:probeConsole', async (event, host) => {
+  if (DISABLE_CHAIKI) return Promise.resolve({ success: false, error: 'chiaki removed' });
+  return new Promise((resolve) => {
+    try {
+      const dgram = require('dgram');
+      const DISCOVERY_PORT = 987;
+      const SRCH = Buffer.from('SRCH * HTTP/1.1\r\ndevice-discovery-protocol-version:00020020\r\n\r\n');
+      const sock = dgram.createSocket('udp4');
+      let answered = false;
+
+      sock.on('message', (msg, rinfo) => {
+        if (rinfo.address !== host) return;
+        const text = msg.toString();
+        if (!text.startsWith('HTTP/1.1 200')) return;
+        const console_ = { host: rinfo.address };
+        for (const line of text.split('\r\n')) {
+          const colon = line.indexOf(':');
+          if (colon === -1) continue;
+          const k = line.substring(0, colon).trim().toLowerCase();
+          const v = line.substring(colon + 1).trim();
+          if (k === 'host-name')            console_.name            = v;
+          if (k === 'host-type')            console_.type            = v;
+          if (k === 'host-id')              console_.hostId          = v;
+          if (k === 'system-version')       console_.firmwareVersion = v;
+          if (k === 'running-app-titleid')  console_.runningTitleId  = v;
+          if (k === 'running-app-name')     console_.runningTitle    = v;
+        }
+        answered = true;
+        try { sock.close(); } catch(e) {}
+        // If no name was advertised, attempt reverse DNS as a fallback
+        (async () => {
+          try {
+            if (!console_.name || String(console_.name).trim() === '') {
+              const dns = require('dns').promises;
+              try {
+                const names = await dns.reverse(console_.host).catch(() => []);
+                if (names && names.length) console_.name = names[0];
+              } catch (e) { /* ignore */ }
+            }
+          } catch (e) { /* ignore */ }
+          resolve({ success: true, console: console_ });
+        })();
+      });
+
+      sock.on('error', (err) => { try { sock.close(); } catch(e) {} resolve({ success: false, error: err.message }); });
+      sock.bind(() => {
+        try {
+          sock.send(SRCH, DISCOVERY_PORT, host, (err) => {
+            if (err) {
+              try { sock.close(); } catch(e) {}
+              resolve({ success: false, error: err.message });
+            }
+          });
+        } catch (e) { try { sock.close(); } catch(_) {} resolve({ success: false, error: e.message }); }
+      });
+
+      setTimeout(() => { if (!answered) { try { sock.close(); } catch(e) {} resolve({ success: false, error: 'No response' }); } }, 3000);
+    } catch (e) { resolve({ success: false, error: e.message }); }
+  });
+});
+
+// PSN OAuth scaffolding info (instructions only)
+ipcMain.handle('psn:oauth:info', () => {
+  const clientId = (db && db.settings && db.settings.psnClientId) || null;
+  return {
+    supported: !!clientId,
+    clientId: clientId || null,
+    note: clientId ? 'OAuth available (clientId configured)' : 'Full PSN OAuth requires registering an app with Sony. See docs/PSN_OAUTH.md for steps to prepare client credentials and configure redirect URIs.'
+  };
+});
+
+// PSN account management and probe history
+ipcMain.handle('psn:getAccount', () => {
+  try {
+    return { psnAccountId: db.chiakiConfig && db.chiakiConfig.psnAccountId ? db.chiakiConfig.psnAccountId : null };
+  } catch (e) { return { psnAccountId: null }; }
+});
+
+ipcMain.handle('psn:setAccount', (event, id) => {
+  try {
+    db.chiakiConfig = db.chiakiConfig || { consoles: [], psnAccountId: null, probeHistory: [] };
+    db.chiakiConfig.psnAccountId = id || null;
+    saveDB(db);
+    return { success: true, psnAccountId: db.chiakiConfig.psnAccountId };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('psn:getProbeHistory', () => {
+  try {
+    db.chiakiConfig = db.chiakiConfig || { consoles: [], psnAccountId: null, probeHistory: [] };
+    return { history: db.chiakiConfig.probeHistory || [] };
+  } catch (e) { return { history: [] }; }
+});
+
+ipcMain.handle('psn:recordProbe', (event, entry) => {
+  try {
+    db.chiakiConfig = db.chiakiConfig || { consoles: [], psnAccountId: null, probeHistory: [] };
+    const hist = db.chiakiConfig.probeHistory || [];
+    const normalized = { host: entry.host || '', success: !!entry.success, ts: new Date().toISOString(), details: entry.details || '' };
+    hist.unshift(normalized);
+    // keep most recent 100 entries
+    db.chiakiConfig.probeHistory = hist.slice(0, 100);
+    saveDB(db);
+    return { success: true };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('psn:clearProbeHistory', () => {
+  try {
+    db.chiakiConfig = db.chiakiConfig || { consoles: [], psnAccountId: null, probeHistory: [] };
+    db.chiakiConfig.probeHistory = [];
+    saveDB(db);
+    return { success: true };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+// PKCE / Authorization Code scaffold: start a local redirect listener and open browser window
+ipcMain.handle('psn:oauth:start', async (event, opts = {}) => {
+  const http = require('http');
+  try {
+    const clientId = opts.clientId || (db.settings && db.settings.psnClientId) || null;
+    if (!clientId) return { success: false, error: 'Missing PSN clientId in opts or settings' };
+
+    // generate code_verifier and code_challenge
+    const code_verifier = crypto.randomBytes(64).toString('base64').replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+    const sha = crypto.createHash('sha256').update(code_verifier).digest();
+    const code_challenge = sha.toString('base64').replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+
+    // choose local port
+    const port = opts.port || 53210 + Math.floor(Math.random() * 1000);
+    const redirectUri = `http://127.0.0.1:${port}/callback`;
+    const state = generateOAuthState();
+
+    const scope = opts.scope || 'psn:s2s';
+
+    const authUrl = `${opts.authEndpoint || 'https://auth.api.sonyentertainmentnetwork.com/authorize'}?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&code_challenge=${encodeURIComponent(code_challenge)}&code_challenge_method=S256&state=${encodeURIComponent(state)}&scope=${encodeURIComponent(scope)}`;
+
+    return await new Promise((resolve) => {
+      let server;
+      const timeout = setTimeout(() => {
+        try { if (server) server.close(); } catch(e) {}
+        resolve({ success: false, error: 'Timeout waiting for redirect' });
+      }, 120000);
+
+      server = http.createServer((req, res) => {
+        try {
+          const url = new URL(req.url, `http://127.0.0.1:${port}`);
+          if (url.pathname === '/callback') {
+            const code = url.searchParams.get('code');
+            const returnedState = url.searchParams.get('state');
+            if (!validateOAuthState(returnedState)) {
+              res.writeHead(400, { 'Content-Type': 'text/html' });
+              res.end('<html><body><h3>Invalid state</h3></body></html>');
+              clearTimeout(timeout);
+              try { server.close(); } catch(e) {}
+              return resolve({ success: false, error: 'Invalid state' });
+            }
+            res.writeHead(200, { 'Content-Type': 'text/html' });
+            res.end('<html><body><h3>You may now close this window and return to the app.</h3></body></html>');
+            clearTimeout(timeout);
+            try { server.close(); } catch(e) {}
+            // Return the code and the verifier so renderer can exchange
+            return resolve({ success: true, code, code_verifier, redirectUri });
+          } else {
+            res.writeHead(404).end();
+          }
+        } catch (e) {
+          try { res.writeHead(500).end(); } catch(e) {}
+        }
+      });
+
+      server.on('error', (err) => { clearTimeout(timeout); try { server.close(); } catch(e) {} resolve({ success: false, error: err.message }); });
+      server.listen(port, '127.0.0.1', () => {
+        // Open auth window
+        try {
+          const { BrowserWindow } = require('electron');
+          const w = new BrowserWindow({ width: 900, height: 760, show: true, modal: true, webPreferences: { nodeIntegration: false, contextIsolation: true } });
+          w.loadURL(authUrl).catch(() => {});
+          // If user closes, cancel
+          w.on('closed', () => {
+            clearTimeout(timeout);
+            try { server.close(); } catch(e) {}
+            resolve({ success: false, error: 'Auth window closed' });
+          });
+        } catch (e) {
+          clearTimeout(timeout);
+          try { server.close(); } catch(e) {}
+          resolve({ success: false, error: e.message });
+        }
+      });
+    });
+  } catch (e) { return { success: false, error: e.message }; }
 });
 
 // ─── Categories ───────────────────────────────────────────────────────────────

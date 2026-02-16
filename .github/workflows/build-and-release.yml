@@ -3,6 +3,8 @@ name: Build and Release
 on:
   push:
     tags: ['v*.*.*']
+  release:
+    types: [published]
   workflow_dispatch: {}
 
 jobs:
@@ -122,4 +124,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          ./scripts/publish-release.ps1 -Tag ${{ github.ref_name }} -Repo ${{ github.repository }} -SkipBuild
+          # Determine tag name: prefer release.tag_name when triggered by a release event
+          $tag = '${{ github.event.release.tag_name }}'
+          if (-not $tag) { $tag = '${{ github.ref_name }}' }
+          Write-Host "Using tag: $tag"
+          ./scripts/publish-release.ps1 -Tag $tag -Repo ${{ github.repository }} -SkipBuild

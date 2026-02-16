@@ -120,7 +120,7 @@ npm install
 .\scripts\dev.ps1
 ```
 
-### Full build (with chiaki-ng):
+### Full build (chiaki removed)
 ```powershell
 .\scripts\build.ps1 -Verbose
 ```
