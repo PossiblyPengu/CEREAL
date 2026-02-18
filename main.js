@@ -807,7 +807,9 @@ let db = null;
 let mainWindow;
 
 function createWindow() {
-  mainWindow = new BrowserWindow({
+  // Restore previous window bounds if present and allowed by settings
+  const savedBounds = (db && db.settings && db.settings.rememberWindowBounds && db.settings.windowBounds) ? db.settings.windowBounds : null;
+  const winOpts = {
     width: 1280,
     height: 800,
     minWidth: 900,
@@ -819,7 +821,22 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false
     }
-  });
+  };
+  if (savedBounds) {
+    if (typeof savedBounds.x === 'number' && typeof savedBounds.y === 'number') {
+      winOpts.x = savedBounds.x;
+      winOpts.y = savedBounds.y;
+    }
+    if (typeof savedBounds.width === 'number' && typeof savedBounds.height === 'number') {
+      winOpts.width = savedBounds.width;
+      winOpts.height = savedBounds.height;
+    }
+  }
+
+  mainWindow = new BrowserWindow(winOpts);
+  if (savedBounds && savedBounds.isMaximized) {
+    try { mainWindow.maximize(); } catch (e) { /* ignore */ }
+  }
 
   mainWindow.loadFile('src/index.html');
 
@@ -827,6 +844,9 @@ function createWindow() {
   mainWindow.on('resize',  onWindowBoundsChanged);
   mainWindow.on('move',    onWindowBoundsChanged);
   mainWindow.on('restore', onWindowBoundsChanged);
+  mainWindow.on('maximize', onWindowBoundsChanged);
+  mainWindow.on('unmaximize', onWindowBoundsChanged);
+  mainWindow.on('close', () => { saveWindowBounds(); });
 
   mainWindow.on('minimize', () => {
     for (const session of chiakiSessions.values()) {
@@ -858,6 +878,10 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
+app.on('before-quit', () => {
+  try { saveWindowBounds(); } catch (e) { /* ok */ }
+});
+
 // ─── Window Controls ──────────────────────────────────────────────────────────
 ipcMain.handle('window:minimize', () => mainWindow.minimize());
 ipcMain.handle('window:maximize', () => {
@@ -869,9 +893,35 @@ ipcMain.handle('window:close', () => mainWindow.close());
 
 // ─── Stream embed bounds tracking ─────────────────────────────────────────────
 let _embedResizeTimer = null;
+let _saveBoundsTimer = null;
+function scheduleSaveWindowBounds() {
+  clearTimeout(_saveBoundsTimer);
+  _saveBoundsTimer = setTimeout(saveWindowBounds, 500);
+}
+
+function saveWindowBounds() {
+  try {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    // Respect user preference for remembering window bounds
+    if (db && db.settings && db.settings.rememberWindowBounds === false) return;
+    const isMax = mainWindow.isMaximized ? mainWindow.isMaximized() : false;
+    const bounds = isMax ? (db.settings && db.settings.windowBounds ? db.settings.windowBounds : {}) : mainWindow.getBounds();
+    db.settings = db.settings || {};
+    db.settings.windowBounds = {
+      x: bounds.x || 0,
+      y: bounds.y || 0,
+      width: bounds.width || 1280,
+      height: bounds.height || 800,
+      isMaximized: !!isMax
+    };
+    saveDB(db);
+  } catch (e) { console.error('Failed saving window bounds', e && e.message); }
+}
+
 function onWindowBoundsChanged() {
   clearTimeout(_embedResizeTimer);
   _embedResizeTimer = setTimeout(sendEmbedBoundsToAll, 50);
+  scheduleSaveWindowBounds();
 }
 
 // Allow renderer to push the stream container bounds (CSS pixels)
@@ -2518,6 +2568,7 @@ const DEFAULT_SETTINGS = {
   accentColor: '#d4a853',        // hex color
   starDensity: 'normal',         // 'low' | 'normal' | 'high'
   showAnimations: true,
+  rememberWindowBounds: true,    // whether to restore & save window position/size
   autoSyncPlaytime: false,
   minimizeOnLaunch: false,
   closeToTray: false,

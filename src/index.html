@@ -833,6 +833,7 @@
       const [xboxKey, setXboxKey] = useState('');
       const [xboxSavedKey, setXboxSavedKey] = useState(null);
       const [xboxValidateStatus, setXboxValidateStatus] = useState(null);
+      const [settingsTab, setSettingsTab] = useState('general');
       useEffect(() => {
         if (!show) return;
         (async () => {
@@ -1132,39 +1133,10 @@
       const [appVersion, setAppVersion] = useState('1.0.0');
       const [confirmClear, setConfirmClear] = useState(false);
       const [confirmClearCovers, setConfirmClearCovers] = useState(false);
-      const [sgKey, setSgKey] = useState('');
-      const [sgSavedKey, setSgSavedKey] = useState(null);
-      const [sgValidateStatus, setSgValidateStatus] = useState(null);
-      const [steamKey, setSteamKey] = useState('');
-      const [steamSavedKey, setSteamSavedKey] = useState(null);
-      const [steamValidateStatus, setSteamValidateStatus] = useState(null);
-      const [gogKey, setGogKey] = useState('');
-      const [gogSavedKey, setGogSavedKey] = useState(null);
-      const [gogValidateStatus, setGogValidateStatus] = useState(null);
-      const [epicKey, setEpicKey] = useState('');
-      const [epicSavedKey, setEpicSavedKey] = useState(null);
-      const [epicValidateStatus, setEpicValidateStatus] = useState(null);
-      const [xboxKey, setXboxKey] = useState('');
-      const [xboxSavedKey, setXboxSavedKey] = useState(null);
-      const [xboxValidateStatus, setXboxValidateStatus] = useState(null);
 
       useEffect(() => {
         if (!show) { setConfirmClear(false); setConfirmClearCovers(false); return; }
         setLocal({ ...settings });
-        // load securely stored API keys (if any)
-        (async () => {
-          try {
-            if (window.api?.getApiKey) {
-              const r = await window.api.getApiKey('steamgriddb');
-              if (r && r.ok) setSgSavedKey(r.secret);
-              else setSgSavedKey(null);
-              const rs = await window.api.getApiKey('steam'); if (rs && rs.ok) setSteamSavedKey(rs.secret);
-              const rg = await window.api.getApiKey('gog'); if (rg && rg.ok) setGogSavedKey(rg.secret);
-              const re = await window.api.getApiKey('epic'); if (re && re.ok) setEpicSavedKey(re.secret);
-              const rx = await window.api.getApiKey('xbox'); if (rx && rx.ok) setXboxSavedKey(rx.secret);
-            }
-          } catch (e) {}
-        })();
         (async () => {
           if (window.api?.getDataPath) { var p = await window.api.getDataPath(); setDataPath(p); }
           if (window.api?.getAppVersion) { var v = await window.api.getAppVersion(); setAppVersion(v); }
@@ -1240,6 +1212,22 @@
             <button className="settings-qa-btn" onClick={()=>{if(onFetchMetadata)onFetchMetadata();}}>{I.download}<span>Fetch Metadata</span></button>
           </div>
           <div className="settings-section">
+            <div className="settings-section-title">General</div>
+            <div className="settings-row">
+              <div className="settings-row-info"><div className="settings-row-label">Remember window position & size</div><div className="settings-row-desc">Restore window bounds on startup</div></div>
+              <button className={'settings-toggle'+((local.rememberWindowBounds||local.rememberWindowBounds===undefined)?' on':'')} onClick={()=>update('rememberWindowBounds', !(local.rememberWindowBounds||local.rememberWindowBounds===undefined))} />
+            </div>
+            <div className="settings-row">
+              <div className="settings-row-info"><div className="settings-row-label">App Version</div><div className="settings-row-desc">Currently installed</div></div>
+              <div style={{fontSize:12,color:'var(--text)'}}>{appVersion}</div>
+            </div>
+            <div className="settings-row">
+              <div className="settings-row-info"><div className="settings-row-label">Data Location</div><div className="settings-row-desc">Where user data is stored</div></div>
+              <div style={{fontSize:12,color:'var(--text-3)',wordBreak:'break-all'}}>{dataPath||'Unknown'}</div>
+            </div>
+          </div>
+
+          <div className="settings-section">
             <div className="settings-section-title">Theme</div>
             <div className="theme-grid">
               {Object.entries(THEMES).map(([key, t]) => (
@@ -1254,6 +1242,7 @@
               ))}
             </div>
           </div>
+
           <div className="settings-section">
             <div className="settings-section-title">Appearance</div>
             <div className="settings-row">
@@ -1350,138 +1339,16 @@
           </div>
 
           <div className="settings-section">
-            <div className="settings-section-title">Art Search Keys <span style={{fontWeight:400,fontSize:'10px',color:'var(--text-2)'}}>(optional &mdash; enhances art picker results)</span></div>
-            <div style={{fontSize:'10px',color:'var(--text-2)',marginBottom:10,padding:'0 2px'}}>
-              These keys let the art picker search additional sources for game covers, heroes, and screenshots. Free sources (Steam, DuckDuckGo, Wikipedia) always work without keys.
+            <div className="settings-section-title">Art Search Keys <span style={{fontWeight:400,fontSize:'10px',color:'var(--text-2)'}}>(moved)</span></div>
+            <div style={{padding:'10px 14px',borderRadius:'8px',background:'var(--glass)',border:'1px solid var(--glass-border)',marginBottom:10,fontSize:11,color:'var(--text-3)'}}>
+              Platform API keys and tokens are now managed in the <strong style={{color:'var(--accent)'}}>Platforms</strong> panel. Open Platforms to add, validate, or remove keys for Steam, GOG, Epic, Xbox, and SteamGridDB.
             </div>
-            <div style={{fontSize:'11px',color:'var(--text-3)',marginBottom:8,padding:'0 2px'}}>
-              <strong style={{color:'var(--accent)'}}>Warning:</strong> Pasting tokens or cookies can be sensitive and may violate a service's Terms of Service. Only paste credentials you control. Secrets are stored securely in your OS credential store (Keychain/Credential Manager).
-            </div>
-            <div className="field" style={{marginBottom:10}}>
-              <label>SteamGridDB API Key</label>
-              <div style={{display:'flex',gap:8,alignItems:'center'}}>
-                <input type="password" value={sgKey||local.steamGridDbKey||''} onChange={e=>setSgKey(e.target.value)} placeholder="Free key from steamgriddb.com/profile/preferences/api" style={{flex:1}} />
-                <button className="btn-flat" onClick={()=>{ window.api.steamGridDbLogin(); }}>{I.open}</button>
-              </div>
-              <div style={{display:'flex',gap:8,marginTop:8}}>
-                <button className="btn-sm" onClick={async ()=>{ const key = sgKey||local.steamGridDbKey||sgSavedKey; if(!key){flash('No key to validate'); return;} setSgValidateStatus('checking'); const r = await window.api.validateApiKey('steamgriddb', key); setSgValidateStatus(r.ok ? 'valid' : ('invalid: '+(r.error||'unknown'))); }}>
-                  Validate
-                </button>
-                <button className="btn-sm primary" onClick={async ()=>{ const key = sgKey||local.steamGridDbKey; if(!key){flash('Enter a key to save'); return;} const r = await window.api.saveApiKey('steamgriddb', key); if(r && r.ok){ setSgSavedKey(key); flash('API key saved securely'); } else { flash('Save failed: '+(r && r.error)); } }}>
-                  Save Securely
-                </button>
-                <button className="btn-sm danger" onClick={async ()=>{ const r = await window.api.deleteApiKey('steamgriddb'); if(r && r.ok){ setSgSavedKey(null); flash('Secure key deleted'); } else { flash('Delete failed'); } }}>
-                  Delete Secure Key
-                </button>
-                <button className="btn-flat" onClick={async ()=>{ if(!window.api?.readClipboard) return flash('Clipboard not available'); const txt = await window.api.readClipboard(); if(!txt) return flash('Clipboard empty'); setSgKey(txt.trim()); flash('Pasted key'); }}>
-                  Paste
-                </button>
-              </div>
-              <div style={{marginTop:8,fontSize:11,color:'var(--text-3)'}}>Saved key: {sgSavedKey ? (sgSavedKey.slice(0,6)+'...') : 'none'} {sgValidateStatus && <span style={{marginLeft:8, color: sgValidateStatus==='valid'?'var(--green)':'var(--red)'}}>{sgValidateStatus}</span>}</div>
-            </div>
-            <div className="field" style={{marginBottom:10}}>
-              <label>Steam API Key (optional)</label>
-              <div style={{display:'flex',gap:8,alignItems:'center'}}>
-                <input type="password" value={steamKey||''} onChange={e=>setSteamKey(e.target.value)} placeholder="Steam Web API key (from steam.dev)" style={{flex:1}} />
-              </div>
-              <div style={{display:'flex',gap:8,marginTop:8}}>
-                <button className="btn-sm" onClick={async ()=>{ const key = steamKey||steamSavedKey; if(!key){flash('No key to validate'); return;} setSteamValidateStatus('checking'); const r = await window.api.validateApiKey('steam', key); setSteamValidateStatus(r.ok ? 'valid' : ('invalid: '+(r.error||'unknown'))); }}>
-                  Validate
-                </button>
-                <button className="btn-sm primary" onClick={async ()=>{ const key = steamKey; if(!key){flash('Enter a key to save'); return;} const r = await window.api.saveApiKey('steam', key); if(r && r.ok){ setSteamSavedKey(key); flash('API key saved securely'); } else { flash('Save failed: '+(r && r.error)); } }}>
-                  Save Securely
-                </button>
-                <button className="btn-sm danger" onClick={async ()=>{ const r = await window.api.deleteApiKey('steam'); if(r && r.ok){ setSteamSavedKey(null); flash('Secure key deleted'); } else { flash('Delete failed'); } }}>
-                  Delete Secure Key
-                </button>
-                <button className="btn-flat" onClick={async ()=>{ if(!window.api?.readClipboard) return flash('Clipboard not available'); const txt = await window.api.readClipboard(); if(!txt) return flash('Clipboard empty'); const candidate = txt.trim(); setSteamKey(candidate); // auto-validate & save
-                    setSteamValidateStatus('checking'); const vr = await window.api.validateApiKey('steam', candidate); if(vr && vr.ok){ const sr = await window.api.saveApiKey('steam', candidate); if(sr && sr.ok){ setSteamSavedKey(candidate); flash('Pasted key validated and saved'); } else { flash('Pasted key validated but save failed'); } } else { setSteamValidateStatus('invalid'); flash('Pasted key invalid'); } }}>
-                  Paste
-                </button>
-              </div>
-              <div style={{marginTop:8,fontSize:11,color:'var(--text-3)'}}>Saved key: {steamSavedKey ? (steamSavedKey.slice(0,6)+'...') : 'none'} {steamValidateStatus && <span style={{marginLeft:8, color: steamValidateStatus==='valid'?'var(--green)':'var(--red)'}}>{steamValidateStatus}</span>}</div>
-            </div>
-            <div className="field" style={{marginBottom:10}}>
-              <label>GOG Token / Cookie</label>
-              <div style={{display:'flex',gap:8,alignItems:'center'}}>
-                <input type="password" value={gogKey||''} onChange={e=>setGogKey(e.target.value)} placeholder="Paste GOG bearer token or cookie string" style={{flex:1}} />
-              </div>
-              <div style={{display:'flex',gap:8,marginTop:8}}>
-                <button className="btn-sm" onClick={async ()=>{ const key = gogKey||gogSavedKey; if(!key){flash('No token to validate'); return;} setGogValidateStatus('checking'); const r = await window.api.validateApiKey('gog', key); setGogValidateStatus(r.ok ? 'valid' : ('invalid: '+(r.error||'unknown'))); }}>
-                  Validate
-                </button>
-                <button className="btn-sm primary" onClick={async ()=>{ const key = gogKey; if(!key){flash('Enter a token to save'); return;} const r = await window.api.saveApiKey('gog', key); if(r && r.ok){ setGogSavedKey(key); flash('Token saved securely'); } else { flash('Save failed: '+(r && r.error)); } }}>
-                  Save Securely
-                </button>
-                <button className="btn-sm danger" onClick={async ()=>{ const r = await window.api.deleteApiKey('gog'); if(r && r.ok){ setGogSavedKey(null); flash('Secure token deleted'); } else { flash('Delete failed'); } }}>
-                  Delete Secure Token
-                </button>
-                <button className="btn-flat" onClick={async ()=>{ if(!window.api?.readClipboard) return flash('Clipboard not available'); const txt = await window.api.readClipboard(); if(!txt) return flash('Clipboard empty'); const candidate = txt.trim(); setGogKey(candidate); setGogValidateStatus('checking'); const vr = await window.api.validateApiKey('gog', candidate); if(vr && vr.ok){ const sr = await window.api.saveApiKey('gog', candidate); if(sr && sr.ok){ setGogSavedKey(candidate); flash('Pasted token validated and saved'); } else { flash('Pasted token validated but save failed'); } } else { setGogValidateStatus('invalid'); flash('Pasted token invalid'); } }}>
-                  Paste
-                </button>
-              </div>
-              <div style={{marginTop:8,fontSize:11,color:'var(--text-3)'}}>Saved token: {gogSavedKey ? (gogSavedKey.slice(0,6)+'...') : 'none'} {gogValidateStatus && <span style={{marginLeft:8, color: gogValidateStatus==='valid'?'var(--green)':'var(--red)'}}>{gogValidateStatus}</span>}</div>
-            </div>
-            <div className="field" style={{marginBottom:10}}>
-              <label>Epic Account Token</label>
-              <div style={{display:'flex',gap:8,alignItems:'center'}}>
-                <input type="password" value={epicKey||''} onChange={e=>setEpicKey(e.target.value)} placeholder="Paste Epic account bearer token" style={{flex:1}} />
-              </div>
-              <div style={{display:'flex',gap:8,marginTop:8}}>
-                <button className="btn-sm" onClick={async ()=>{ const key = epicKey||epicSavedKey; if(!key){flash('No token to validate'); return;} setEpicValidateStatus('checking'); const r = await window.api.validateApiKey('epic', key); setEpicValidateStatus(r.ok ? 'valid' : ('invalid: '+(r.error||'unknown'))); }}>
-                  Validate
-                </button>
-                <button className="btn-sm primary" onClick={async ()=>{ const key = epicKey; if(!key){flash('Enter a token to save'); return;} const r = await window.api.saveApiKey('epic', key); if(r && r.ok){ setEpicSavedKey(key); flash('Token saved securely'); } else { flash('Save failed: '+(r && r.error)); } }}>
-                  Save Securely
-                </button>
-                <button className="btn-sm danger" onClick={async ()=>{ const r = await window.api.deleteApiKey('epic'); if(r && r.ok){ setEpicSavedKey(null); flash('Secure token deleted'); } else { flash('Delete failed'); } }}>
-                  Delete Secure Token
-                </button>
-                <button className="btn-flat" onClick={async ()=>{ if(!window.api?.readClipboard) return flash('Clipboard not available'); const txt = await window.api.readClipboard(); if(!txt) return flash('Clipboard empty'); const candidate = txt.trim(); setEpicKey(candidate); setEpicValidateStatus('checking'); const vr = await window.api.validateApiKey('epic', candidate); if(vr && vr.ok){ const sr = await window.api.saveApiKey('epic', candidate); if(sr && sr.ok){ setEpicSavedKey(candidate); flash('Pasted token validated and saved'); } else { flash('Pasted token validated but save failed'); } } else { setEpicValidateStatus('invalid'); flash('Pasted token invalid'); } }}>
-                  Paste
-                </button>
-              </div>
-              <div style={{marginTop:8,fontSize:11,color:'var(--text-3)'}}>Saved token: {epicSavedKey ? (epicSavedKey.slice(0,6)+'...') : 'none'} {epicValidateStatus && <span style={{marginLeft:8, color: epicValidateStatus==='valid'?'var(--green)':'var(--red)'}}>{epicValidateStatus}</span>}</div>
-            </div>
-            <div className="field" style={{marginBottom:10}}>
-              <label>Xbox / Microsoft Tokens</label>
-              <div style={{display:'flex',gap:8,alignItems:'center'}}>
-                <input type="password" value={xboxKey||''} onChange={e=>setXboxKey(e.target.value)} placeholder="Paste Xbox XSTS/XBL or MS access token" style={{flex:1}} />
-              </div>
-              <div style={{display:'flex',gap:8,marginTop:8}}>
-                <button className="btn-sm" onClick={async ()=>{ const key = xboxKey||xboxSavedKey; if(!key){flash('No token to validate'); return;} setXboxValidateStatus('checking'); const r = await window.api.validateApiKey('xbox', key); setXboxValidateStatus(r.ok ? 'valid' : ('invalid: '+(r.error||'unknown'))); }}>
-                  Validate
-                </button>
-                <button className="btn-sm primary" onClick={async ()=>{ const key = xboxKey; if(!key){flash('Enter a token to save'); return;} const r = await window.api.saveApiKey('xbox', key); if(r && r.ok){ setXboxSavedKey(key); flash('Token saved securely'); } else { flash('Save failed: '+(r && r.error)); } }}>
-                  Save Securely
-                </button>
-                <button className="btn-sm danger" onClick={async ()=>{ const r = await window.api.deleteApiKey('xbox'); if(r && r.ok){ setXboxSavedKey(null); flash('Secure token deleted'); } else { flash('Delete failed'); } }}>
-                  Delete Secure Token
-                </button>
-                <button className="btn-flat" onClick={async ()=>{ if(!window.api?.readClipboard) return flash('Clipboard not available'); const txt = await window.api.readClipboard(); if(!txt) return flash('Clipboard empty'); const candidate = txt.trim(); setXboxKey(candidate); setXboxValidateStatus('checking'); const vr = await window.api.validateApiKey('xbox', candidate); if(vr && vr.ok){ const sr = await window.api.saveApiKey('xbox', candidate); if(sr && sr.ok){ setXboxSavedKey(candidate); flash('Pasted token validated and saved'); } else { flash('Pasted token validated but save failed'); } } else { setXboxValidateStatus('invalid'); flash('Pasted token invalid'); } }}>
-                  Paste
-                </button>
-              </div>
-              <div style={{marginTop:8,fontSize:11,color:'var(--text-3)'}}>Saved token: {xboxSavedKey ? (xboxSavedKey.slice(0,6)+'...') : 'none'} {xboxValidateStatus && <span style={{marginLeft:8, color: xboxValidateStatus==='valid'?'var(--green)':'var(--red)'}}>{xboxValidateStatus}</span>}</div>
-            </div>
-            <div style={{padding:10,marginBottom:12,borderRadius:8,background:'rgba(255,255,255,0.02)',border:'1px solid rgba(255,255,255,0.02)',fontSize:11,color:'var(--text-3)'}}>
-              <strong style={{color:'var(--accent)'}}>Manual tokens warning:</strong> Pasting API keys, cookies, or access tokens grants the app access to your account data. Only paste tokens you trust and understand; tokens may expire or violate a service's terms of use. Cereal stores tokens securely in your OS credential store but does not transmit them elsewhere.
-            </div>
-            {local.metadataSource !== 'igdb' && <>
-              <div className="field" style={{marginBottom:10}}>
-                <label>IGDB / Twitch Client ID</label>
-                <input value={local.igdbClientId||''} onChange={e=>update('igdbClientId',e.target.value)} placeholder="Client ID from dev.twitch.tv" />
-              </div>
-              <div className="field" style={{marginBottom:10}}>
-                <label>IGDB / Twitch Client Secret</label>
-                <input type="password" value={local.igdbClientSecret||''} onChange={e=>update('igdbClientSecret',e.target.value)} placeholder="Client Secret" />
-              </div>
-            </>}
+          </div>
+          
             {local.metadataSource !== 'rawg' && <div className="field" style={{marginBottom:10}}>
               <label>RAWG API Key</label>
               <input type="password" value={local.rawgApiKey||''} onChange={e=>update('rawgApiKey',e.target.value)} placeholder="Free key from rawg.io/apidocs" />
             </div>}
-          </div>
 
           <div className="settings-section">
             <div className="settings-section-title">Library Data</div>
