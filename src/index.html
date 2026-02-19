@@ -1342,6 +1342,10 @@
       const [sgKey, setSgKey] = useState('');
       const [sgSavedKey, setSgSavedKey] = useState(null);
       const [sgStatus, setSgStatus] = useState(null);
+      const [updateStatus, setUpdateStatus] = useState(null); // null | 'checking' | 'available' | 'downloading' | 'ready' | 'up-to-date' | 'error'
+      const [updateProgress, setUpdateProgress] = useState(0);
+      const [updateError, setUpdateError] = useState(null);
+      const [chiakiUpd, setChiakiUpd] = useState(null); // null | {checking} | {current,latest,hasUpdate} | {updating} | {done,version} | {error}
 
       useEffect(() => {
         if (!show) { setConfirmClear(false); setConfirmClearCovers(false); return; }
@@ -1351,7 +1355,21 @@
           if (window.api?.getAppVersion) { var v = await window.api.getAppVersion(); setAppVersion(v); }
           if (window.api?.getApiKey) { try { const r = await window.api.getApiKey('steamgriddb'); setSgSavedKey(r?.ok ? r.secret : null); } catch(e) {} }
         })();
+        setChiakiUpd(null);
       }, [show, settings]);
+
+      useEffect(() => {
+        if (!window.api?.onUpdateEvent) return;
+        const unsub = window.api.onUpdateEvent(({ type, data }) => {
+          if (type === 'checking-for-update') setUpdateStatus('checking');
+          else if (type === 'update-available') setUpdateStatus('downloading');
+          else if (type === 'download-progress') { setUpdateStatus('downloading'); setUpdateProgress(Math.round(data?.percent || 0)); }
+          else if (type === 'update-downloaded') setUpdateStatus('ready');
+          else if (type === 'update-not-available') setUpdateStatus('up-to-date');
+          else if (type === 'error') { setUpdateStatus('error'); setUpdateError(typeof data === 'string' ? data : 'Update check failed'); }
+        });
+        return unsub;
+      }, []);
 
       const update = async (key, val) => {
         var next = { ...local, [key]: val };
@@ -1540,6 +1558,41 @@
             <div className="settings-row">
               <div className="settings-row-info"><div className="settings-row-label">Remember Window Position</div><div className="settings-row-desc">Restore window bounds on startup</div></div>
               <button className={'settings-toggle'+((local.rememberWindowBounds||local.rememberWindowBounds===undefined)?' on':'')} onClick={()=>update('rememberWindowBounds', !(local.rememberWindowBounds||local.rememberWindowBounds===undefined))} />
+            </div>
+            <div className="settings-row">
+              <div className="settings-row-info">
+                <div className="settings-row-label">Software Update</div>
+                <div className="settings-row-desc">
+                  {updateStatus === 'checking' && 'Checking for updates...'}
+                  {updateStatus === 'downloading' && `Downloading update... ${updateProgress}%`}
+                  {updateStatus === 'ready' && 'Update ready — restart to apply'}
+                  {updateStatus === 'up-to-date' && `v${appVersion} is up to date`}
+                  {updateStatus === 'error' && (updateError || 'Update check failed')}
+                  {!updateStatus && `v${appVersion}`}
+                </div>
+              </div>
+              {updateStatus === 'ready'
+                ? <button className="settings-btn" style={{background:'var(--accent)',color:'#fff'}} onClick={() => window.api?.installUpdate?.()}>Restart</button>
+                : <button className="settings-btn" disabled={updateStatus === 'checking' || updateStatus === 'downloading'} onClick={() => { setUpdateStatus('checking'); setUpdateError(null); window.api?.checkForUpdate?.(); }}>Check for Updates</button>
+              }
+            </div>
+            <div className="settings-row">
+              <div className="settings-row-info">
+                <div className="settings-row-label">chiaki-ng Update</div>
+                <div className="settings-row-desc">
+                  {chiakiUpd?.checking && 'Checking...'}
+                  {chiakiUpd?.updating && 'Downloading and installing...'}
+                  {chiakiUpd?.done && `Updated to ${chiakiUpd.version}`}
+                  {chiakiUpd?.error && chiakiUpd.error}
+                  {chiakiUpd?.hasUpdate && `${chiakiUpd.current || 'unknown'} → ${chiakiUpd.latest}`}
+                  {chiakiUpd && !chiakiUpd.checking && !chiakiUpd.updating && !chiakiUpd.done && !chiakiUpd.error && !chiakiUpd.hasUpdate && `${chiakiUpd.current || 'not installed'} is up to date`}
+                  {!chiakiUpd && 'PlayStation Remote Play engine'}
+                </div>
+              </div>
+              {chiakiUpd?.hasUpdate
+                ? <button className="settings-btn" style={{background:'var(--accent)',color:'#fff'}} onClick={async () => { setChiakiUpd({updating:true}); const r = await window.api?.chiakiUpdate?.(); if (r?.ok) setChiakiUpd({done:true,version:r.version}); else setChiakiUpd({error:r?.error||'Update failed'}); }}>Update</button>
+                : <button className="settings-btn" disabled={!!chiakiUpd?.checking || !!chiakiUpd?.updating} onClick={async () => { setChiakiUpd({checking:true}); const r = await window.api?.chiakiCheckUpdate?.(); if (r?.error) setChiakiUpd({error:r.error}); else setChiakiUpd(r); }}>Check</button>
+              }
             </div>
           </Section>
 

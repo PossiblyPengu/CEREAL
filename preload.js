@@ -27,6 +27,8 @@ contextBridge.exposeInMainWorld('api', {
 
   // chiaki-ng (PlayStation Remote Play)
   getChiakiStatus: () => ipcRenderer.invoke('chiaki:status'),
+  chiakiCheckUpdate: () => ipcRenderer.invoke('chiaki:checkUpdate'),
+  chiakiUpdate: () => ipcRenderer.invoke('chiaki:update'),
   getChiakiConfig: () => ipcRenderer.invoke('chiaki:getConfig'),
   saveChiakiConfig: (config) => ipcRenderer.invoke('chiaki:saveConfig', config),
   setChiakiStream: (gameId, streamConfig) => ipcRenderer.invoke('games:setChiakiStream', gameId, streamConfig),
@@ -104,6 +106,14 @@ contextBridge.exposeInMainWorld('api', {
   clearCovers: () => ipcRenderer.invoke('settings:clearCovers'),
   getDataPath: () => ipcRenderer.invoke('settings:getDataPath'),
   getAppVersion: () => ipcRenderer.invoke('settings:getAppVersion'),
+  // Auto-Update
+  checkForUpdate: () => ipcRenderer.invoke('update:check'),
+  installUpdate: () => ipcRenderer.invoke('update:install'),
+  onUpdateEvent: (callback) => {
+    ipcRenderer.on('update:event', (event, data) => callback(data));
+    return () => ipcRenderer.removeAllListeners('update:event');
+  },
+
   // Secure API key storage
   saveApiKey: (provider, apiKey) => ipcRenderer.invoke('keys:set', { service: `cereal-${provider}`, account: 'default', secret: apiKey }),
   getApiKey: (provider) => ipcRenderer.invoke('keys:get', { service: `cereal-${provider}`, account: 'default' }),

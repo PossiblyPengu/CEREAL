@@ -138,6 +138,9 @@ if (-not (Test-Path $ChiakiExe)) {
     exit 1
 }
 
+# Write version file for auto-update tracking
+$release.tag_name | Set-Content (Join-Path $ResourcesDir '.version') -NoNewline -Encoding UTF8
+
 $fileCount = (Get-ChildItem $ResourcesDir -Recurse -File).Count
 Write-Host ""
 Write-Host "============================================================" -ForegroundColor Green

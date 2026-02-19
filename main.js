@@ -1017,6 +1017,23 @@ app.whenReady().then(() => {
 
   // Auto-connect Discord if enabled
   if (isDiscordEnabled()) connectDiscord();
+
+  // Auto-update: check after a short delay
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  setTimeout(() => {
+    autoUpdater.checkForUpdates().catch(() => {});
+  }, 5000);
+
+  // Forward update events to renderer
+  const updateEvents = ['checking-for-update', 'update-available', 'update-not-available', 'download-progress', 'update-downloaded', 'error'];
+  for (const evt of updateEvents) {
+    autoUpdater.on(evt, (data) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('update:event', { type: evt, data: evt === 'error' ? (data && data.message || String(data)) : data });
+      }
+    });
+  }
 });
 
 app.on('window-all-closed', () => {
@@ -2853,6 +2870,14 @@ ipcMain.handle('settings:getAppVersion', () => {
   }
 });
 
+// ─── Auto-Update ──────────────────────────────────────────────────────────────
+ipcMain.handle('update:check', () => {
+  return autoUpdater.checkForUpdates().catch((err) => ({ error: err.message }));
+});
+ipcMain.handle('update:install', () => {
+  autoUpdater.quitAndInstall();
+});
+
 // ─── Platform Account Sign-in ─────────────────────────────────────────────────
 ipcMain.handle('accounts:get', () => {
   return sanitizeAccountsForRenderer(db.accounts || {});
@@ -3327,6 +3352,51 @@ ipcMain.handle('chiaki:status', () => {
   }
 
   return { status: 'missing', executablePath: null, version: null };
+});
+
+ipcMain.handle('chiaki:checkUpdate', async () => {
+  try {
+    const repo = process.env.CHIAKI_RELEASE_REPO || 'streetpea/chiaki-ng';
+    const res = await new Promise((resolve, reject) => {
+      const req = https.get(`https://api.github.com/repos/${repo}/releases/latest`, { headers: { 'User-Agent': 'cereal-launcher' } }, (resp) => {
+        let body = '';
+        resp.on('data', c => body += c);
+        resp.on('end', () => { try { resolve(JSON.parse(body)); } catch (e) { reject(e); } });
+      });
+      req.on('error', reject);
+      req.setTimeout(10000, () => { req.destroy(); reject(new Error('timeout')); });
+    });
+    const latestTag = res.tag_name || null;
+    const currentVersion = getBundledChiakiVersion();
+    const hasUpdate = latestTag && currentVersion && latestTag !== currentVersion;
+    return { current: currentVersion, latest: latestTag, hasUpdate, releaseName: res.name || latestTag };
+  } catch (e) {
+    return { error: e.message };
+  }
+});
+
+ipcMain.handle('chiaki:update', async () => {
+  try {
+    const scriptPath = path.join(__dirname, 'scripts', 'setup-chiaki.ps1');
+    if (!fs.existsSync(scriptPath)) return { error: 'setup-chiaki.ps1 not found' };
+    return new Promise((resolve) => {
+      const child = spawn('powershell', ['-ExecutionPolicy', 'Bypass', '-File', scriptPath, '-Force'], { cwd: __dirname, stdio: 'pipe' });
+      let output = '';
+      child.stdout.on('data', d => output += d.toString());
+      child.stderr.on('data', d => output += d.toString());
+      child.on('close', (code) => {
+        if (code === 0) {
+          const newVersion = getBundledChiakiVersion();
+          resolve({ ok: true, version: newVersion, output });
+        } else {
+          resolve({ error: `Setup exited with code ${code}`, output });
+        }
+      });
+      child.on('error', (err) => resolve({ error: err.message }));
+    });
+  } catch (e) {
+    return { error: e.message };
+  }
 });
 
 ipcMain.handle('chiaki:getConfig', () => {
