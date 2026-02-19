@@ -1,6 +1,6 @@
 {
     "name":  "cereal-launcher",
-    "version":  "1.1.9",
+    "version":  "1.1.10",
     "repository":  {
                        "type":  "git",
                        "url":  "https://github.com/PossiblyPengu/CEREAL.git"
@@ -34,7 +34,10 @@
                   "appId":  "com.andrew.cereal-launcher",
                   "productName":  "Cereal",
                   "win":  {
-                              "target":  ["nsis", "portable"],
+                              "target":  [
+                                             "nsis",
+                                             "portable"
+                                         ],
                               "icon":  "assets/icon.ico"
                           },
                   "publish":  {
