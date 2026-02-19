@@ -1,67 +1,67 @@
 {
-    "name": "cereal-launcher",
-    "version": "1.1.0",
-    "repository": {
-        "type": "git",
-        "url": "https://github.com/PossiblyPengu/CEREAL.git"
-    },
-    "description": "A unified game launcher with integrated PlayStation Remote Play (chiaki-ng) and Xbox Cloud Gaming",
-    "main": "main.js",
-    "scripts": {
-        "start": "electron .",
-        "dev": "powershell -ExecutionPolicy Bypass -File scripts/run.ps1",
-        "dev:verbose": "powershell -ExecutionPolicy Bypass -File scripts/run.ps1 -Verbose",
-        "dev:skip-chiaki": "powershell -ExecutionPolicy Bypass -File scripts/run.ps1 -SkipChiaki",
-        "dev:rebuild-chiaki": "powershell -ExecutionPolicy Bypass -File scripts/run.ps1 -RebuildChiaki",
-        "build": "electron-builder",
-        "build:app": "electron-builder",
-        "setup:chiaki": "powershell -ExecutionPolicy Bypass -File scripts/setup-chiaki.ps1",
-        "setup:chiaki:force": "powershell -ExecutionPolicy Bypass -File scripts/setup-chiaki.ps1 -Force",
-        "release": "powershell -ExecutionPolicy Bypass -File scripts/release.ps1",
-        "pack": "electron-builder --dir"
-    },
-    "author": "Andrew",
-    "license": "MIT",
-    "devDependencies": {
-        "electron": "^34.0.0",
-        "electron-builder": "^26.0.0"
-    },
-    "dependencies": {
-        "discord-rpc": "^4.0.1",
-        "electron-updater": "^6.8.3",
-        "keytar": "^7.7.0"
-    },
-    "build": {
-        "appId": "com.andrew.cereal-launcher",
-        "productName": "Cereal",
-        "win": {
-            "target": "nsis",
-            "icon": "assets/icon.ico"
-        },
-        "publish": {
-            "provider": "github",
-            "owner": "PossiblyPengu",
-            "repo": "CEREAL"
-        },
-        "directories": {
-            "output": "dist"
-        },
-        "extraResources": [
-            {
-                "from": "resources/chiaki-ng",
-                "to": "chiaki-ng",
-                "filter": [
-                    "**/*"
-                ]
-            }
-        ],
-        "asarUnpack": [
-            "resources/chiaki-ng/**"
-        ],
-        "nsis": {
-            "oneClick": false,
-            "allowToChangeInstallationDirectory": true,
-            "license": "LICENSES.md"
-        }
-    }
+    "name":  "cereal-launcher",
+    "version":  "1.1.1",
+    "repository":  {
+                       "type":  "git",
+                       "url":  "https://github.com/PossiblyPengu/CEREAL.git"
+                   },
+    "description":  "A unified game launcher with integrated PlayStation Remote Play (chiaki-ng) and Xbox Cloud Gaming",
+    "main":  "main.js",
+    "scripts":  {
+                    "start":  "electron .",
+                    "dev":  "powershell -ExecutionPolicy Bypass -File scripts/run.ps1",
+                    "dev:verbose":  "powershell -ExecutionPolicy Bypass -File scripts/run.ps1 -Verbose",
+                    "dev:skip-chiaki":  "powershell -ExecutionPolicy Bypass -File scripts/run.ps1 -SkipChiaki",
+                    "dev:rebuild-chiaki":  "powershell -ExecutionPolicy Bypass -File scripts/run.ps1 -RebuildChiaki",
+                    "build":  "electron-builder",
+                    "build:app":  "electron-builder",
+                    "setup:chiaki":  "powershell -ExecutionPolicy Bypass -File scripts/setup-chiaki.ps1",
+                    "setup:chiaki:force":  "powershell -ExecutionPolicy Bypass -File scripts/setup-chiaki.ps1 -Force",
+                    "release":  "powershell -ExecutionPolicy Bypass -File scripts/release.ps1",
+                    "pack":  "electron-builder --dir"
+                },
+    "author":  "Andrew",
+    "license":  "MIT",
+    "devDependencies":  {
+                            "electron":  "^34.0.0",
+                            "electron-builder":  "^26.0.0"
+                        },
+    "dependencies":  {
+                         "discord-rpc":  "^4.0.1",
+                         "electron-updater":  "^6.8.3",
+                         "keytar":  "^7.7.0"
+                     },
+    "build":  {
+                  "appId":  "com.andrew.cereal-launcher",
+                  "productName":  "Cereal",
+                  "win":  {
+                              "target":  "nsis",
+                              "icon":  "assets/icon.ico"
+                          },
+                  "publish":  {
+                                  "provider":  "github",
+                                  "owner":  "PossiblyPengu",
+                                  "repo":  "CEREAL"
+                              },
+                  "directories":  {
+                                      "output":  "dist"
+                                  },
+                  "extraResources":  [
+                                         {
+                                             "from":  "resources/chiaki-ng",
+                                             "to":  "chiaki-ng",
+                                             "filter":  [
+                                                            "**/*"
+                                                        ]
+                                         }
+                                     ],
+                  "asarUnpack":  [
+                                     "resources/chiaki-ng/**"
+                                 ],
+                  "nsis":  {
+                               "oneClick":  false,
+                               "allowToChangeInstallationDirectory":  true,
+                               "license":  "LICENSES.md"
+                           }
+              }
 }
