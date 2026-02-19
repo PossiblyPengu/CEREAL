@@ -5,6 +5,9 @@ contextBridge.exposeInMainWorld('api', {
   minimize: () => ipcRenderer.invoke('window:minimize'),
   maximize: () => ipcRenderer.invoke('window:maximize'),
   close: () => ipcRenderer.invoke('window:close'),
+  fullscreen: () => ipcRenderer.invoke('window:fullscreen'),
+  openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
+  isFullscreen: () => ipcRenderer.invoke('window:isFullscreen'),
 
   // Games
   getGames: () => ipcRenderer.invoke('games:getAll'),
@@ -36,6 +39,13 @@ contextBridge.exposeInMainWorld('api', {
   chiakiRegisterConsole: (opts) => ipcRenderer.invoke('chiaki:registerConsole', opts),
   chiakiDiscoverConsoles: () => ipcRenderer.invoke('chiaki:discoverConsoles'),
   chiakiSetStreamBounds: (opts) => ipcRenderer.invoke('chiaki:setStreamBounds', opts),
+
+  // xCloud (Xbox Cloud Gaming)
+  xcloudStart: (opts) => ipcRenderer.invoke('xcloud:start', opts),
+  xcloudStop: (gameId) => ipcRenderer.invoke('xcloud:stop', gameId),
+  xcloudGetSessions: () => ipcRenderer.invoke('xcloud:getSessions'),
+
+  // Unified stream events (PS + Xbox)
   onChiakiEvent: (callback) => {
     ipcRenderer.on('chiaki:event', (event, data) => callback(data));
     return () => ipcRenderer.removeAllListeners('chiaki:event');
@@ -71,19 +81,17 @@ contextBridge.exposeInMainWorld('api', {
   // Platform Accounts
   getAccounts: () => ipcRenderer.invoke('accounts:get'),
   removeAccount: (platform) => ipcRenderer.invoke('accounts:remove', platform),
-  steamAuth: () => ipcRenderer.invoke('accounts:steam:auth'),
-  importSteamLibrary: () => ipcRenderer.invoke('accounts:steam:import'),
-  gogAuth: () => ipcRenderer.invoke('accounts:gog:auth'),
-  importGogLibrary: () => ipcRenderer.invoke('accounts:gog:import'),
-  epicAuth: () => ipcRenderer.invoke('accounts:epic:auth'),
-  importEpicLibrary: () => ipcRenderer.invoke('accounts:epic:import'),
-  xboxAuth: () => ipcRenderer.invoke('accounts:xbox:auth'),
-  importXboxLibrary: () => ipcRenderer.invoke('accounts:xbox:import'),
+  platformAuth: (platform) => ipcRenderer.invoke(`accounts:${platform}:auth`),
+  platformImport: (platform) => ipcRenderer.invoke(`accounts:${platform}:import`),
 
   // Import progress events (provider -> main -> renderer)
   onImportProgress: (callback) => {
     ipcRenderer.on('import:progress', (event, data) => callback(data));
     return () => ipcRenderer.removeAllListeners('import:progress');
+  },
+  onMetadataProgress: (callback) => {
+    ipcRenderer.on('metadata:progress', (event, data) => callback(data));
+    return () => ipcRenderer.removeAllListeners('metadata:progress');
   },
 
   // Settings

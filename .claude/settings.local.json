@@ -17,7 +17,9 @@
       "Bash(\"e:/CODE/cereal-launcher/node_modules/electron/dist/electron.exe\" -e \"const e=require\\(''electron''\\);console.log\\(''app:'',typeof e.app,''keys:'',Object.keys\\(e\\).slice\\(0,10\\).join\\('',''\\)\\)\")",
       "Bash(cmd /c:*)",
       "Bash(npm install:*)",
-      "Bash(node_modules/electron/dist/electron.exe:*)"
+      "Bash(node_modules/electron/dist/electron.exe:*)",
+      "Bash(find:*)",
+      "Bash(node -c:*)"
     ]
   }
 }

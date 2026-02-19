@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, session } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, session, WebContentsView, Tray, Menu, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const keytar = require('keytar');
@@ -8,6 +8,7 @@ const https = require('https');
 const crypto = require('crypto');
 const { pipeline } = require('stream');
 const { promisify } = require('util');
+const { autoUpdater } = require('electron-updater');
 const streamPipeline = promisify(pipeline);
 const providers = require(path.join(__dirname, 'providers'));
 
@@ -131,6 +132,18 @@ function isAllowedAuthDomain(url) {
     const hostname = new URL(url).hostname;
     return ALLOWED_AUTH_DOMAINS.some(d => hostname === d || hostname.endsWith('.' + d));
   } catch { return false; }
+}
+
+function createAuthWindow(width, height, authSession) {
+  const win = new BrowserWindow({
+    width, height,
+    parent: mainWindow,
+    modal: true,
+    webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, session: authSession },
+  });
+  win.setMenuBarVisibility(false);
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  return win;
 }
 
 // ─── HTTP helpers ─────────────────────────────────────────────────────────────
@@ -487,6 +500,88 @@ function stopChiakiSession(gameId) {
   return true;
 }
 
+// ─── xCloud (Xbox Cloud Gaming) WebContentsView Embedding ────────────────────
+
+const xcloudSessions = new Map(); // gameId -> { view, state, startTime }
+
+function getXcloudBounds() {
+  // Same area as chiaki (full content minus 40px bar) but in CSS/logical pixels
+  // since WebContentsView.setBounds uses logical pixels
+  const [cw, ch] = mainWindow ? mainWindow.getContentSize() : [1280, 720];
+  const barH = 40;
+  return { x: 0, y: barH, width: cw, height: Math.max(1, ch - barH) };
+}
+
+function updateXcloudBounds(sess) {
+  if (!sess || !sess.view) return;
+  const b = getXcloudBounds();
+  try { sess.view.setBounds(b); } catch (e) { /* view may be destroyed */ }
+}
+
+function updateAllXcloudBounds() {
+  for (const sess of xcloudSessions.values()) {
+    updateXcloudBounds(sess);
+  }
+}
+
+function startXcloudSession(gameId, url) {
+  stopXcloudSession(gameId);
+
+  const view = new WebContentsView({
+    webPreferences: {
+      session: session.fromPartition('persist:xcloud'),
+      contextIsolation: true,
+      sandbox: true,
+    }
+  });
+
+  // Xbox Cloud Gaming requires Edge/Chrome user agent
+  const ua = view.webContents.getUserAgent().replace(/Electron\/\S+\s*/, '') + ' Edg/120.0.0.0';
+  view.webContents.setUserAgent(ua);
+
+  mainWindow.contentView.addChildView(view);
+
+  const sess = { gameId, view, state: 'loading', startTime: Date.now() };
+  xcloudSessions.set(gameId, sess);
+
+  updateXcloudBounds(sess);
+
+  view.webContents.loadURL(url || 'https://www.xbox.com/play');
+
+  view.webContents.on('dom-ready', () => {
+    sess.state = 'streaming';
+    sendStreamEvent(gameId, 'state', { state: 'streaming', platform: 'xbox' });
+  });
+
+  view.webContents.on('did-fail-load', (e, code, desc) => {
+    sess.state = 'disconnected';
+    sendStreamEvent(gameId, 'disconnected', { reason: desc, platform: 'xbox' });
+  });
+
+  sendStreamEvent(gameId, 'state', { state: 'connecting', platform: 'xbox' });
+  return sess;
+}
+
+function stopXcloudSession(gameId) {
+  const sess = xcloudSessions.get(gameId);
+  if (!sess) return false;
+
+  try { mainWindow.contentView.removeChildView(sess.view); } catch (e) { /* ok */ }
+  try { sess.view.webContents.close(); } catch (e) { /* ok */ }
+
+  xcloudSessions.delete(gameId);
+  sendStreamEvent(gameId, 'disconnected', { reason: 'stopped', platform: 'xbox' });
+  return true;
+}
+
+function getActiveXcloudSessions() {
+  const result = {};
+  for (const [gameId, sess] of xcloudSessions) {
+    result[gameId] = { state: sess.state, platform: 'xbox', startTime: sess.startTime };
+  }
+  return result;
+}
+
 // ─── Win32 Stream Embedding ───────────────────────────────────────────────────
 
 function getStreamBounds() {
@@ -721,10 +816,14 @@ function handleChiakiLogLine(gameId, line) {
   }
 }
 
-function sendChiakiEvent(gameId, type, data) {
+function sendStreamEvent(gameId, type, data) {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('chiaki:event', { gameId, type, ...data });
   }
+}
+
+function sendChiakiEvent(gameId, type, data) {
+  sendStreamEvent(gameId, type, { platform: 'psn', ...data });
 }
 
 function getActiveSessions() {
@@ -805,6 +904,8 @@ let db = null;
 
 // ─── Window ───────────────────────────────────────────────────────────────────
 let mainWindow;
+let trayIcon = null;
+let isQuitting = false;
 
 function createWindow() {
   // Restore previous window bounds if present and allowed by settings
@@ -846,13 +947,22 @@ function createWindow() {
   mainWindow.on('restore', onWindowBoundsChanged);
   mainWindow.on('maximize', onWindowBoundsChanged);
   mainWindow.on('unmaximize', onWindowBoundsChanged);
-  mainWindow.on('close', () => { saveWindowBounds(); });
+  mainWindow.on('close', (e) => {
+    saveWindowBounds();
+    if (!isQuitting && db && db.settings && db.settings.closeToTray) {
+      e.preventDefault();
+      mainWindow.hide();
+    }
+  });
 
   mainWindow.on('minimize', () => {
     for (const session of chiakiSessions.values()) {
       if (session.embedProcess && !session.embedProcess.killed) {
         try { session.embedProcess.stdin.write('hide\n'); } catch (e) { /* ok */ }
       }
+    }
+    for (const sess of xcloudSessions.values()) {
+      try { sess.view.setVisible(false); } catch (e) { /* ok */ }
     }
   });
 
@@ -862,12 +972,48 @@ function createWindow() {
         try { session.embedProcess.stdin.write('show\n'); } catch (e) { /* ok */ }
       }
     }
+    for (const sess of xcloudSessions.values()) {
+      try { sess.view.setVisible(true); } catch (e) { /* ok */ }
+    }
   });
+}
+
+// ─── Single Instance Lock ─────────────────────────────────────────────────────
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) { app.quit(); } else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (!mainWindow.isVisible()) mainWindow.show();
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+}
+
+function createTray() {
+  if (trayIcon) return;
+  // 16x16 simple cereal-gold icon
+  const img = nativeImage.createFromDataURL('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAY0lEQVR42mP4z8BQz0BAwAADTAxEAqpawMRAAYAa8J+BgQEkTbQBjFiEGYgxgJGBgYERqoERp9OhhjBS0wsoF7AwkOYFcn0BdQHRvsBnAMVeGIAGdCAL4AFixu8FBgYGBgC3+y+Mfb/haQAAAABJRU5ErkJggg==');
+  trayIcon = new Tray(img);
+  trayIcon.setToolTip('Cereal Launcher');
+  const contextMenu = Menu.buildFromTemplate([
+    { label: 'Show Cereal', click: () => { if (mainWindow) { mainWindow.show(); mainWindow.focus(); } } },
+    { type: 'separator' },
+    { label: 'Quit', click: () => { isQuitting = true; app.quit(); } },
+  ]);
+  trayIcon.setContextMenu(contextMenu);
+  trayIcon.on('click', () => { if (mainWindow) { mainWindow.show(); mainWindow.focus(); } });
 }
 
 app.whenReady().then(() => {
   db = loadDB();
   createWindow();
+  createTray();
+
+  // Start minimized if enabled
+  if (db.settings && db.settings.startMinimized) {
+    mainWindow.hide();
+  }
 
   // Auto-connect Discord if enabled
   if (isDiscordEnabled()) connectDiscord();
@@ -875,10 +1021,13 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   disconnectDiscord();
+  // Don't quit if close-to-tray is active — the window is just hidden
+  if (db && db.settings && db.settings.closeToTray) return;
   if (process.platform !== 'darwin') app.quit();
 });
 
 app.on('before-quit', () => {
+  isQuitting = true;
   try { saveWindowBounds(); } catch (e) { /* ok */ }
 });
 
@@ -890,6 +1039,9 @@ ipcMain.handle('window:maximize', () => {
   return mainWindow.isMaximized();
 });
 ipcMain.handle('window:close', () => mainWindow.close());
+ipcMain.handle('window:fullscreen', () => { mainWindow.setFullScreen(!mainWindow.isFullScreen()); return mainWindow.isFullScreen(); });
+ipcMain.handle('window:isFullscreen', () => mainWindow.isFullScreen());
+ipcMain.handle('shell:openExternal', (event, url) => { const { shell } = require('electron'); return shell.openExternal(url); });
 
 // ─── Stream embed bounds tracking ─────────────────────────────────────────────
 let _embedResizeTimer = null;
@@ -920,7 +1072,10 @@ function saveWindowBounds() {
 
 function onWindowBoundsChanged() {
   clearTimeout(_embedResizeTimer);
-  _embedResizeTimer = setTimeout(sendEmbedBoundsToAll, 50);
+  _embedResizeTimer = setTimeout(() => {
+    sendEmbedBoundsToAll();
+    updateAllXcloudBounds();
+  }, 50);
   scheduleSaveWindowBounds();
 }
 
@@ -2043,16 +2198,19 @@ ipcMain.handle('metadata:apply', async (event, gameId, force) => {
 ipcMain.handle('metadata:fetchAll', async () => {
   let updated = 0;
   let failed = 0;
-  for (const game of db.games) {
+  const total = db.games.length;
+  for (let i = 0; i < db.games.length; i++) {
+    const game = db.games[i];
     try {
       const meta = await fetchGameMetadata(game);
       if (meta && applyMetadataToGame(game, meta)) updated++;
     } catch (e) { failed++; }
+    if (mainWindow) mainWindow.webContents.send('metadata:progress', { current: i + 1, total, updated, failed, name: game.name });
     // Small delay to avoid rate limiting
     await new Promise(r => setTimeout(r, 300));
   }
   if (updated > 0) saveDB(db);
-  return { updated, failed, total: db.games.length };
+  return { updated, failed, total };
 });
 
 // ─── SteamGridDB Browser Login (opens external auth flow and prompts for API key)
@@ -2121,17 +2279,9 @@ ipcMain.handle('games:launch', (event, id) => {
       const args = buildChiakiArgs(game, chiakiConfig);
       const session = startChiakiSession(id, chiakiExe, args);
     } else if (game.platform === 'xbox') {
-      // Xbox Game Pass — launch via Xbox app or browser cloud gaming
-      if (game.streamUrl) {
-        // Cloud gaming URL (e.g. https://www.xbox.com/play/games/game-name/PRODUCTID)
-        shell.openExternal(game.streamUrl);
-      } else if (game.platformId) {
-        // Launch via Xbox app protocol
-        shell.openExternal(`ms-xbox://${game.platformId}`);
-      } else {
-        // Fallback: open Xbox Cloud Gaming hub
-        shell.openExternal('https://www.xbox.com/play');
-      }
+      // Xbox — embed xCloud in-app or launch via Xbox app
+      const url = game.streamUrl || 'https://www.xbox.com/play';
+      startXcloudSession(id, url);
     } else if (launchPath && fs.existsSync(launchPath)) {
       const gameDir = path.dirname(launchPath);
       spawn(launchPath, [], { cwd: gameDir, detached: true, stdio: 'ignore' }).unref();
@@ -2142,6 +2292,11 @@ ipcMain.handle('games:launch', (event, id) => {
     // Track playtime start
     game.lastPlayed = new Date().toISOString();
     saveDB(db);
+
+    // Minimize window on launch if enabled
+    if (db.settings && db.settings.minimizeOnLaunch && mainWindow) {
+      mainWindow.minimize();
+    }
 
     // Discord Rich Presence
     if (isDiscordEnabled()) {
@@ -2579,6 +2734,8 @@ const DEFAULT_SETTINGS = {
   igdbClientId: '',              // Twitch/IGDB Client ID
   igdbClientSecret: '',          // Twitch/IGDB Client Secret
   giantbombApiKey: '',           // GiantBomb API key
+  launchOnStartup: false,        // start app when Windows boots
+  startMinimized: false,         // start hidden to tray
 };
 
 ipcMain.handle('settings:get', () => {
@@ -2594,6 +2751,11 @@ ipcMain.handle('settings:save', (event, newSettings) => {
     if (!discordRpc) connectDiscord();
   } else {
     disconnectDiscord();
+  }
+
+  // Update Windows startup registration
+  if ('launchOnStartup' in newSettings) {
+    try { app.setLoginItemSettings({ openAtLogin: !!newSettings.launchOnStartup }); } catch (e) { /* ok */ }
   }
 
   return db.settings;
@@ -2742,24 +2904,16 @@ ipcMain.handle('accounts:steam:auth', async () => {
       'openid.claimed_id': 'http://specs.openid.net/auth/2.0/identifier_select',
     });
     const authSession = session.fromPartition('auth:steam:' + Date.now());
-    const authWin = new BrowserWindow({
-      width: 900, height: 700,
-      parent: mainWindow,
-      modal: true,
-      webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, session: authSession },
-    });
-    authWin.setMenuBarVisibility(false);
+    const authWin = createAuthWindow(900, 700, authSession);
     let resolved = false;
     let authTimeout = null;
     const cleanup = () => {
       if (authTimeout) { clearTimeout(authTimeout); authTimeout = null; }
       try { authSession.clearStorageData(); } catch(e) {}
     };
-    // Auto-close after timeout
     authTimeout = setTimeout(() => {
       if (!resolved) { resolved = true; cleanup(); try { authWin.close(); } catch(e) {} resolve({ error: 'Authentication timed out' }); }
     }, AUTH_TIMEOUT_MS);
-    // Restrict navigation to allowed domains
     authWin.webContents.on('will-navigate', (event, url) => {
       if (url.startsWith(STEAM_RETURN_URL)) { event.preventDefault(); handleNav(url); return; }
       if (!isAllowedAuthDomain(url)) { event.preventDefault(); }
@@ -2797,8 +2951,6 @@ ipcMain.handle('accounts:steam:auth', async () => {
     };
     authWin.webContents.on('will-redirect', (event, url) => { if (url.startsWith(STEAM_RETURN_URL)) { event.preventDefault(); handleNav(url); } });
     authWin.webContents.on('did-navigate', (event, url) => handleNav(url));
-    // Block new window requests (popup ads, external links)
-    authWin.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     authWin.on('closed', () => { cleanup(); if (!resolved) { resolved = true; resolve({ error: 'cancelled' }); } });
     authWin.loadURL(STEAM_OPENID_URL + '?' + params.toString());
   });
@@ -2808,7 +2960,9 @@ ipcMain.handle('accounts:steam:import', async () => {
   if (!providers || !providers.steam || !providers.steam.importLibrary) return { error: 'Steam provider not available' };
   try {
     const notify = (evt) => { try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('import:progress', { provider: 'steam', ...evt }); } catch(e) {} };
-    const res = await providers.steam.importLibrary({ db, saveDB, notify });
+    let apiKey = null;
+    try { const r = await keytar.getPassword('cereal-steam', 'default'); if (r) apiKey = r; } catch(e) {}
+    const res = await providers.steam.importLibrary({ db, saveDB, notify, apiKey });
     return res;
   } catch (e) { return { error: 'Steam import failed: ' + e.message }; }
 });
@@ -2822,13 +2976,7 @@ ipcMain.handle('accounts:gog:auth', async () => {
   return new Promise((resolve) => {
     const oauthState = generateOAuthState();
     const authSession = session.fromPartition('auth:gog:' + Date.now());
-    const authWin = new BrowserWindow({
-      width: 500, height: 700,
-      parent: mainWindow,
-      modal: true,
-      webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, session: authSession },
-    });
-    authWin.setMenuBarVisibility(false);
+    const authWin = createAuthWindow(500, 700, authSession);
     let resolved = false;
     let authTimeout = null;
     const cleanup = () => {
@@ -2881,7 +3029,6 @@ ipcMain.handle('accounts:gog:auth', async () => {
     });
     authWin.webContents.on('will-redirect', (event, url) => handleUrl(url));
     authWin.webContents.on('did-navigate', (event, url) => handleUrl(url));
-    authWin.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     authWin.on('closed', () => { cleanup(); if (!resolved) { resolved = true; resolve({ error: 'cancelled' }); } });
     authWin.loadURL(authUrl);
   });
@@ -2920,13 +3067,7 @@ ipcMain.handle('accounts:epic:auth', async () => {
   return new Promise((resolve) => {
     const oauthState = generateOAuthState();
     const authSession = session.fromPartition('auth:epic:' + Date.now());
-    const authWin = new BrowserWindow({
-      width: 800, height: 700,
-      parent: mainWindow,
-      modal: true,
-      webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, session: authSession },
-    });
-    authWin.setMenuBarVisibility(false);
+    const authWin = createAuthWindow(800, 700, authSession);
     let resolved = false;
     let authTimeout = null;
     const cleanup = () => {
@@ -2984,7 +3125,6 @@ ipcMain.handle('accounts:epic:auth', async () => {
     });
     authWin.webContents.on('will-redirect', (event, url) => { if (url.startsWith(EPIC_REDIRECT)) { event.preventDefault(); handleUrl(url); } });
     authWin.webContents.on('did-navigate', (event, url) => handleUrl(url));
-    authWin.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     authWin.on('closed', () => { cleanup(); if (!resolved) { resolved = true; resolve({ error: 'cancelled' }); } });
     authWin.loadURL(authUrl);
   });
@@ -3029,13 +3169,7 @@ ipcMain.handle('accounts:xbox:auth', async () => {
   return new Promise((resolve) => {
     const oauthState = generateOAuthState();
     const authSession = session.fromPartition('auth:xbox:' + Date.now());
-    const authWin = new BrowserWindow({
-      width: 600, height: 700,
-      parent: mainWindow,
-      modal: true,
-      webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, session: authSession },
-    });
-    authWin.setMenuBarVisibility(false);
+    const authWin = createAuthWindow(600, 700, authSession);
     let resolved = false;
     let authTimeout = null;
     const cleanup = () => {
@@ -3121,7 +3255,6 @@ ipcMain.handle('accounts:xbox:auth', async () => {
     });
     authWin.webContents.on('will-redirect', (event, url) => { if (url.startsWith(MS_REDIRECT)) { event.preventDefault(); handleUrl(url); } });
     authWin.webContents.on('did-navigate', (event, url) => handleUrl(url));
-    authWin.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     authWin.on('closed', () => { cleanup(); if (!resolved) { resolved = true; resolve({ error: 'cancelled' }); } });
     authWin.loadURL(authUrl);
   });
@@ -3245,6 +3378,24 @@ ipcMain.handle('chiaki:stopStream', (event, gameId) => {
 
 ipcMain.handle('chiaki:getSessions', () => {
   return getActiveSessions();
+});
+
+// ─── xCloud IPC handlers ──────────────────────────────────────────────────────
+ipcMain.handle('xcloud:start', (event, { gameId, url }) => {
+  try {
+    startXcloudSession(gameId, url);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+ipcMain.handle('xcloud:stop', (event, gameId) => {
+  return { success: stopXcloudSession(gameId) };
+});
+
+ipcMain.handle('xcloud:getSessions', () => {
+  return getActiveXcloudSessions();
 });
 
 ipcMain.handle('chiaki:openGui', () => {
