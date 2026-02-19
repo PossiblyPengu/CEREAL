@@ -884,45 +884,11 @@ function loadDB() {
   } catch (e) {
     console.error('Failed to load DB:', e);
   }
-  // Seed with placeholder games on first run
+  // Start with empty library on first run
   const seed = {
     categories: ['Action', 'Adventure', 'RPG', 'Strategy', 'Puzzle', 'Simulation', 'Sports', 'FPS', 'Indie', 'Multiplayer'],
     playtime: {},
-    games: [
-      // ---- Steam ----
-      { id:'1', name:'Cyberpunk 2077', platform:'steam', platformId:'1091500', coverUrl:'https://shared.steamstatic.com/store_item_assets/steam/apps/1091500/library_600x900_2x.jpg', categories:['Action','RPG'], playtimeMinutes:1240, lastPlayed:'2025-01-28T10:30:00Z', addedAt:'2024-06-15', favorite:true },
-      { id:'2', name:'Elden Ring', platform:'steam', platformId:'1245620', coverUrl:'https://shared.steamstatic.com/store_item_assets/steam/apps/1245620/library_600x900_2x.jpg', categories:['Action','RPG','Adventure'], playtimeMinutes:840, lastPlayed:'2025-02-01T14:00:00Z', addedAt:'2024-03-10', favorite:true },
-      { id:'3', name:'Hades', platform:'steam', platformId:'1145360', coverUrl:'https://shared.steamstatic.com/store_item_assets/steam/apps/1145360/library_600x900_2x.jpg', categories:['Action','Indie'], playtimeMinutes:320, lastPlayed:'2025-01-15T18:00:00Z', addedAt:'2024-08-20', favorite:false },
-      { id:'4', name:"Baldur's Gate 3", platform:'steam', platformId:'1086940', coverUrl:'https://shared.steamstatic.com/store_item_assets/steam/apps/1086940/library_600x900_2x.jpg', categories:['RPG','Strategy'], playtimeMinutes:2100, lastPlayed:'2025-02-08T20:00:00Z', addedAt:'2024-01-05', favorite:false },
-      { id:'5', name:'Hollow Knight', platform:'steam', platformId:'367520', coverUrl:'https://shared.steamstatic.com/store_item_assets/steam/apps/367520/library_600x900_2x.jpg', categories:['Action','Indie','Adventure'], playtimeMinutes:180, lastPlayed:'2025-01-10T16:00:00Z', addedAt:'2024-09-01', favorite:false },
-      { id:'6', name:'DOOM Eternal', platform:'steam', platformId:'782330', coverUrl:'https://shared.steamstatic.com/store_item_assets/steam/apps/782330/library_600x900_2x.jpg', categories:['Action','FPS'], playtimeMinutes:440, lastPlayed:'2024-11-22T19:00:00Z', addedAt:'2024-04-10', favorite:false },
-      { id:'7', name:'Stardew Valley', platform:'steam', platformId:'413150', coverUrl:'https://shared.steamstatic.com/store_item_assets/steam/apps/413150/library_600x900_2x.jpg', categories:['Simulation','Indie'], playtimeMinutes:680, lastPlayed:'2025-02-09T21:00:00Z', addedAt:'2024-07-01', favorite:true },
-      { id:'8', name:'Celeste', platform:'steam', platformId:'504230', coverUrl:'https://shared.steamstatic.com/store_item_assets/steam/apps/504230/library_600x900_2x.jpg', categories:['Action','Indie'], playtimeMinutes:95, lastPlayed:'2025-01-05T14:30:00Z', addedAt:'2024-10-18', favorite:false },
-      { id:'9', name:'Portal 2', platform:'steam', platformId:'620', coverUrl:'https://shared.steamstatic.com/store_item_assets/steam/apps/620/library_600x900_2x.jpg', categories:['Puzzle','Adventure'], playtimeMinutes:210, lastPlayed:'2024-09-14T11:00:00Z', addedAt:'2024-02-20', favorite:false },
-      // ---- Epic ----
-      { id:'10', name:'Fortnite', platform:'epic', platformId:'fortnite', coverUrl:'', categories:['Action','Multiplayer','FPS'], playtimeMinutes:3200, lastPlayed:'2025-02-10T22:00:00Z', addedAt:'2024-01-01', favorite:false },
-      { id:'11', name:'Alan Wake 2', platform:'epic', platformId:'alanwake2', coverUrl:'', categories:['Action','Adventure'], playtimeMinutes:260, lastPlayed:'2025-01-18T20:30:00Z', addedAt:'2024-05-12', favorite:true },
-      { id:'12', name:'Rocket League', platform:'epic', platformId:'rocketleague', coverUrl:'', categories:['Sports','Multiplayer'], playtimeMinutes:1560, lastPlayed:'2025-02-07T18:00:00Z', addedAt:'2024-03-22', favorite:false },
-      // ---- GOG ----
-      { id:'13', name:'The Witcher 3', platform:'gog', coverUrl:'', categories:['RPG','Adventure'], playtimeMinutes:560, lastPlayed:'2024-12-20', addedAt:'2024-02-14', favorite:false },
-      { id:'14', name:'Disco Elysium', platform:'gog', coverUrl:'', categories:['RPG','Adventure'], playtimeMinutes:380, lastPlayed:'2024-10-05T16:00:00Z', addedAt:'2024-06-30', favorite:false },
-      { id:'15', name:'Divinity: Original Sin 2', platform:'gog', coverUrl:'', categories:['RPG','Strategy'], playtimeMinutes:920, lastPlayed:'2025-01-02T12:00:00Z', addedAt:'2024-04-18', favorite:true },
-      // ---- PlayStation ----
-      { id:'16', name:'God of War Ragnarok', platform:'psn', coverUrl:'', categories:['Action','Adventure'], playtimeMinutes:420, lastPlayed:'2025-02-05', addedAt:'2024-07-20', favorite:true, chiakiNickname:'PS5-Living-Room', chiakiHost:'192.168.1.50', chiakiProfile:'default', chiakiFullscreen:true },
-      { id:'17', name:"Marvel's Spider-Man 2", platform:'psn', coverUrl:'', categories:['Action','Adventure'], playtimeMinutes:340, lastPlayed:'2025-01-30T17:00:00Z', addedAt:'2024-08-05', favorite:false, chiakiNickname:'PS5-Living-Room', chiakiHost:'192.168.1.50', chiakiProfile:'', chiakiFullscreen:true },
-      { id:'18', name:'Final Fantasy XVI', platform:'psn', coverUrl:'', categories:['RPG','Action'], playtimeMinutes:520, lastPlayed:'2025-01-12T20:00:00Z', addedAt:'2024-09-15', favorite:false },
-      { id:'19', name:'Astro Bot', platform:'psn', coverUrl:'', categories:['Action','Adventure'], playtimeMinutes:140, lastPlayed:'2025-02-11T15:00:00Z', addedAt:'2024-12-25', favorite:true },
-      { id:'20', name:"Demon's Souls", platform:'psn', coverUrl:'', categories:['Action','RPG'], playtimeMinutes:310, lastPlayed:'2024-11-08T21:30:00Z', addedAt:'2024-05-01', favorite:false },
-      // ---- Xbox ----
-      { id:'21', name:'Forza Horizon 5', platform:'xbox', coverUrl:'', categories:['Sports','Simulation'], playtimeMinutes:90, lastPlayed:'2025-01-22', addedAt:'2024-11-10', favorite:false, streamUrl:'https://www.xbox.com/play/games/forza-horizon-5/9NKX70BBCDRN' },
-      { id:'22', name:'Halo Infinite', platform:'xbox', coverUrl:'', categories:['FPS','Action','Multiplayer'], playtimeMinutes:650, lastPlayed:'2025-02-03T19:00:00Z', addedAt:'2024-02-28', favorite:true, streamUrl:'https://www.xbox.com/play/games/halo-infinite/9PP5G1F0C2B6' },
-      { id:'23', name:'Starfield', platform:'xbox', coverUrl:'', categories:['RPG','Adventure'], playtimeMinutes:480, lastPlayed:'2025-01-25T22:00:00Z', addedAt:'2024-06-10', favorite:false, streamUrl:'https://www.xbox.com/play/games/starfield/9NKX70BBCDRN' },
-      { id:'24', name:'Sea of Thieves', platform:'xbox', coverUrl:'', categories:['Adventure','Multiplayer'], playtimeMinutes:220, lastPlayed:'2025-02-06T20:30:00Z', addedAt:'2024-08-14', favorite:false },
-      { id:'25', name:'Grounded', platform:'xbox', coverUrl:'', categories:['Adventure','Simulation'], playtimeMinutes:170, lastPlayed:'2024-12-15T14:00:00Z', addedAt:'2024-10-22', favorite:false },
-      // ---- Custom ----
-      { id:'26', name:'Minecraft', platform:'custom', coverUrl:'', categories:['Simulation','Adventure'], playtimeMinutes:4500, lastPlayed:'2025-02-11T23:00:00Z', addedAt:'2024-01-15', favorite:true, executablePath:'C:/Games/Minecraft/minecraft.exe' },
-      { id:'27', name:'RetroArch', platform:'custom', coverUrl:'', categories:['Action','Simulation'], playtimeMinutes:280, lastPlayed:'2025-01-20T16:00:00Z', addedAt:'2024-09-08', favorite:false, executablePath:'C:/RetroArch/retroarch.exe' },
-    ]
+    games: []
   };
   saveDB(seed);
   return seed;
@@ -1049,9 +1015,6 @@ app.whenReady().then(() => {
 
   // Auto-connect Discord if enabled
   if (isDiscordEnabled()) connectDiscord();
-
-  // Auto-setup chiaki-ng if not present (first run)
-  setTimeout(() => autoSetupChiakiIfMissing(), 3000);
 
   // Auto-update: check after a short delay
   autoUpdater.autoDownload = true;
