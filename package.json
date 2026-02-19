@@ -34,7 +34,7 @@
                   "appId":  "com.andrew.cereal-launcher",
                   "productName":  "Cereal",
                   "win":  {
-                              "target":  "nsis",
+                              "target":  ["nsis", "portable"],
                               "icon":  "assets/icon.ico"
                           },
                   "publish":  {
