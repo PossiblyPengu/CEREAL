@@ -28,35 +28,36 @@ jobs:
         run: npx electron-builder --publish never
 
       - name: List artifacts
-        run: ls dist
+        shell: powershell
+        run: Get-ChildItem dist -File | ForEach-Object { Write-Host $_.Name }
 
       - name: Extract release notes from tag
         if: startsWith(github.ref, 'refs/tags/')
         id: notes
-        shell: bash
+        shell: powershell
         run: |
-          TAG="${GITHUB_REF#refs/tags/}"
-          # Get the tag annotation message (skip the first line which is "Release vX.Y.Z")
-          BODY=$(git tag -l --format='%(contents:body)' "$TAG")
-          if [ -z "$BODY" ]; then
-            echo "has_notes=false" >> "$GITHUB_OUTPUT"
-          else
-            # Write to a file to avoid escaping issues
-            echo "$BODY" > release-notes.txt
-            echo "has_notes=true" >> "$GITHUB_OUTPUT"
-          fi
+          $tag = "${{ github.ref_name }}"
+          $body = git tag -l --format='%(contents:body)' $tag
+          if ($body -and $body.Trim()) {
+            $body | Set-Content release-notes.txt -Encoding UTF8
+            "has_notes=true" | Out-File -Append $env:GITHUB_OUTPUT
+          } else {
+            "has_notes=false" | Out-File -Append $env:GITHUB_OUTPUT
+          }
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
+        shell: powershell
         run: |
-          TAG="${GITHUB_REF#refs/tags/}"
-          NOTES_ARG=""
-          if [ "${{ steps.notes.outputs.has_notes }}" = "true" ]; then
-            NOTES_ARG="--notes-file release-notes.txt"
-          else
-            NOTES_ARG="--generate-notes"
-          fi
-          gh release create "$TAG" dist/* --repo "${{ github.repository }}" --title "$TAG" $NOTES_ARG
+          $tag = "${{ github.ref_name }}"
+          $files = Get-ChildItem dist -File | ForEach-Object { $_.FullName }
+          $args = @('release', 'create', $tag) + $files + @('--repo', '${{ github.repository }}', '--title', $tag)
+          if ("${{ steps.notes.outputs.has_notes }}" -eq "true") {
+            $args += '--notes-file'
+            $args += 'release-notes.txt'
+          } else {
+            $args += '--generate-notes'
+          }
+          & gh @args
