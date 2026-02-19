@@ -1,7 +1,39 @@
 const { app, BrowserWindow, ipcMain, dialog, shell, session, WebContentsView, Tray, Menu, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const keytar = require('keytar');
+// Secure credential store using Electron's safeStorage (replaces keytar)
+const credStorePath = () => path.join(app.getPath('userData'), 'credentials.json');
+function loadCredStore() {
+  try { return JSON.parse(fs.readFileSync(credStorePath(), 'utf-8')); } catch { return {}; }
+}
+function saveCredStore(store) {
+  fs.writeFileSync(credStorePath(), JSON.stringify(store, null, 2), 'utf-8');
+}
+const safeStore = {
+  setPassword(service, account, secret) {
+    const { safeStorage } = require('electron');
+    if (!safeStorage.isEncryptionAvailable()) throw new Error('Encryption not available');
+    const store = loadCredStore();
+    const key = `${service}/${account}`;
+    store[key] = safeStorage.encryptString(secret).toString('base64');
+    saveCredStore(store);
+  },
+  getPassword(service, account) {
+    const { safeStorage } = require('electron');
+    const store = loadCredStore();
+    const key = `${service}/${account}`;
+    if (!store[key]) return null;
+    return safeStorage.decryptString(Buffer.from(store[key], 'base64'));
+  },
+  deletePassword(service, account) {
+    const store = loadCredStore();
+    const key = `${service}/${account}`;
+    if (!store[key]) return false;
+    delete store[key];
+    saveCredStore(store);
+    return true;
+  }
+};
 const { execSync, spawn } = require('child_process');
 const readline = require('readline');
 const https = require('https');
@@ -1018,6 +1050,9 @@ app.whenReady().then(() => {
   // Auto-connect Discord if enabled
   if (isDiscordEnabled()) connectDiscord();
 
+  // Auto-setup chiaki-ng if not present (first run)
+  setTimeout(() => autoSetupChiakiIfMissing(), 3000);
+
   // Auto-update: check after a short delay
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
@@ -1844,10 +1879,10 @@ ipcMain.handle('covers:fetchNow', async (event, gameId) => {
   } catch (e) { return { error: e.message }; }
 });
 
-// --- Secure key storage and validation (uses OS credential store via keytar)
+// --- Secure key storage and validation (uses Electron safeStorage)
 ipcMain.handle('keys:set', async (event, {service, account, secret}) => {
   try {
-    await keytar.setPassword(service, account, secret);
+    safeStore.setPassword(service, account, secret);
     return {ok: true};
   } catch (err) {
     console.error('keys:set error', err);
@@ -1857,7 +1892,7 @@ ipcMain.handle('keys:set', async (event, {service, account, secret}) => {
 
 ipcMain.handle('keys:get', async (event, {service, account}) => {
   try {
-    const secret = await keytar.getPassword(service, account);
+    const secret = safeStore.getPassword(service, account);
     return {ok: true, secret};
   } catch (err) {
     console.error('keys:get error', err);
@@ -1867,7 +1902,7 @@ ipcMain.handle('keys:get', async (event, {service, account}) => {
 
 ipcMain.handle('keys:delete', async (event, {service, account}) => {
   try {
-    const res = await keytar.deletePassword(service, account);
+    const res = safeStore.deletePassword(service, account);
     return {ok: res};
   } catch (err) {
     console.error('keys:delete error', err);
@@ -2289,7 +2324,7 @@ ipcMain.handle('games:launch', (event, id) => {
       // Launch via integrated chiaki-ng session manager
       const chiakiExe = resolveChiakiExe(launchPath);
       if (!chiakiExe) {
-        return { success: false, error: 'chiaki-ng not found. Run "npm run setup:chiaki" to download it.' };
+        return { success: false, error: 'chiaki-ng not found. It should download automatically — try again in a moment, or check Settings > PlayStation.' };
       }
 
       const chiakiConfig = db.chiakiConfig || {};
@@ -2986,7 +3021,7 @@ ipcMain.handle('accounts:steam:import', async () => {
   try {
     const notify = (evt) => { try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('import:progress', { provider: 'steam', ...evt }); } catch(e) {} };
     let apiKey = null;
-    try { const r = await keytar.getPassword('cereal-steam', 'default'); if (r) apiKey = r; } catch(e) {}
+    try { const r = safeStore.getPassword('cereal-steam', 'default'); if (r) apiKey = r; } catch(e) {}
     const res = await providers.steam.importLibrary({ db, saveDB, notify, apiKey });
     return res;
   } catch (e) { return { error: 'Steam import failed: ' + e.message }; }
@@ -3324,6 +3359,55 @@ ipcMain.handle('accounts:xbox:import', async () => {
     return res;
   } catch (e) { return { error: 'Xbox import failed: ' + e.message }; }
 });
+
+// ─── chiaki-ng Auto-Setup (first run) ─────────────────────────────────────────
+// If chiaki-ng is not bundled and no system install is found, automatically
+// download it in the background so the user doesn't have to do it manually.
+function autoSetupChiakiIfMissing() {
+  // Already bundled — nothing to do
+  if (getBundledChiakiExe()) return;
+
+  // System install exists — no need to download
+  const systemPaths = [
+    path.join(process.env.ProgramFiles || '', 'chiaki-ng', 'chiaki.exe'),
+    path.join(process.env['ProgramFiles(x86)'] || '', 'chiaki-ng', 'chiaki.exe'),
+    path.join(process.env.LOCALAPPDATA || '', 'chiaki-ng', 'chiaki.exe'),
+  ];
+  if (systemPaths.some(p => fs.existsSync(p))) return;
+
+  console.log('[chiaki] Not found — starting automatic setup...');
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('chiaki:event', { type: 'setup_started' });
+  }
+
+  const scriptPath = path.join(__dirname, 'scripts', 'setup-chiaki.ps1');
+  if (!fs.existsSync(scriptPath)) {
+    console.warn('[chiaki] setup-chiaki.ps1 not found, skipping auto-setup');
+    return;
+  }
+
+  const child = spawn('powershell', ['-ExecutionPolicy', 'Bypass', '-File', scriptPath], { cwd: __dirname, stdio: 'pipe' });
+  let output = '';
+  child.stdout.on('data', d => output += d.toString());
+  child.stderr.on('data', d => output += d.toString());
+  child.on('close', (code) => {
+    if (code === 0) {
+      const version = getBundledChiakiVersion();
+      console.log(`[chiaki] Auto-setup complete — v${version}`);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('chiaki:event', { type: 'setup_complete', version });
+      }
+    } else {
+      console.error(`[chiaki] Auto-setup failed (exit ${code}):`, output);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('chiaki:event', { type: 'setup_failed', error: `Setup exited with code ${code}` });
+      }
+    }
+  });
+  child.on('error', (err) => {
+    console.error('[chiaki] Auto-setup spawn error:', err.message);
+  });
+}
 
 // ─── chiaki-ng Configuration ──────────────────────────────────────────────────
 ipcMain.handle('chiaki:status', () => {

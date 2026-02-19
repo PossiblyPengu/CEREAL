@@ -1,17 +1,18 @@
 <#
 .SYNOPSIS
-  Bump version, build, tag, push and create GitHub release for Cereal.
+  Bump version, tag, and push to trigger a GitHub Actions release build.
 
 .DESCRIPTION
-  Lightweight release script inspired by SOUP's `release.ps1`.
-  - supports bumping semantic versions or setting explicit version
-  - commits package.json change, creates annotated tag and pushes
-  - builds via `npm run build` and uploads artifacts from `dist/`
-  - creates GitHub Release via `gh` if available, otherwise uses REST API and `GITHUB_TOKEN`
+  Local release helper for Cereal Launcher.
+  - Bumps the semantic version in package.json (interactive or via flags)
+  - Commits the version change, creates an annotated tag, and pushes
+  - GitHub Actions handles the actual build + GitHub Release (build-and-release.yml)
 
 .EXAMPLES
-  .\scripts\release.ps1 -Patch -Notes "Fix crash when launching" -DryRun
-  .\scripts\release.ps1 -Version 1.2.3 -Notes "Release notes" 
+  .\scripts\release.ps1                                       # interactive bump
+  .\scripts\release.ps1 -Patch                                # patch bump
+  .\scripts\release.ps1 -Patch -Notes "Fix crash on launch"   # with release notes
+  .\scripts\release.ps1 -Version 2.0.0 -DryRun               # dry run
 #>
 
 param(
@@ -21,23 +22,16 @@ param(
   [string]$Version,
   [string]$Bump,
   [switch]$DryRun,
-  [switch]$SkipGit,
-  [switch]$SkipBuild,
-  [string]$Notes,
-  [string]$Token = $env:GITHUB_TOKEN
+  [string]$Notes
 )
 
 $ErrorActionPreference = 'Stop'
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot = (Resolve-Path (Join-Path $ScriptDir '..')).Path
 
-function Infer-RepoFromGit { param($root) try { $u = git -C $root remote get-url origin 2>$null; if (-not $u) { $u = git -C $root remote get-url upstream 2>$null } if ($u) { $s = $u.Trim(); if ($s -match 'github.com[:/](.+?)(?:\.git)?$') { return $Matches[1] } } } catch {}; return $null }
-
-function Infer-RepoFromPackage { param($root) $pkg = Join-Path $root 'package.json'; if (-not (Test-Path $pkg)) { return $null }; try { $pj = Get-Content $pkg -Raw | ConvertFrom-Json; if (-not $pj.repository) { return $null }; $repoField = $pj.repository; if ($repoField -is [string]) { $s = $repoField } else { $s = $repoField.url }; if (-not $s) { return $null }; $s = $s.Trim(); if ($s -match 'github.com[:/](.+?)(?:\.git)?$') { return $Matches[1] }; if ($s -match '^([^/]+)\/([^/]+)$') { return $s } } catch {}; return $null }
-
-if (-not $Repo) { $Repo = Infer-RepoFromGit $RepoRoot; if (-not $Repo) { $Repo = Infer-RepoFromPackage $RepoRoot } }
-if (-not $Repo) { if ($env:GITHUB_REPOSITORY) { $Repo = $env:GITHUB_REPOSITORY } }
-if (-not $Repo) { Write-Host 'Could not infer repository. Use -Repo owner/repo or set GITHUB_REPOSITORY.' -ForegroundColor Red; exit 1 }
+# UTF-8 without BOM — PowerShell 5.1's -Encoding UTF8 adds a BOM which breaks JSON parsers
+$utf8NoBom = New-Object System.Text.UTF8Encoding $false
+function Write-Utf8($filePath, $text) { [IO.File]::WriteAllText($filePath, $text, $utf8NoBom) }
 
 # Read current version from package.json
 $pkgFile = Join-Path $RepoRoot 'package.json'
@@ -55,7 +49,7 @@ elseif ($Minor) { $parts = $currentVersion -split '\.'; $newVersion = "$($parts[
 elseif ($Patch) { $parts = $currentVersion -split '\.'; $newVersion = "$($parts[0]).$($parts[1]).$([int]$parts[2] + 1)" }
 else {
   # Interactive mode: ask user which bump to perform
-  if ($Host -and $Host.UI -and $Host.UI.SupportsUserInteraction) {
+  if ([Environment]::UserInteractive -and !$env:CI) {
     Write-Host ""; Write-Host 'Select version bump:' -ForegroundColor Yellow
     $parts = $currentVersion -split '\.'
     $majorNum = [int]$parts[0]; $minorNum = [int]$parts[1]; $patchNum = [int]$parts[2]
@@ -90,8 +84,8 @@ $tagName = "v$newVersion"
 # Collect release notes: prefer -Notes param, otherwise prompt interactively
 $releaseNotes = @()
 if ($Notes) { $releaseNotes = @($Notes) } else {
-  if ($Host -and $Host.UI -and $Host.UI.SupportsUserInteraction) {
-    Write-Host ""; Write-Host '[Release Notes] Enter changes (empty line to finish):' -ForegroundColor Yellow
+  if ([Environment]::UserInteractive -and !$env:CI) {
+    Write-Host ""; Write-Host '[Release Notes] Enter changes (empty line to finish, or leave empty for auto-generated notes):' -ForegroundColor Yellow
     while ($true) {
       $line = Read-Host '  >'
       if ([string]::IsNullOrWhiteSpace($line)) { break }
@@ -99,18 +93,18 @@ if ($Notes) { $releaseNotes = @($Notes) } else {
     }
   }
 }
-# Flatten notes into $Notes for use later
 if ($releaseNotes.Count -gt 0) { $Notes = ($releaseNotes -join "`n") }
 
+# Dry run
 if ($DryRun) {
   Write-Host 'DRY RUN - no changes will be made' -ForegroundColor Yellow
   Write-Host "Would update package.json version $currentVersion -> $newVersion" -ForegroundColor Gray
   Write-Host "Would create tag: $tagName and push to origin" -ForegroundColor Gray
+  Write-Host "GitHub Actions would then build and create the release" -ForegroundColor Gray
   if ($releaseNotes.Count -gt 0) {
     Write-Host 'Release notes:' -ForegroundColor Gray
     $releaseNotes | ForEach-Object { Write-Host "  - $_" -ForegroundColor Gray }
   }
-  Write-Host "Would run build unless -SkipBuild was passed" -ForegroundColor Gray
   exit 0
 }
 
@@ -118,78 +112,31 @@ if ($DryRun) {
 $backup = Get-Content $pkgFile -Raw
 try {
   $pj.version = $newVersion
-  $pj | ConvertTo-Json -Depth 10 | Set-Content $pkgFile -NoNewline -Encoding UTF8
+  Write-Utf8 $pkgFile ($pj | ConvertTo-Json -Depth 10)
   Write-Host 'package.json updated' -ForegroundColor Green
 } catch { Write-Host "Failed to update package.json: $_" -ForegroundColor Red; exit 1 }
 
-function Resolve-NpmExe {
-  try { $npmCmdInfo = Get-Command npm.cmd -ErrorAction SilentlyContinue; if ($npmCmdInfo -and $npmCmdInfo.Path) { return $npmCmdInfo.Path } } catch {}
-  try { $npmInfo = Get-Command npm -ErrorAction SilentlyContinue; if ($npmInfo -and $npmInfo.Path) { return $npmInfo.Path } } catch {}
-  return 'npm'
-}
+# Write release notes to a temp file so the workflow can pick them up via tag annotation
+$commitMsg = "chore(release): v$newVersion"
+$tagMsg = "Release $tagName"
+if ($Notes) { $tagMsg = "$tagMsg`n`n$Notes" }
 
-function Run-Npm { param([string[]]$Args) if (-not $Args -or $Args.Count -eq 0) { Write-Host 'Run-Npm: no args' -ForegroundColor Yellow; return 1 } $npm = Resolve-NpmExe; & $npm @Args; return $LASTEXITCODE }
+# Git commit, tag, push
+git -C $RepoRoot add package.json
+git -C $RepoRoot commit -m $commitMsg 2>$null | Out-Null
+if ($LASTEXITCODE -ne 0) { Write-Host 'Nothing to commit or commit failed' -ForegroundColor Yellow }
 
-# Build
-if (-not $SkipBuild) {
-  Write-Host 'Running setup:chiaki (best-effort)...' -ForegroundColor White
-  $rc = Run-Npm 'run','setup:chiaki'
-  if ($rc -ne 0) { Write-Host 'setup:chiaki failed (continuing)' -ForegroundColor Yellow }
+$existing = git -C $RepoRoot tag -l $tagName
+if ($existing) { Write-Host "Tag $tagName already exists; aborting" -ForegroundColor Red; Write-Utf8 $pkgFile $backup; exit 1 }
 
-  Write-Host 'Running npm run build...' -ForegroundColor White
-  $rc = Run-Npm 'run','build'
-  if ($rc -ne 0) { Write-Host 'npm run build failed' -ForegroundColor Red; Set-Content $pkgFile $backup -NoNewline -Encoding UTF8; exit $rc }
-} else { Write-Host 'Skipping build as requested' -ForegroundColor Yellow }
+git -C $RepoRoot tag -a $tagName -m $tagMsg
+if ($LASTEXITCODE -ne 0) { Write-Host 'Tag creation failed' -ForegroundColor Red; Write-Utf8 $pkgFile $backup; exit 1 }
 
-# Collect artifacts
-$dist = Join-Path $RepoRoot 'dist'
-if (-not (Test-Path $dist)) { Write-Host 'dist/ not found' -ForegroundColor Red; Set-Content $pkgFile $backup -NoNewline -Encoding UTF8; exit 1 }
-$files = Get-ChildItem -Path $dist -Recurse -File | Where-Object { $_.Length -gt 0 } | Sort-Object FullName
-if ($files.Count -eq 0) { Write-Host 'No artifacts found in dist/' -ForegroundColor Red; Set-Content $pkgFile $backup -NoNewline -Encoding UTF8; exit 1 }
-$artifactPaths = $files | ForEach-Object { $_.FullName }
+Write-Host 'Pushing to origin...' -ForegroundColor White
+git -C $RepoRoot push origin --follow-tags
+if ($LASTEXITCODE -ne 0) { Write-Host 'Git push failed' -ForegroundColor Red; Write-Utf8 $pkgFile $backup; exit 1 }
 
-# Git commit/tag/push
-if (-not $SkipGit) {
-  git -C $RepoRoot add package.json
-  git -C $RepoRoot commit -m "chore(release): v$newVersion" 2>$null | Out-Null
-  if ($LASTEXITCODE -ne 0) { Write-Host 'Nothing to commit or commit failed' -ForegroundColor Yellow }
-
-  $existing = git -C $RepoRoot tag -l $tagName
-  if ($existing) { Write-Host "Tag $tagName already exists; aborting" -ForegroundColor Red; Set-Content $pkgFile $backup -NoNewline -Encoding UTF8; exit 1 }
-
-  git -C $RepoRoot tag -a $tagName -m "Release $tagName"
-  if ($LASTEXITCODE -ne 0) { Write-Host 'Tag creation failed' -ForegroundColor Red; Set-Content $pkgFile $backup -NoNewline -Encoding UTF8; exit 1 }
-  git -C $RepoRoot push origin --follow-tags
-  if ($LASTEXITCODE -ne 0) { Write-Host 'Git push failed' -ForegroundColor Red; Set-Content $pkgFile $backup -NoNewline -Encoding UTF8; exit 1 }
-} else { Write-Host 'Skipping git actions as requested' -ForegroundColor Yellow }
-
-# Create GitHub release (prefer gh)
-function Use-Gh { return $null -ne (Get-Command gh -ErrorAction SilentlyContinue) }
-if (Use-Gh) {
-  Write-Host "Creating release $tagName with gh..." -ForegroundColor Cyan
-  $args = @('release','create',$tagName) + $artifactPaths + @('--repo',$Repo,'--title',$tagName)
-  if ($Notes) { $args += '--notes'; $args += $Notes }
-  & gh @args
-  if ($LASTEXITCODE -ne 0) { Write-Host 'gh release failed' -ForegroundColor Red; Set-Content $pkgFile $backup -NoNewline -Encoding UTF8; exit 1 }
-} else {
-  if (-not $Token) { Write-Host 'GITHUB_TOKEN required for REST release' -ForegroundColor Red; Set-Content $pkgFile $backup -NoNewline -Encoding UTF8; exit 1 }
-  Write-Host "Creating release $tagName via REST API..." -ForegroundColor Cyan
-  $createUrl = 'https://api.github.com/repos/{0}/releases' -f $Repo
-  $hdr = @{ Authorization = ('token {0}' -f $Token); 'User-Agent' = 'cereal-launcher' }
-  $bodyObj = @{ tag_name = $tagName; name = $tagName; body = $Notes; draft = $false; prerelease = $false }
-  $resp = Invoke-RestMethod -Method Post -Uri $createUrl -Headers $hdr -Body ($bodyObj | ConvertTo-Json -Depth 4) -ContentType 'application/json'
-  if (-not $resp.upload_url) { Write-Host 'Failed to create release' -ForegroundColor Red; Set-Content $pkgFile $backup -NoNewline -Encoding UTF8; exit 1 }
-  $uploadUrlTemplate = $resp.upload_url
-  foreach ($p in $artifactPaths) {
-    $fileName = [IO.Path]::GetFileName($p)
-    $uploadUrl = $uploadUrlTemplate -replace '\{\?name,label\}', ('?name={0}' -f $fileName)
-    $ctype = 'application/octet-stream'
-    if ($fileName -match '\.zip$') { $ctype = 'application/zip' }
-    Write-Host "Uploading $fileName..." -ForegroundColor White
-    $uploadHdr = @{ Authorization = ('token {0}' -f $Token); 'Content-Type' = $ctype; 'User-Agent' = 'cereal-launcher' }
-    try { Invoke-RestMethod -Method Post -Uri $uploadUrl -Headers $uploadHdr -InFile $p -ErrorAction Stop } catch { Write-Host "Upload failed for $($fileName): $($_)" -ForegroundColor Red; Set-Content $pkgFile $backup -NoNewline -Encoding UTF8; exit 1 }
-  }
-}
-
-Write-Host "Release $tagName created successfully." -ForegroundColor Green
+Write-Host ""
+Write-Host "Tag $tagName pushed. GitHub Actions will build and create the release." -ForegroundColor Green
+Write-Host "Watch progress: https://github.com/$(git -C $RepoRoot remote get-url origin | Select-String -Pattern 'github.com[:/](.+?)(?:\.git)?$' | ForEach-Object { $_.Matches[0].Groups[1].Value })/actions" -ForegroundColor Cyan
 exit 0
