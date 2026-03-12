@@ -17,6 +17,8 @@ contextBridge.exposeInMainWorld('api', {
   deleteGame: (id) => ipcRenderer.invoke('games:delete', id),
   toggleFavorite: (id) => ipcRenderer.invoke('games:toggleFavorite', id),
   launchGame: (id) => ipcRenderer.invoke('games:launch', id),
+  installGame: (id) => ipcRenderer.invoke('games:install', id),
+  openGameInClient: (id) => ipcRenderer.invoke('games:openInClient', id),
 
   // Detection
   detectSteam: () => ipcRenderer.invoke('detect:steam'),
@@ -24,6 +26,10 @@ contextBridge.exposeInMainWorld('api', {
   detectGOG: () => ipcRenderer.invoke('detect:gog'),
   detectPSRemote: () => ipcRenderer.invoke('detect:psremote'),
   detectXbox: () => ipcRenderer.invoke('detect:xbox'),
+  detectEA: () => ipcRenderer.invoke('detect:ea'),
+  detectBattleNet: () => ipcRenderer.invoke('detect:battlenet'),
+  detectItchio: () => ipcRenderer.invoke('detect:itchio'),
+  detectUbisoft: () => ipcRenderer.invoke('detect:ubisoft'),
 
   // chiaki-ng (PlayStation Remote Play)
   getChiakiStatus: () => ipcRenderer.invoke('chiaki:status'),
@@ -77,7 +83,6 @@ contextBridge.exposeInMainWorld('api', {
   readClipboard: () => ipcRenderer.invoke('clipboard:readText'),
 
   // Playtime
-  addPlaytime: (id, minutes) => ipcRenderer.invoke('playtime:add', id, minutes),
   syncPlaytime: () => ipcRenderer.invoke('playtime:sync'),
 
   // Platform Accounts
@@ -116,7 +121,8 @@ contextBridge.exposeInMainWorld('api', {
 
   // Secure API key storage
   saveApiKey: (provider, apiKey) => ipcRenderer.invoke('keys:set', { service: `cereal-${provider}`, account: 'default', secret: apiKey }),
-  getApiKey: (provider) => ipcRenderer.invoke('keys:get', { service: `cereal-${provider}`, account: 'default' }),
+  getApiKeyInfo: (provider) => ipcRenderer.invoke('keys:get', { service: `cereal-${provider}`, account: 'default' }),
   deleteApiKey: (provider) => ipcRenderer.invoke('keys:delete', { service: `cereal-${provider}`, account: 'default' }),
   validateApiKey: (provider, apiKey) => ipcRenderer.invoke('keys:validate', { provider, apiKey }),
+  validateStoredApiKey: (provider) => ipcRenderer.invoke('keys:validateStored', { provider, service: `cereal-${provider}`, account: 'default' }),
 });

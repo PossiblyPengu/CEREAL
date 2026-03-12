@@ -64,9 +64,8 @@ if (-not $NodeExe -or -not (Test-Path $NodeExe)) {
     exit 1
 }
 
-# Build full paths to npm and npx (use .cmd variants to avoid PS execution policy issues)
+# Build full path to npm (use .cmd variant to avoid PS execution policy issues)
 $NpmCmd  = Join-Path $NodeDir "npm.cmd"
-$NpxCmd  = Join-Path $NodeDir "npx.cmd"
 
 if (-not (Test-Path $NpmCmd)) {
     Log "ERROR: npm.cmd not found at $NodeDir" Red

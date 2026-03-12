@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, session, WebContentsView, Tray, Menu, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, session, WebContentsView, Tray, Menu, nativeImage, globalShortcut } = require('electron');
 const path = require('path');
 const fs = require('fs');
 // Secure credential store using Electron's safeStorage (replaces keytar)
@@ -36,13 +36,121 @@ const safeStore = {
 };
 const { execSync, spawn } = require('child_process');
 const readline = require('readline');
+const http = require('http');
 const https = require('https');
 const crypto = require('crypto');
+const zlib = require('zlib');
 const { pipeline } = require('stream');
 const { promisify } = require('util');
 const { autoUpdater } = require('electron-updater');
 const streamPipeline = promisify(pipeline);
 const providers = require(path.join(__dirname, 'providers'));
+
+const ACCOUNT_SECRET_FIELDS = [
+  'accessToken', 'refreshToken',
+  'msAccessToken', 'msRefreshToken',
+  'xblToken', 'xstsToken',
+  'userHash',
+];
+
+function accountSecretService(platform) {
+  return `cereal-account-${platform}`;
+}
+
+function loadAccountSecrets(platform) {
+  try {
+    const raw = safeStore.getPassword(accountSecretService(platform), 'tokens');
+    if (!raw) return {};
+    return JSON.parse(raw);
+  } catch (e) {
+    return {};
+  }
+}
+
+function storeAccountSecrets(platform, secrets) {
+  try {
+    const service = accountSecretService(platform);
+    if (secrets && Object.keys(secrets).length) {
+      safeStore.setPassword(service, 'tokens', JSON.stringify(secrets));
+    } else {
+      safeStore.deletePassword(service, 'tokens');
+    }
+  } catch (e) {
+    console.error('account secret store error', platform, e && e.message);
+  }
+}
+
+function detachAccountSecrets(platform, { save = true } = {}) {
+  const acct = db?.accounts?.[platform];
+  if (!acct) {
+    storeAccountSecrets(platform, null);
+    return false;
+  }
+  const secrets = {};
+  let hasSecrets = false;
+  for (const key of ACCOUNT_SECRET_FIELDS) {
+    if (acct[key] !== undefined && acct[key] !== null) {
+      secrets[key] = acct[key];
+      delete acct[key];
+      hasSecrets = true;
+    }
+  }
+  storeAccountSecrets(platform, hasSecrets ? secrets : null);
+  if (acct.hasCredentials !== hasSecrets) {
+    acct.hasCredentials = hasSecrets;
+    if (save) saveDB(db);
+  } else if (hasSecrets && save) {
+    saveDB(db);
+  }
+  return hasSecrets;
+}
+
+function hydrateAccountSecrets(platform) {
+  const acct = db?.accounts?.[platform];
+  if (!acct) return () => {};
+  const secrets = loadAccountSecrets(platform);
+  if (Object.keys(secrets).length) {
+    Object.assign(acct, secrets);
+    acct.hasCredentials = true;
+  }
+  return () => detachAccountSecrets(platform);
+}
+
+function persistAccountData(platform, data = {}) {
+  if (!platform) return;
+  if (!db.accounts) db.accounts = {};
+  const acct = db.accounts[platform] || {};
+  const secrets = loadAccountSecrets(platform);
+  let secretsChanged = false;
+  let removedSecrets = false;
+  for (const [key, val] of Object.entries(data)) {
+    if (ACCOUNT_SECRET_FIELDS.includes(key)) {
+      if (val === undefined) continue;
+      if (val === null) {
+        if (secrets[key] !== undefined) {
+          delete secrets[key];
+          secretsChanged = true;
+          removedSecrets = true;
+        }
+      } else if (secrets[key] !== val) {
+        secrets[key] = val;
+        secretsChanged = true;
+      }
+    } else if (val !== undefined) {
+      acct[key] = val;
+    }
+  }
+  if (data.connected !== undefined) acct.connected = data.connected;
+  else if (acct.connected === undefined) acct.connected = true;
+  const hasSecrets = Object.keys(secrets).length > 0;
+  acct.hasCredentials = hasSecrets;
+  db.accounts[platform] = acct;
+  if (secretsChanged || removedSecrets) {
+    storeAccountSecrets(platform, hasSecrets ? secrets : null);
+  }
+  if (Object.keys(data).length) saveDB(db);
+  return acct;
+}
 
 // ─── Discord Rich Presence ─────────────────────────────────────────────────────
 const DiscordRPC = require('discord-rpc');
@@ -146,6 +254,7 @@ function sanitizeAccountsForRenderer(accounts) {
         safe[platform][key] = val;
       }
     }
+    safe[platform].hasCredentials = !!data.hasCredentials;
   }
   return safe;
 }
@@ -179,40 +288,7 @@ function createAuthWindow(width, height, authSession) {
 }
 
 // ─── HTTP helpers ─────────────────────────────────────────────────────────────
-function httpGetJson(url, headers) {
-  return new Promise((resolve, reject) => {
-    https.get(url, { headers: { 'User-Agent': 'CerealLauncher/1.0', ...(headers || {}) } }, (res) => {
-      let data = '';
-      res.on('data', c => data += c);
-      res.on('end', () => {
-        try { resolve({ status: res.statusCode, data: JSON.parse(data) }); }
-        catch (e) { resolve({ status: res.statusCode, data: null, raw: data }); }
-      });
-    }).on('error', e => reject(e));
-  });
-}
-
-function httpPost(url, body, headers) {
-  return new Promise((resolve, reject) => {
-    const u = new URL(url);
-    const postData = typeof body === 'string' ? body : new URLSearchParams(body).toString();
-    const req = https.request({
-      hostname: u.hostname, port: u.port || 443, path: u.pathname + u.search,
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(postData), 'User-Agent': 'CerealLauncher/1.0', ...(headers || {}) }
-    }, (res) => {
-      let data = '';
-      res.on('data', c => data += c);
-      res.on('end', () => {
-        try { resolve({ status: res.statusCode, data: JSON.parse(data) }); }
-        catch (e) { resolve({ status: res.statusCode, data: null, raw: data }); }
-      });
-    });
-    req.on('error', e => reject(e));
-    req.write(postData);
-    req.end();
-  });
-}
+const { httpGetJson, httpPost } = require('./providers/http');
 
 // ─── Bundled chiaki-ng path resolution ───────────────────────────────────────
 // In dev: resources/chiaki-ng/  relative to project root
@@ -298,33 +374,32 @@ function enqueueCoverFetch(gameId) {
 async function processCoverQueue() {
   coverWorkerRunning = true;
   while (coverQueue.length > 0) {
-    const gid = coverQueue.shift();
-    try {
-      const game = db.games.find(g => g.id === gid);
-      if (!game) continue;
-      // Skip if already has local cover
-      if (game.localCoverPath && fs.existsSync(game.localCoverPath)) continue;
-      // Prefer coverUrl, then headerUrl, then screenshots
-      const url = game.coverUrl || game.headerUrl || (game.screenshots && game.screenshots[0]);
-      if (!url) continue;
-      const ext = path.extname(new URL(url).pathname).split('?')[0] || '.jpg';
-      const name = 'cover_' + gid + ext;
-      const dest = path.join(getCoversDir(), name);
+    const batch = coverQueue.splice(0, 3);
+    let anyChanged = false;
+    await Promise.allSettled(batch.map(async gid => {
       try {
+        const game = db.games.find(g => g.id === gid);
+        if (!game) return;
+        if (game.localCoverPath && fs.existsSync(game.localCoverPath)) return;
+        const url = game.coverUrl || game.headerUrl || (game.screenshots && game.screenshots[0]);
+        if (!url) return;
+        const ext = path.extname(new URL(url).pathname).split('?')[0] || '.jpg';
+        const fname = 'cover_' + gid + ext;
+        const dest = path.join(getCoversDir(), fname);
         await downloadToFile(url, dest);
         game.localCoverPath = dest;
         game._imgStamp = Date.now();
-        saveDB(db);
-        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('games:refresh', db.games);
+        anyChanged = true;
         console.log('[CoverFetcher] saved', dest);
       } catch (e) {
-        console.log('[CoverFetcher] download failed for', url, e && e.message);
+        console.log('[CoverFetcher] download failed for', gid, e && e.message);
       }
-      // small delay between downloads
-      await new Promise(r => setTimeout(r, 250));
-    } catch (e) {
-      console.error('Cover queue worker error', e && e.message);
+    }));
+    if (anyChanged) {
+      saveDB(db);
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('games:refresh', db.games);
     }
+    if (coverQueue.length > 0) await new Promise(r => setTimeout(r, 150));
   }
   coverWorkerRunning = false;
 }
@@ -905,6 +980,14 @@ let mainWindow;
 let trayIcon = null;
 let isQuitting = false;
 
+function toggleDevTools() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const contents = mainWindow.webContents;
+  if (!contents) return;
+  if (contents.isDevToolsOpened()) contents.closeDevTools();
+  else contents.openDevTools({ mode: 'detach' });
+}
+
 function createWindow() {
   // Restore previous window bounds if present and allowed by settings
   const savedBounds = (db && db.settings && db.settings.rememberWindowBounds && db.settings.windowBounds) ? db.settings.windowBounds : null;
@@ -938,6 +1021,18 @@ function createWindow() {
   }
 
   mainWindow.loadFile('src/index.html');
+  mainWindow.webContents.once('did-finish-load', () => {
+    if (process.env.CEREAL_DEVTOOLS === '1') {
+      try { toggleDevTools(); } catch (e) { console.error('Auto DevTools failed:', e.message); }
+    }
+  });
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return;
+    const toggleDevtools = (input.control && input.shift && input.code === 'KeyI') || input.code === 'F12';
+    if (!toggleDevtools) return;
+    event.preventDefault();
+    toggleDevTools();
+  });
 
   // Track window bounds changes to reposition embedded chiaki windows
   mainWindow.on('resize',  onWindowBoundsChanged);
@@ -1005,8 +1100,17 @@ function createTray() {
 
 app.whenReady().then(() => {
   db = loadDB();
+  if (db.accounts && typeof db.accounts === 'object') {
+    for (const platform of Object.keys(db.accounts)) {
+      detachAccountSecrets(platform, { save: false });
+    }
+    saveDB(db);
+  }
   createWindow();
   createTray();
+
+  try { globalShortcut.register('CommandOrControl+Shift+I', toggleDevTools); } catch (e) { console.error('Failed to register DevTools shortcut (Ctrl+Shift+I):', e.message); }
+  try { globalShortcut.register('F12', toggleDevTools); } catch (e) { console.error('Failed to register DevTools shortcut (F12):', e.message); }
 
   // Start minimized if enabled
   if (db.settings && db.settings.startMinimized) {
@@ -1044,6 +1148,10 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   isQuitting = true;
   try { saveWindowBounds(); } catch (e) { /* ok */ }
+});
+
+app.on('will-quit', () => {
+  try { globalShortcut.unregisterAll(); } catch (e) { /* ignore */ }
 });
 
 // ─── Window Controls ──────────────────────────────────────────────────────────
@@ -1109,44 +1217,77 @@ ipcMain.handle('chiaki:setStreamBounds', (event, { gameId, x, y, width, height }
 // Default sources require ZERO accounts or API keys:
 //   - Steam Store: searches Steam's entire catalog for any game
 //   - Wikipedia: free encyclopedia API for descriptions + info
-// Optional key-based sources: RAWG.io, IGDB, GiantBomb
+// Optional: SteamGridDB (requires free API key) for high-quality game art
 
 const METADATA_CACHE = new Map();
 const METADATA_CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
-let IGDB_TOKEN = null;
-let IGDB_TOKEN_EXPIRES = 0;
-
 function getMetadataSettings() {
   const s = db.settings || {};
+  // SteamGridDB key: prefer safeStorage, fall back to legacy settings field
+  let sgdbKey = s.steamGridDbKey || '';
+  if (!sgdbKey) {
+    try { sgdbKey = safeStore.getPassword('cereal-steamgriddb', 'default') || ''; } catch (e) {}
+  }
   return {
     source: s.metadataSource || 'steam',
-    rawgApiKey: s.rawgApiKey || '',
-    igdbClientId: s.igdbClientId || '',
-    igdbClientSecret: s.igdbClientSecret || '',
-    giantbombApiKey: s.giantbombApiKey || '',
-    steamGridDbKey: s.steamGridDbKey || '',
+    steamGridDbKey: sgdbKey,
   };
 }
 
 function httpGet(url) {
   return new Promise((resolve, reject) => {
-    const mod = url.startsWith('https') ? https : require('http');
-    mod.get(url, { headers: { 'User-Agent': 'CerealLauncher/1.0' } }, (res) => {
-      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        return httpGet(res.headers.location).then(resolve, reject);
+    const mod = url.startsWith('https') ? https : http;
+    const request = mod.get(url, {
+      headers: {
+        'User-Agent': 'CerealLauncher/1.0',
+        'Accept': 'application/json, text/json, */*',
+        'Accept-Encoding': 'gzip, deflate, br',
       }
-      let data = '';
-      res.on('data', c => data += c);
+    }, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        const nextUrl = new URL(res.headers.location, url).toString();
+        return httpGet(nextUrl).then(resolve, reject);
+      }
+
+      const chunks = [];
+      res.on('data', (chunk) => {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      });
       res.on('end', () => {
+        const buffer = Buffer.concat(chunks);
+        const encoding = (res.headers['content-encoding'] || '').toLowerCase();
+        let payload = buffer;
+        try {
+          if (encoding.includes('gzip')) {
+            payload = zlib.gunzipSync(buffer);
+          } else if (encoding.includes('deflate')) {
+            try {
+              payload = zlib.inflateSync(buffer);
+            } catch (err) {
+              payload = zlib.inflateRawSync(buffer);
+            }
+          } else if (encoding.includes('br')) {
+            payload = zlib.brotliDecompressSync(buffer);
+          }
+        } catch (e) {
+          return reject(new Error('Failed to decompress response from ' + url + ': ' + e.message));
+        }
+
         if (res.statusCode >= 200 && res.statusCode < 300) {
-          try { resolve(JSON.parse(data)); }
-          catch (e) { reject(new Error('Invalid JSON from ' + url)); }
+          try {
+            const text = payload.toString('utf8');
+            resolve(JSON.parse(text));
+          } catch (e) {
+            reject(new Error('Invalid JSON from ' + url));
+          }
         } else {
           reject(new Error('HTTP ' + res.statusCode + ' from ' + url));
         }
       });
       res.on('error', reject);
-    }).on('error', reject);
+    });
+
+    request.on('error', reject);
   });
 }
 
@@ -1278,312 +1419,47 @@ async function fetchWikipediaMetadata(gameName) {
   }
 }
 
-async function fetchRAWGMetadata(gameName, platform) {
-  const ms = getMetadataSettings();
-  const apiKey = ms.rawgApiKey;
+// Fetch best cover + header art from SteamGridDB (requires API key)
+async function fetchSteamGridDBArt(gameName, apiKey) {
+  if (!apiKey) return null;
   try {
-    const platMap = { steam: '4', epic: '4', gog: '4', psn: '187,18', xbox: '1,186', custom: '' };
-    const platParam = platMap[platform] || '';
     const q = encodeURIComponent(gameName);
-    let url = `https://api.rawg.io/api/games?search=${q}&page_size=5&search_precise=true`;
-    if (apiKey) url += '&key=' + apiKey;
-    if (platParam) url += '&platforms=' + platParam;
-
-    const data = await httpGet(url);
-    if (!data?.results?.length) return null;
-
-    // Pick best match by name similarity
-    const lower = gameName.toLowerCase().replace(/[^a-z0-9]/g, '');
-    let best = data.results[0];
-    for (const r of data.results) {
-      const rLower = (r.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (rLower === lower) { best = r; break; }
-    }
-
-    // Fetch detail for description
-    let detail = null;
-    try {
-      let detailUrl = `https://api.rawg.io/api/games/${best.id}`;
-      if (apiKey) detailUrl += '?key=' + apiKey;
-      detail = await httpGet(detailUrl);
-    } catch (e) { /* skip detail */ }
-
-    // Clean HTML from description
-    const rawDesc = detail?.description_raw || detail?.description || '';
-    const cleanDesc = rawDesc.replace(/<[^>]+>/g, '').slice(0, 500);
-
-    return {
-      description: cleanDesc,
-      developer: (detail?.developers || best.developers || []).map(d => d.name)[0] || '',
-      publisher: (detail?.publishers || []).map(p => p.name)[0] || '',
-      releaseDate: best.released || '',
-      genres: (best.genres || []).map(g => g.name),
-      coverUrl: best.background_image || '',
-      headerUrl: best.background_image || '',
-      screenshots: (detail?.screenshots || best.short_screenshots || []).slice(0, 4).map(s => s.image || s),
-      metacritic: best.metacritic || null,
-      rating: best.rating || null,
-      website: detail?.website || '',
-      rawgSlug: best.slug || '',
-      _source: 'rawg',
-    };
-  } catch (e) {
-    console.log('[Metadata] RAWG fetch failed for', gameName, e.message);
-    return null;
-  }
-}
-
-// ─── IGDB via Twitch API ──────────────────────────────────────────────────────
-async function getIGDBToken() {
-  const ms = getMetadataSettings();
-  if (!ms.igdbClientId || !ms.igdbClientSecret) return null;
-  if (IGDB_TOKEN && Date.now() < IGDB_TOKEN_EXPIRES) return IGDB_TOKEN;
-  try {
-    const url = `https://id.twitch.tv/oauth2/token?client_id=${ms.igdbClientId}&client_secret=${ms.igdbClientSecret}&grant_type=client_credentials`;
-    const data = await new Promise((resolve, reject) => {
-      const req = https.request(url, { method: 'POST' }, (res) => {
-        let body = '';
-        res.on('data', c => body += c);
-        res.on('end', () => { try { resolve(JSON.parse(body)); } catch(e) { reject(e); } });
-      });
-      req.on('error', reject);
-      req.end();
+    const searchData = await new Promise((resolve, reject) => {
+      https.get(`https://www.steamgriddb.com/api/v2/search/autocomplete/${q}`, {
+        headers: { 'Authorization': 'Bearer ' + apiKey },
+      }, (res) => {
+        let data = '';
+        res.on('data', c => data += c);
+        res.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { reject(e); } });
+        res.on('error', reject);
+      }).on('error', reject);
     });
-    if (data.access_token) {
-      IGDB_TOKEN = data.access_token;
-      IGDB_TOKEN_EXPIRES = Date.now() + (data.expires_in - 60) * 1000;
-      return IGDB_TOKEN;
-    }
-    return null;
-  } catch (e) {
-    console.log('[Metadata] IGDB token fetch failed:', e.message);
-    return null;
-  }
-}
+    if (!searchData?.success || !searchData?.data?.length) return null;
+    const gameId = searchData.data[0].id;
 
-function igdbPost(endpoint, body) {
-  const ms = getMetadataSettings();
-  return new Promise((resolve, reject) => {
-    const req = https.request(`https://api.igdb.com/v4/${endpoint}`, {
-      method: 'POST',
-      headers: {
-        'Client-ID': ms.igdbClientId,
-        'Authorization': 'Bearer ' + IGDB_TOKEN,
-        'Content-Type': 'text/plain',
-      },
-    }, (res) => {
-      let data = '';
-      res.on('data', c => data += c);
-      res.on('end', () => {
-        try { resolve(JSON.parse(data)); }
-        catch (e) { reject(new Error('Invalid IGDB JSON')); }
-      });
+    const fetchSGDB = (type, params) => new Promise((resolve, reject) => {
+      https.get(`https://www.steamgriddb.com/api/v2/${type}/game/${gameId}?${params}`, {
+        headers: { 'Authorization': 'Bearer ' + apiKey },
+      }, (res) => {
+        let data = '';
+        res.on('data', c => data += c);
+        res.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { reject(e); } });
+        res.on('error', reject);
+      }).on('error', reject);
     });
-    req.on('error', reject);
-    req.write(body);
-    req.end();
-  });
-}
 
-async function fetchIGDBMetadata(gameName, platform) {
-  try {
-    const token = await getIGDBToken();
-    if (!token) return null;
+    const [covers, heroes] = await Promise.allSettled([
+      fetchSGDB('grids', 'dimensions=600x900&limit=1'),
+      fetchSGDB('heroes', 'limit=1'),
+    ]);
 
-    const platMap = { steam: '6', epic: '6', gog: '6', psn: '167,48', xbox: '169,49', custom: '' };
-    const platFilter = platMap[platform] || '';
-    let query = `search "${gameName.replace(/"/g, '')}"; fields name,summary,storyline,first_release_date,genres.name,cover.image_id,screenshots.image_id,involved_companies.company.name,involved_companies.developer,involved_companies.publisher,aggregated_rating,websites.url,websites.category; limit 5;`;
-    if (platFilter) query += ` where platforms = (${platFilter});`;
+    const coverUrl = covers.status === 'fulfilled' && covers.value?.data?.[0]?.url || '';
+    const headerUrl = heroes.status === 'fulfilled' && heroes.value?.data?.[0]?.url || '';
 
-    const results = await igdbPost('games', query);
-    if (!results?.length) return null;
-
-    // Best match
-    const lower = gameName.toLowerCase().replace(/[^a-z0-9]/g, '');
-    let best = results[0];
-    for (const r of results) {
-      if ((r.name || '').toLowerCase().replace(/[^a-z0-9]/g, '') === lower) { best = r; break; }
-    }
-
-    const coverId = best.cover?.image_id;
-    const coverUrl = coverId ? `https://images.igdb.com/igdb/image/upload/t_cover_big/${coverId}.jpg` : '';
-    const headerUrl = coverId ? `https://images.igdb.com/igdb/image/upload/t_screenshot_big/${coverId}.jpg` : '';
-    const screenshots = (best.screenshots || []).slice(0, 4).map(s => `https://images.igdb.com/igdb/image/upload/t_screenshot_big/${s.image_id}.jpg`);
-    const devCompany = (best.involved_companies || []).find(c => c.developer);
-    const pubCompany = (best.involved_companies || []).find(c => c.publisher);
-    const officialSite = (best.websites || []).find(w => w.category === 1);
-
-    return {
-      description: (best.summary || '').slice(0, 500),
-      developer: devCompany?.company?.name || '',
-      publisher: pubCompany?.company?.name || '',
-      releaseDate: best.first_release_date ? new Date(best.first_release_date * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '',
-      genres: (best.genres || []).map(g => g.name),
-      coverUrl,
-      headerUrl: screenshots[0] || headerUrl,
-      screenshots,
-      metacritic: best.aggregated_rating ? Math.round(best.aggregated_rating) : null,
-      website: officialSite?.url || '',
-      _source: 'igdb',
-    };
-  } catch (e) {
-    console.log('[Metadata] IGDB fetch failed for', gameName, e.message);
+    if (coverUrl || headerUrl) return { coverUrl, headerUrl };
     return null;
-  }
-}
-
-// ─── GiantBomb API ────────────────────────────────────────────────────────────
-async function fetchGiantBombMetadata(gameName, platform) {
-  const ms = getMetadataSettings();
-  if (!ms.giantbombApiKey) return null;
-  try {
-    const q = encodeURIComponent(gameName);
-    const url = `https://www.giantbomb.com/api/search/?api_key=${ms.giantbombApiKey}&format=json&query=${q}&resources=game&limit=5`;
-    const data = await httpGet(url);
-    if (!data?.results?.length) return null;
-
-    const lower = gameName.toLowerCase().replace(/[^a-z0-9]/g, '');
-    let best = data.results[0];
-    for (const r of data.results) {
-      if ((r.name || '').toLowerCase().replace(/[^a-z0-9]/g, '') === lower) { best = r; break; }
-    }
-
-    // Fetch detail
-    let detail = null;
-    if (best.api_detail_url) {
-      try {
-        detail = await httpGet(best.api_detail_url + '?api_key=' + ms.giantbombApiKey + '&format=json');
-        detail = detail?.results || null;
-      } catch (e) { /* skip */ }
-    }
-
-    const desc = (detail?.deck || best.deck || '').slice(0, 500);
-    const devs = (detail?.developers || []).map(d => d.name);
-    const pubs = (detail?.publishers || []).map(p => p.name);
-    const genres = (detail?.genres || []).map(g => g.name);
-
-    return {
-      description: desc,
-      developer: devs[0] || '',
-      publisher: pubs[0] || '',
-      releaseDate: best.original_release_date ? new Date(best.original_release_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '',
-      genres,
-      coverUrl: best.image?.medium_url || best.image?.small_url || '',
-      headerUrl: best.image?.screen_large_url || best.image?.super_url || '',
-      screenshots: (detail?.images || []).slice(0, 4).map(i => i.medium_url || i.small_url),
-      metacritic: null,
-      website: detail?.site_detail_url || '',
-      _source: 'giantbomb',
-    };
   } catch (e) {
-    console.log('[Metadata] GiantBomb fetch failed for', gameName, e.message);
-    return null;
-  }
-}
-
-// ─── Platform-specific Store Fetchers (best-effort, public endpoints) ─────────
-async function fetchEpicMetadata(gameName) {
-  try {
-    const q = encodeURIComponent(gameName);
-    const url = `https://store-site-backend-static.ak.epicgames.com/api/en-US/content/products?locale=en-US&country=US&search=${q}`;
-    const data = await httpGet(url);
-    const el = data?.elements?.[0] || (data?.catalog?.searchStore?.elements && data.catalog.searchStore.elements[0]);
-    if (!el) return null;
-    const title = el.title || el.offerMappings?.[0]?.pageSlug || gameName;
-    return {
-      description: (el.description || el.longDescription || '').slice(0, 500),
-      developer: (el.developer || el.seller || '') || '',
-      publisher: el.publisher || '',
-      releaseDate: el.effectiveDate || '',
-      genres: (el.categories || []).map(c => c.path || c.title || c).slice(0,5),
-      coverUrl: el.keyImages?.find(k => k.type === 'Code')?.url || el.keyImages?.[0]?.url || '',
-      headerUrl: el.keyImages?.find(k => k.type === 'OfferImageWide')?.url || '',
-      screenshots: [],
-      metacritic: null,
-      website: el.productSlug ? `https://www.epicgames.com/store/en-US/p/${el.productSlug}` : '',
-      _source: 'epic',
-    };
-  } catch (e) {
-    console.log('[Metadata] Epic fetch failed for', gameName, e.message);
-    return null;
-  }
-}
-
-async function fetchGOGMetadata(gameName) {
-  try {
-    const q = encodeURIComponent(gameName);
-    const url = `https://catalog.gog.com/v1/products?search=${q}&limit=6&country=US`;
-    const data = await httpGet(url);
-    const item = data?.products?.[0] || (Array.isArray(data) && data[0]);
-    if (!item) return null;
-    return {
-      description: (item.description && (item.description.split('\n')[0])) || '',
-      developer: item.developer || '',
-      publisher: item.publisher || '',
-      releaseDate: item.releaseDate || item.release_date || '',
-      genres: (item.genres || []).map(g => g.name || g).slice(0,5),
-      coverUrl: item.image?.med || item.image?.small || '',
-      headerUrl: item.image?.full || '',
-      screenshots: [],
-      metacritic: null,
-      website: item.url || '',
-      _source: 'gog',
-    };
-  } catch (e) {
-    console.log('[Metadata] GOG fetch failed for', gameName, e.message);
-    return null;
-  }
-}
-
-async function fetchPSNMetadata(gameName) {
-  try {
-    const q = encodeURIComponent(gameName);
-    const url = `https://store.playstation.com/store/api/search/v3?platform=ps5,ps4&query=${q}&size=6&store=us`;
-    const data = await httpGet(url);
-    const item = data?.results?.[0] || (Array.isArray(data) && data[0]);
-    if (!item) return null;
-    return {
-      description: (item.short_description || item.long_description || '').slice(0, 500),
-      developer: item.developer || '',
-      publisher: item.publisher || '',
-      releaseDate: item.releaseDate || item.release_date || '',
-      genres: (item.genres || []).map(g => g.name || g).slice(0,5),
-      coverUrl: item.thumbnail || item.image || '',
-      headerUrl: item.hero || '',
-      screenshots: [],
-      metacritic: null,
-      website: item.url || '',
-      _source: 'psn',
-    };
-  } catch (e) {
-    console.log('[Metadata] PSN fetch failed for', gameName, e.message);
-    return null;
-  }
-}
-
-async function fetchXboxMetadata(gameName) {
-  try {
-    const q = encodeURIComponent(gameName);
-    const url = `https://displaycatalog.mp.microsoft.com/v7.0/products?market=US&languages=en-US&query=${q}&take=6`;
-    const data = await httpGet(url);
-    const prod = data?.Products?.[0] || (Array.isArray(data) && data[0]);
-    if (!prod) return null;
-    const title = prod.LocalizedProperties?.[0] || {};
-    return {
-      description: (title.ProductDescription || '').slice(0,500),
-      developer: prod.Publisher || '',
-      publisher: prod.Publisher || '',
-      releaseDate: prod.ReleaseDate || '',
-      genres: (prod.Genres || []).map(g => g.Name || g).slice(0,5),
-      coverUrl: title.Images?.find(i=>i.Type===0)?.Uri || '',
-      headerUrl: title.Images?.find(i=>i.Type===1)?.Uri || '',
-      screenshots: [],
-      metacritic: null,
-      website: prod.ProductUrl || '',
-      _source: 'xbox',
-    };
-  } catch (e) {
-    console.log('[Metadata] Xbox fetch failed for', gameName, e.message);
+    console.log('[Metadata] SteamGridDB art fetch failed for', gameName, e.message);
     return null;
   }
 }
@@ -1600,59 +1476,33 @@ async function fetchGameMetadata(game) {
 
   const ms = getMetadataSettings();
   let meta = null;
-  // Try platform-specific sources first (prefer platform store data when possible)
+
+  // Steam games: try Steam API with appId first, then search
   if (game.platform === 'steam') {
-    if (game.platformId) {
-      meta = await fetchSteamMetadata(game.platformId);
-    }
-    // If no appId or steam lookup failed, try a Steam name search
+    if (game.platformId) meta = await fetchSteamMetadata(game.platformId);
     if (!meta) meta = await fetchSteamSearchMetadata(game.name);
-  } else if (game.platform) {
-    // Try platform store fetchers first (Epic, GOG, PSN, Xbox)
-    try {
-      if (game.platform === 'epic') meta = await fetchEpicMetadata(game.name);
-      else if (game.platform === 'gog') meta = await fetchGOGMetadata(game.name);
-      else if (game.platform === 'psn' || game.platform === 'psremote') meta = await fetchPSNMetadata(game.name);
-      else if (game.platform === 'xbox') meta = await fetchXboxMetadata(game.name);
-    } catch (e) { meta = null; }
-    // Fallback to third-party aggregators when platform store lookup fails
-    if (!meta) {
-      try { meta = await fetchRAWGMetadata(game.name, game.platform); } catch (e) { meta = null; }
-      if (!meta) {
-        try { meta = await fetchIGDBMetadata(game.name, game.platform); } catch (e) { meta = null; }
-      }
+  }
+
+  // Fallback for all platforms: Steam search → Wikipedia (both free, no API keys needed)
+  if (!meta) {
+    if (ms.source === 'wikipedia') {
+      meta = await fetchWikipediaMetadata(game.name);
+      if (!meta) meta = await fetchSteamSearchMetadata(game.name);
+    } else {
+      meta = await fetchSteamSearchMetadata(game.name);
+      if (!meta) meta = await fetchWikipediaMetadata(game.name);
     }
   }
 
-  // Fallback: Use the preferred metadata source configured by the user
-  if (!meta) {
-    switch (ms.source) {
-      case 'steam':
-        // Search Steam catalog by name (works for any game on Steam)
-        meta = await fetchSteamSearchMetadata(game.name);
-        if (!meta) meta = await fetchWikipediaMetadata(game.name);
-        break;
-      case 'wikipedia':
-        meta = await fetchWikipediaMetadata(game.name);
-        if (!meta) meta = await fetchSteamSearchMetadata(game.name);
-        break;
-      case 'rawg':
-        meta = await fetchRAWGMetadata(game.name, game.platform);
-        if (!meta) meta = await fetchSteamSearchMetadata(game.name);
-        break;
-      case 'igdb':
-        meta = await fetchIGDBMetadata(game.name, game.platform);
-        if (!meta) meta = await fetchSteamSearchMetadata(game.name);
-        break;
-      case 'giantbomb':
-        meta = await fetchGiantBombMetadata(game.name, game.platform);
-        if (!meta) meta = await fetchSteamSearchMetadata(game.name);
-        break;
-      default:
-        meta = await fetchSteamSearchMetadata(game.name);
-        if (!meta) meta = await fetchWikipediaMetadata(game.name);
-        break;
-    }
+  // Enhance with SteamGridDB art if API key is available
+  if (meta && ms.steamGridDbKey) {
+    try {
+      const art = await fetchSteamGridDBArt(game.name, ms.steamGridDbKey);
+      if (art) {
+        if (art.coverUrl) meta.coverUrl = art.coverUrl;
+        if (art.headerUrl) meta.headerUrl = art.headerUrl;
+      }
+    } catch (e) {}
   }
 
   if (meta) {
@@ -1843,10 +1693,43 @@ ipcMain.handle('covers:fetchNow', async (event, gameId) => {
 });
 
 // --- Secure key storage and validation (uses Electron safeStorage)
+function summarizeSecret(secret) {
+  if (!secret) return { hasSecret: false, fingerprint: null };
+  try {
+    const fingerprint = crypto.createHash('sha256').update(secret).digest('hex').slice(0, 8);
+    return { hasSecret: true, fingerprint };
+  } catch (e) {
+    return { hasSecret: true, fingerprint: 'unknown' };
+  }
+}
+
+async function validateProviderKey(provider, apiKey) {
+  if (!apiKey) return { ok: false, provider, error: 'missing-key' };
+  if (providers && providers[provider] && typeof providers[provider].validateKey === 'function') {
+    try {
+      const res = await providers[provider].validateKey(apiKey);
+      return { ok: !!res.ok, provider, info: res.info, error: res.error };
+    } catch (err) {
+      return { ok: false, provider, error: err && err.message };
+    }
+  }
+
+  if (provider === 'steam') {
+    const url = `https://api.steampowered.com/ISteamWebAPIUtil/GetServerInfo/v1/?key=${encodeURIComponent(apiKey)}`;
+    const res = await httpGetJson(url);
+    if (res && res.status === 200 && res.data) {
+      return { ok: true, provider: 'steam', info: res.data };
+    }
+    return { ok: false, provider: 'steam', error: res && (res.data || res.raw || 'Steam API error') };
+  }
+
+  return { ok: false, provider, error: 'unknown-provider' };
+}
+
 ipcMain.handle('keys:set', async (event, {service, account, secret}) => {
   try {
     safeStore.setPassword(service, account, secret);
-    return {ok: true};
+    return {ok: true, ...summarizeSecret(secret)};
   } catch (err) {
     console.error('keys:set error', err);
     return {ok: false, error: err && err.message};
@@ -1856,7 +1739,7 @@ ipcMain.handle('keys:set', async (event, {service, account, secret}) => {
 ipcMain.handle('keys:get', async (event, {service, account}) => {
   try {
     const secret = safeStore.getPassword(service, account);
-    return {ok: true, secret};
+    return {ok: true, ...summarizeSecret(secret)};
   } catch (err) {
     console.error('keys:get error', err);
     return {ok: false, error: err && err.message};
@@ -1875,28 +1758,21 @@ ipcMain.handle('keys:delete', async (event, {service, account}) => {
 
 ipcMain.handle('keys:validate', async (event, {provider, apiKey}) => {
   try {
-    // If provider module exposes validateKey, use it
-    if (providers && providers[provider] && typeof providers[provider].validateKey === 'function') {
-      try {
-        const res = await providers[provider].validateKey(apiKey);
-        return { ok: !!res.ok, provider, info: res.info, error: res.error };
-      } catch (e) { return { ok: false, provider, error: e && e.message }; }
-    }
-
-    // Fallback: legacy steam check
-    if (provider === 'steam') {
-      const url = `https://api.steampowered.com/ISteamWebAPIUtil/GetServerInfo/v1/?key=${encodeURIComponent(apiKey)}`;
-      const res = await httpGetJson(url);
-      if (res && res.status === 200 && res.data) {
-        return { ok: true, provider: 'steam', info: res.data };
-      }
-      return { ok: false, provider: 'steam', error: res && res.data };
-    }
-
-    return { ok: false, error: 'unknown-provider' };
+    return await validateProviderKey(provider, apiKey);
   } catch (err) {
     console.error('keys:validate error', err);
     return {ok: false, error: err && err.message};
+  }
+});
+
+ipcMain.handle('keys:validateStored', async (event, {provider, service, account}) => {
+  try {
+    const secret = safeStore.getPassword(service, account);
+    if (!secret) return { ok: false, error: 'no-secret', provider };
+    return await validateProviderKey(provider, secret);
+  } catch (err) {
+    console.error('keys:validateStored error', err);
+    return { ok: false, error: err && err.message };
   }
 });
 
@@ -2033,55 +1909,6 @@ ipcMain.handle('metadata:searchArt', async (event, gameName, platform) => {
     return results;
   }
 
-  async function searchRAWG() {
-    if (!ms.rawgApiKey) return [];
-    const results = [];
-    const q = encodeURIComponent(gameName);
-    const data = await httpGet(`https://api.rawg.io/api/games?search=${q}&page_size=3&key=${ms.rawgApiKey}`);
-    if (data?.results) {
-      for (const r of data.results.slice(0, 3)) {
-        if (r.background_image) results.push({ url: r.background_image, type: 'header', source: 'RAWG', label: r.name });
-        if (r.short_screenshots) {
-          for (const ss of r.short_screenshots.slice(0, 2)) {
-            if (ss.image) results.push({ url: ss.image, type: 'screenshot', source: 'RAWG', label: r.name + ' - Screenshot' });
-          }
-        }
-      }
-    }
-    return results;
-  }
-
-  async function searchIGDB() {
-    if (!ms.igdbClientId || !ms.igdbClientSecret) return [];
-    const token = await getIGDBToken();
-    if (!token) return [];
-    const results = [];
-    const query = `search "${gameName.replace(/"/g, '')}"; fields name,cover.image_id,screenshots.image_id,artworks.image_id; limit 5;`;
-    const games = await igdbPost('games', query);
-    if (!games?.length) return results;
-    const lower = gameName.toLowerCase().replace(/[^a-z0-9]/g, '');
-    let best = games[0];
-    for (const r of games) {
-      if ((r.name || '').toLowerCase().replace(/[^a-z0-9]/g, '') === lower) { best = r; break; }
-    }
-    const name = best.name || gameName;
-    if (best.cover?.image_id) {
-      results.push({ url: `https://images.igdb.com/igdb/image/upload/t_cover_big/${best.cover.image_id}.jpg`, type: 'cover', source: 'IGDB', label: name + ' - Cover' });
-      results.push({ url: `https://images.igdb.com/igdb/image/upload/t_720p/${best.cover.image_id}.jpg`, type: 'header', source: 'IGDB', label: name + ' - Cover HD' });
-    }
-    if (best.artworks?.length) {
-      for (const a of best.artworks.slice(0, 3)) {
-        results.push({ url: `https://images.igdb.com/igdb/image/upload/t_screenshot_big/${a.image_id}.jpg`, type: 'header', source: 'IGDB', label: name + ' - Artwork' });
-      }
-    }
-    if (best.screenshots?.length) {
-      for (const s of best.screenshots.slice(0, 3)) {
-        results.push({ url: `https://images.igdb.com/igdb/image/upload/t_screenshot_big/${s.image_id}.jpg`, type: 'screenshot', source: 'IGDB', label: name + ' - Screenshot' });
-      }
-    }
-    return results;
-  }
-
   async function searchSteamGridDB() {
     if (!ms.steamGridDbKey) return [];
     const results = [];
@@ -2211,18 +2038,25 @@ ipcMain.handle('metadata:apply', async (event, gameId, force) => {
 });
 
 ipcMain.handle('metadata:fetchAll', async () => {
-  let updated = 0;
-  let failed = 0;
+  let updated = 0, failed = 0;
   const total = db.games.length;
-  for (let i = 0; i < db.games.length; i++) {
-    const game = db.games[i];
-    try {
+  const BATCH = 3;
+  for (let i = 0; i < total; i += BATCH) {
+    const batch = db.games.slice(i, i + BATCH);
+    const results = await Promise.allSettled(batch.map(async game => {
       const meta = await fetchGameMetadata(game);
-      if (meta && applyMetadataToGame(game, meta)) updated++;
-    } catch (e) { failed++; }
-    if (mainWindow) mainWindow.webContents.send('metadata:progress', { current: i + 1, total, updated, failed, name: game.name });
-    // Small delay to avoid rate limiting
-    await new Promise(r => setTimeout(r, 300));
+      return { game, meta };
+    }));
+    for (const r of results) {
+      if (r.status === 'fulfilled' && r.value.meta) {
+        if (applyMetadataToGame(r.value.game, r.value.meta)) updated++;
+      } else { failed++; }
+    }
+    const done = Math.min(i + BATCH, total);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('metadata:progress', { current: done, total, updated, failed, name: batch[batch.length - 1].name });
+    }
+    if (i + BATCH < total) await new Promise(r => setTimeout(r, 200));
   }
   if (updated > 0) saveDB(db);
   return { updated, failed, total };
@@ -2268,7 +2102,178 @@ ipcMain.handle('clipboard:readText', () => {
 
 
 // ─── Launch Game ──────────────────────────────────────────────────────────────
-ipcMain.handle('games:launch', (event, id) => {
+function normalizePlatform(platform) {
+  if (platform === 'psremote') return 'psn';
+  return platform;
+}
+
+function getLauncherExecutableCandidates(platform) {
+  switch (platform) {
+    case 'steam':
+      return [
+        path.join(process.env['ProgramFiles(x86)'] || '', 'Steam', 'Steam.exe'),
+        path.join(process.env.ProgramFiles || '', 'Steam', 'Steam.exe'),
+      ];
+    case 'epic':
+      return [
+        path.join(process.env['ProgramFiles(x86)'] || '', 'Epic Games', 'Launcher', 'Portal', 'Binaries', 'Win64', 'EpicGamesLauncher.exe'),
+        path.join(process.env.ProgramFiles || '', 'Epic Games', 'Launcher', 'Portal', 'Binaries', 'Win64', 'EpicGamesLauncher.exe'),
+      ];
+    case 'gog':
+      return [
+        path.join(process.env['ProgramFiles(x86)'] || '', 'GOG Galaxy', 'GalaxyClient.exe'),
+        path.join(process.env.ProgramFiles || '', 'GOG Galaxy', 'GalaxyClient.exe'),
+      ];
+    case 'ea':
+      return [
+        path.join(process.env.ProgramFiles || '', 'Electronic Arts', 'EA Desktop', 'EA Desktop', 'EADesktop.exe'),
+        path.join(process.env.LOCALAPPDATA || '', 'Electronic Arts', 'EA Desktop', 'EA Desktop', 'EADesktop.exe'),
+        path.join(process.env['ProgramFiles(x86)'] || '', 'Origin', 'Origin.exe'),
+      ];
+    case 'battlenet':
+      return [
+        path.join(process.env.ProgramFiles || '', 'Battle.net', 'Battle.net.exe'),
+        path.join(process.env['ProgramFiles(x86)'] || '', 'Battle.net', 'Battle.net.exe'),
+      ];
+    case 'ubisoft':
+      return [
+        path.join(process.env.ProgramFiles || '', 'Ubisoft', 'Ubisoft Game Launcher', 'UbisoftConnect.exe'),
+        path.join(process.env['ProgramFiles(x86)'] || '', 'Ubisoft', 'Ubisoft Game Launcher', 'UbisoftConnect.exe'),
+        path.join(process.env.ProgramFiles || '', 'Ubisoft', 'Ubisoft Game Launcher', 'Uplay.exe'),
+        path.join(process.env['ProgramFiles(x86)'] || '', 'Ubisoft', 'Ubisoft Game Launcher', 'Uplay.exe'),
+      ];
+    case 'itchio':
+      return [
+        path.join(process.env.LOCALAPPDATA || '', 'itch', 'app-25.6.1', 'itch.exe'),
+      ];
+    case 'xbox':
+      return [
+        path.join(process.env.LOCALAPPDATA || '', 'Microsoft', 'WindowsApps', 'XboxApp.exe'),
+      ];
+    default:
+      return [];
+  }
+}
+
+function buildPlatformUris(game, action) {
+  const platform = normalizePlatform(game.platform);
+  const platformId = game.platformId ? String(game.platformId) : '';
+  const storeUrl = game.storeUrl || '';
+  const steamIdFromUrl = (() => {
+    const m = String(storeUrl).match(/\/app\/(\d+)/i);
+    return m ? m[1] : '';
+  })();
+  const steamId = platformId || steamIdFromUrl;
+  const epicAppName = game.epicAppName || platformId;
+  const epicNamespace = game.epicNamespace || '';
+  const epicCatalogItemId = game.epicCatalogItemId || '';
+  const eaOfferId = game.eaOfferId || platformId;
+  const ubiGameId = game.ubisoftGameId || platformId;
+  const gogId = platformId || (() => {
+    const m = String(storeUrl).match(/\/openGameView\/(\d+)/i);
+    return m ? m[1] : '';
+  })();
+
+  const uniq = arr => Array.from(new Set(arr.filter(Boolean)));
+
+  if (platform === 'steam' && steamId) {
+    if (action === 'install') return uniq([`steam://install/${steamId}`, `steam://nav/games/details/${steamId}`, storeUrl]);
+    if (action === 'client') return [`steam://open/games`, `steam://nav/library`];
+    return uniq([`steam://rungameid/${steamId}`, `steam://nav/games/details/${steamId}`]);
+  }
+
+  if (platform === 'epic') {
+    if (action === 'install') {
+      return uniq([
+        epicAppName ? `com.epicgames.launcher://apps/${epicAppName}?action=install&silent=true` : '',
+        platformId ? `com.epicgames.launcher://apps/${platformId}?action=install&silent=true` : '',
+        (epicNamespace && epicCatalogItemId) ? `com.epicgames.launcher://store/product/${epicNamespace}/${epicCatalogItemId}` : '',
+        storeUrl,
+      ]);
+    }
+    if (action === 'client') {
+      return uniq([
+        epicAppName ? `com.epicgames.launcher://apps/${epicAppName}` : '',
+        platformId ? `com.epicgames.launcher://apps/${platformId}` : '',
+        storeUrl,
+      ]);
+    }
+    return uniq([
+      epicAppName ? `com.epicgames.launcher://apps/${epicAppName}?action=launch&silent=true` : '',
+      platformId ? `com.epicgames.launcher://apps/${platformId}?action=launch&silent=true` : '',
+      storeUrl,
+    ]);
+  }
+
+  if (platform === 'gog' && gogId) {
+    if (action === 'install') return uniq([storeUrl, `goggalaxy://openGameView/${gogId}`]);
+    return uniq([`goggalaxy://openGameView/${gogId}`, storeUrl]);
+  }
+
+  if (platform === 'ea') {
+    if (eaOfferId) {
+      if (action === 'install') return uniq([`origin2://store/open?offerId=${eaOfferId}`, `origin2://store/open?offerIds=${eaOfferId}`, storeUrl]);
+      return uniq([`origin2://game/launch?offerIds=${eaOfferId}`, `origin2://library/open`, storeUrl]);
+    }
+    return ['origin2://library/open'];
+  }
+
+  if (platform === 'battlenet') {
+    if (platformId) return [`battlenet://${platformId}`];
+    return ['battlenet://'];
+  }
+
+  if (platform === 'ubisoft') {
+    if (ubiGameId) {
+      if (action === 'install') return uniq([`uplay://launch/${ubiGameId}/1`, storeUrl]);
+      return uniq([`uplay://launch/${ubiGameId}/0`, storeUrl]);
+    }
+    return ['uplay://'];
+  }
+
+  if (platform === 'itchio') {
+    if (storeUrl) return [storeUrl];
+    return ['https://itch.io/my-purchases'];
+  }
+
+  if (platform === 'xbox') {
+    if (action === 'install') return ['msxbox://', 'https://www.xbox.com/en-US/games'];
+    if (action === 'client') return ['msxbox://'];
+    return ['https://www.xbox.com/play'];
+  }
+
+  if (storeUrl) return [storeUrl];
+  return [];
+}
+
+async function openInPlatformClient(game, action) {
+  const uris = buildPlatformUris(game, action);
+  let lastError = null;
+
+  for (const uri of uris) {
+    try {
+      await shell.openExternal(uri);
+      return { success: true, opened: uri };
+    } catch (e) {
+      lastError = e;
+    }
+  }
+
+  const candidates = getLauncherExecutableCandidates(normalizePlatform(game.platform));
+  for (const exe of candidates) {
+    if (!exe || !fs.existsSync(exe)) continue;
+    try {
+      spawn(exe, [], { detached: true, stdio: 'ignore' }).unref();
+      return { success: true, opened: exe };
+    } catch (e) {
+      lastError = e;
+    }
+  }
+
+  return { success: false, error: (lastError && lastError.message) || 'Could not open platform client' };
+}
+
+ipcMain.handle('games:launch', async (event, id) => {
   const game = db.games.find(g => g.id === id);
   if (!game) return { success: false, error: 'Game not found' };
 
@@ -2276,14 +2281,7 @@ ipcMain.handle('games:launch', (event, id) => {
     let launchPath = game.executablePath;
 
     // Platform-specific launch
-    if (game.platform === 'steam' && game.platformId) {
-      // Launch via Steam protocol
-      shell.openExternal(`steam://rungameid/${game.platformId}`);
-    } else if (game.platform === 'epic' && game.platformId) {
-      shell.openExternal(`com.epicgames.launcher://apps/${game.platformId}?action=launch&silent=true`);
-    } else if (game.platform === 'gog' && game.platformId) {
-      shell.openExternal(`goggalaxy://openGameView/${game.platformId}`);
-    } else if (game.platform === 'psremote' || game.platform === 'psn') {
+    if (game.platform === 'psremote' || game.platform === 'psn') {
       // Launch via integrated chiaki-ng session manager
       const chiakiExe = resolveChiakiExe(launchPath);
       if (!chiakiExe) {
@@ -2297,6 +2295,9 @@ ipcMain.handle('games:launch', (event, id) => {
       // Xbox — embed xCloud in-app or launch via Xbox app
       const url = game.streamUrl || 'https://www.xbox.com/play';
       startXcloudSession(id, url);
+    } else if (['steam', 'epic', 'gog', 'ea', 'battlenet', 'ubisoft', 'itchio'].includes(normalizePlatform(game.platform))) {
+      const openRes = await openInPlatformClient(game, 'play');
+      if (!openRes.success) return openRes;
     } else if (launchPath && fs.existsSync(launchPath)) {
       const gameDir = path.dirname(launchPath);
       spawn(launchPath, [], { cwd: gameDir, detached: true, stdio: 'ignore' }).unref();
@@ -2320,6 +2321,33 @@ ipcMain.handle('games:launch', (event, id) => {
     }
 
     return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('games:install', async (event, id) => {
+  const game = db.games.find(g => g.id === id);
+  if (!game) return { success: false, error: 'Game not found' };
+
+  try {
+    if (normalizePlatform(game.platform) === 'psn') {
+      return { success: false, error: 'Install is not supported for Remote Play titles' };
+    }
+    if (normalizePlatform(game.platform) === 'custom') {
+      return { success: false, error: 'Custom games must be installed manually' };
+    }
+    return await openInPlatformClient(game, 'install');
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('games:openInClient', async (event, id) => {
+  const game = db.games.find(g => g.id === id);
+  if (!game) return { success: false, error: 'Game not found' };
+  try {
+    return await openInPlatformClient(game, 'client');
   } catch (err) {
     return { success: false, error: err.message };
   }
@@ -2641,6 +2669,62 @@ ipcMain.handle('detect:xbox', async () => {
   }
 });
 
+ipcMain.handle('detect:ea', async () => {
+  try {
+    if (!providers?.ea?.detectInstalled) return { games: [], appFound: false, error: 'EA provider not available' };
+    const res = providers.ea.detectInstalled();
+    return {
+      games: res?.games || [],
+      appFound: providers.ea.isAppInstalled ? !!providers.ea.isAppInstalled() : false,
+      error: res?.error,
+    };
+  } catch (err) {
+    return { games: [], appFound: false, error: err.message };
+  }
+});
+
+ipcMain.handle('detect:battlenet', async () => {
+  try {
+    if (!providers?.battlenet?.detectInstalled) return { games: [], appFound: false, error: 'Battle.net provider not available' };
+    const res = providers.battlenet.detectInstalled();
+    return {
+      games: res?.games || [],
+      appFound: providers.battlenet.isAppInstalled ? !!providers.battlenet.isAppInstalled() : false,
+      error: res?.error,
+    };
+  } catch (err) {
+    return { games: [], appFound: false, error: err.message };
+  }
+});
+
+ipcMain.handle('detect:itchio', async () => {
+  try {
+    if (!providers?.itchio?.detectInstalled) return { games: [], appFound: false, error: 'itch.io provider not available' };
+    const res = providers.itchio.detectInstalled();
+    return {
+      games: res?.games || [],
+      appFound: providers.itchio.isAppInstalled ? !!providers.itchio.isAppInstalled() : false,
+      error: res?.error,
+    };
+  } catch (err) {
+    return { games: [], appFound: false, error: err.message };
+  }
+});
+
+ipcMain.handle('detect:ubisoft', async () => {
+  try {
+    if (!providers?.ubisoft?.detectInstalled) return { games: [], appFound: false, error: 'Ubisoft provider not available' };
+    const res = providers.ubisoft.detectInstalled();
+    return {
+      games: res?.games || [],
+      appFound: providers.ubisoft.isAppInstalled ? !!providers.ubisoft.isAppInstalled() : false,
+      error: res?.error,
+    };
+  } catch (err) {
+    return { games: [], appFound: false, error: err.message };
+  }
+});
+
 // ─── Playtime Sync from Platforms ─────────────────────────────────────────────
 ipcMain.handle('playtime:sync', async () => {
   const updated = [];
@@ -2744,11 +2828,7 @@ const DEFAULT_SETTINGS = {
   closeToTray: false,
   defaultTab: 'all',             // 'all' | 'favorites' | 'recent' | platform key
   discordPresence: false,        // show currently playing on Discord
-  metadataSource: 'steam',       // 'steam' | 'wikipedia' | 'rawg' | 'igdb' | 'giantbomb'
-  rawgApiKey: '',                // RAWG.io API key (needed for RAWG)
-  igdbClientId: '',              // Twitch/IGDB Client ID
-  igdbClientSecret: '',          // Twitch/IGDB Client Secret
-  giantbombApiKey: '',           // GiantBomb API key
+  metadataSource: 'steam',       // 'steam' | 'wikipedia'
   launchOnStartup: false,        // start app when Windows boots
   startMinimized: false,         // start hidden to tray
 };
@@ -2878,450 +2958,345 @@ ipcMain.handle('update:install', () => {
 
 // ─── Platform Account Sign-in ─────────────────────────────────────────────────
 ipcMain.handle('accounts:get', () => {
-  return sanitizeAccountsForRenderer(db.accounts || {});
+  return sanitizeAccountsForRenderer(db.accounts);
 });
 
 ipcMain.handle('accounts:save', (event, platform, data) => {
   // Only allow saving safe display fields from the renderer - tokens are managed by main process only
   if (!platform || typeof platform !== 'string') return sanitizeAccountsForRenderer(db.accounts || {});
   const allowedKeys = ['connected', 'displayName', 'gamertag', 'avatarUrl', 'lastSync', 'gameCount'];
-  if (!db.accounts) db.accounts = {};
-  if (!db.accounts[platform]) db.accounts[platform] = {};
+  const filtered = {};
   for (const [key, val] of Object.entries(data || {})) {
-    if (allowedKeys.includes(key)) {
-      db.accounts[platform][key] = val;
-    }
+    if (allowedKeys.includes(key)) filtered[key] = val;
   }
-  saveDB(db);
+  persistAccountData(platform, filtered);
   return sanitizeAccountsForRenderer(db.accounts);
 });
 
 ipcMain.handle('accounts:remove', (event, platform) => {
   if (!db.accounts) db.accounts = {};
   if (db.accounts[platform]) {
-    // Securely wipe all token data before deleting
-    const tokenKeys = ['accessToken', 'refreshToken', 'xblToken', 'xstsToken', 'msAccessToken', 'msRefreshToken', 'userHash'];
-    for (const key of tokenKeys) {
-      if (db.accounts[platform][key]) {
-        db.accounts[platform][key] = null;
-      }
-    }
+    detachAccountSecrets(platform);
     delete db.accounts[platform];
   }
   saveDB(db);
   return sanitizeAccountsForRenderer(db.accounts);
 });
 
-// ── Steam OpenID Sign-in ──
-const STEAM_OPENID_URL = 'https://steamcommunity.com/openid/login';
-const STEAM_RETURN_URL = 'https://cereal-launcher.local/steam-callback';
+// ─── Auth Module ─────────────────────────────────────────────────────────────
+const auth = require('./providers/auth');
 
-ipcMain.handle('accounts:steam:auth', async () => {
+// ─── OAuth Auth Window Helper ─────────────────────────────────────────────────
+function runOAuthFlow({ partition, width, height, authUrl, redirectMatch, onRedirect }) {
   return new Promise((resolve) => {
-    const params = new URLSearchParams({
-      'openid.ns': 'http://specs.openid.net/auth/2.0',
-      'openid.mode': 'checkid_setup',
-      'openid.return_to': STEAM_RETURN_URL,
-      'openid.realm': 'https://cereal-launcher.local/',
-      'openid.identity': 'http://specs.openid.net/auth/2.0/identifier_select',
-      'openid.claimed_id': 'http://specs.openid.net/auth/2.0/identifier_select',
-    });
-    const authSession = session.fromPartition('auth:steam:' + Date.now());
-    const authWin = createAuthWindow(900, 700, authSession);
+    const authSession = session.fromPartition(partition + ':' + Date.now());
+    const authWin = createAuthWindow(width || 700, height || 700, authSession);
     let resolved = false;
     let authTimeout = null;
     const cleanup = () => {
       if (authTimeout) { clearTimeout(authTimeout); authTimeout = null; }
-      try { authSession.clearStorageData(); } catch(e) {}
+      try { authSession.clearStorageData(); } catch (e) {}
     };
-    authTimeout = setTimeout(() => {
-      if (!resolved) { resolved = true; cleanup(); try { authWin.close(); } catch(e) {} resolve({ error: 'Authentication timed out' }); }
-    }, AUTH_TIMEOUT_MS);
+    const finish = (result) => {
+      if (resolved) return;
+      resolved = true;
+      cleanup();
+      try { authWin.close(); } catch (e) {}
+      resolve(result);
+    };
+    authTimeout = setTimeout(() => finish({ error: 'Authentication timed out' }), AUTH_TIMEOUT_MS);
+    const handleUrl = (url) => {
+      if (resolved) return;
+      if (redirectMatch(url)) onRedirect(url, finish);
+    };
     authWin.webContents.on('will-navigate', (event, url) => {
-      if (url.startsWith(STEAM_RETURN_URL)) { event.preventDefault(); handleNav(url); return; }
+      if (redirectMatch(url)) { event.preventDefault(); handleUrl(url); return; }
       if (!isAllowedAuthDomain(url)) { event.preventDefault(); }
     });
-    const handleNav = (url) => {
-      if (resolved) return;
-      if (url.startsWith(STEAM_RETURN_URL)) {
-        resolved = true;
-        cleanup();
-        try {
-          const u = new URL(url);
-          const claimedId = u.searchParams.get('openid.claimed_id') || '';
-          const idMatch = claimedId.match(/(\d{17})$/);
-          if (!idMatch) { authWin.close(); resolve({ error: 'Could not extract Steam ID' }); return; }
-          const steamId = idMatch[1];
-          authWin.close();
-          httpGetJson(`https://steamcommunity.com/profiles/${steamId}/?xml=1`).then(async r => {
-            const raw = r.raw || '';
-            const getName = t => { const m = raw.match(new RegExp('<' + t + '><!\\[CDATA\\[([\\s\\S]*?)\\]\\]></' + t + '>')); return m ? m[1] : null; };
-            const getTag = t => { const m = raw.match(new RegExp('<' + t + '>([^<]*)</' + t + '>')); return m ? m[1] : null; };
-            const displayName = getName('steamID') || getTag('steamID') || 'Steam User';
-            const avatarUrl = getTag('avatarMedium') || getTag('avatarFull') || '';
-            if (!db.accounts) db.accounts = {};
-            db.accounts.steam = {
-              steamId,
-              displayName,
-              avatarUrl,
-              connected: true,
-            };
-            saveDB(db);
-            resolve({ success: true, steamId, displayName, avatarUrl });
-          }).catch(e => resolve({ error: e.message }));
-        } catch (e) { authWin.close(); resolve({ error: e.message }); }
-      }
-    };
-    authWin.webContents.on('will-redirect', (event, url) => { if (url.startsWith(STEAM_RETURN_URL)) { event.preventDefault(); handleNav(url); } });
-    authWin.webContents.on('did-navigate', (event, url) => handleNav(url));
+    authWin.webContents.on('will-redirect', (event, url) => {
+      if (redirectMatch(url)) { event.preventDefault(); handleUrl(url); }
+    });
+    authWin.webContents.on('did-navigate', (event, url) => handleUrl(url));
     authWin.on('closed', () => { cleanup(); if (!resolved) { resolved = true; resolve({ error: 'cancelled' }); } });
-    authWin.loadURL(STEAM_OPENID_URL + '?' + params.toString());
+    authWin.loadURL(authUrl);
+  });
+}
+
+// ─── Token Refresh (thin wrappers that persist to db) ────────────────────────
+async function refreshAccountToken(platform) {
+  const acct = (db.accounts || {})[platform];
+  if (!acct) return false;
+  const releaseSecrets = hydrateAccountSecrets(platform);
+  try {
+    let tokens;
+    if (platform === 'gog') {
+      if (!acct.refreshToken) return false;
+      tokens = await auth.refreshGogToken(acct.refreshToken);
+    } else if (platform === 'epic') {
+      if (!acct.refreshToken) return false;
+      tokens = await auth.refreshEpicToken(acct.refreshToken);
+    } else if (platform === 'xbox') {
+      if (!acct.msRefreshToken) return false;
+      tokens = await auth.refreshXboxTokens(acct.msRefreshToken);
+    }
+    if (!tokens) return false;
+    Object.assign(acct, tokens);
+    persistAccountData(platform, tokens);
+    return true;
+  } catch (e) { return false; }
+  finally { releaseSecrets(); }
+}
+
+// ─── Import Progress Infrastructure ──────────────────────────────────────────
+function emitImportProgress(providerId, evt) {
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('import:progress', { provider: providerId, ...evt });
+    }
+  } catch (e) { /* ignore */ }
+}
+
+function importCount(value) {
+  if (Array.isArray(value)) return value.length;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  return 0;
+}
+
+async function runProviderImportWithProgress(providerId, options = {}) {
+  const provider = providers?.[providerId];
+  if (!provider || typeof provider.importLibrary !== 'function') {
+    return { error: `${providerId} provider not available` };
+  }
+  const releaseSecrets = hydrateAccountSecrets(providerId);
+
+  const counts = { processed: 0, imported: 0, updated: 0 };
+  let sawTerminalStatus = false;
+
+  const notify = (evt = {}) => {
+    const next = { ...evt };
+    if (typeof next.processed === 'number' && Number.isFinite(next.processed)) counts.processed = next.processed;
+    if (typeof next.imported === 'number' && Number.isFinite(next.imported)) counts.imported = next.imported;
+    if (typeof next.updated === 'number' && Number.isFinite(next.updated)) counts.updated = next.updated;
+    if (next.status === 'done' || next.status === 'error') sawTerminalStatus = true;
+
+    emitImportProgress(providerId, {
+      status: next.status || 'progress',
+      processed: counts.processed,
+      imported: counts.imported,
+      updated: counts.updated,
+      message: next.message,
+    });
+  };
+
+  notify({ status: 'start', processed: 0, imported: 0, updated: 0 });
+
+  try {
+    const res = await provider.importLibrary({ db, saveDB, notify, ...options });
+    const importedCount = importCount(res?.imported);
+    const updatedCount = importCount(res?.updated);
+    const processedCount = typeof res?.processed === 'number' && Number.isFinite(res.processed)
+      ? res.processed
+      : (typeof res?.total === 'number' && Number.isFinite(res.total) ? res.total : importedCount + updatedCount);
+    const hasError = !!res?.error;
+
+    if (!sawTerminalStatus) {
+      emitImportProgress(providerId, {
+        status: hasError ? 'error' : 'done',
+        processed: Math.max(counts.processed, processedCount),
+        imported: Math.max(counts.imported, importedCount),
+        updated: Math.max(counts.updated, updatedCount),
+        message: hasError ? String(res.error || '') : undefined,
+      });
+    }
+
+    return res;
+  } catch (e) {
+    emitImportProgress(providerId, {
+      status: 'error',
+      processed: counts.processed,
+      imported: counts.imported,
+      updated: counts.updated,
+      message: e.message,
+    });
+    return { error: `${providerId} import failed: ` + e.message };
+  } finally {
+    releaseSecrets();
+  }
+}
+
+// ─── Import with Token Refresh ───────────────────────────────────────────────
+async function importWithTokenRefresh(providerId) {
+  const acct = (db.accounts || {})[providerId];
+  if (acct?.expiresAt && Date.now() > (acct.expiresAt - 60000)) {
+    const ok = await refreshAccountToken(providerId);
+    if (!ok) return { error: `${providerId} session expired. Please sign in again.` };
+  }
+  let res = await runProviderImportWithProgress(providerId);
+  if (res?.error && /(401|403|unauthor|token|expired)/i.test(String(res.error || ''))) {
+    const ok = await refreshAccountToken(providerId);
+    if (!ok) return res;
+    res = await runProviderImportWithProgress(providerId);
+  }
+  return res;
+}
+
+// ─── Local Provider Auth (EA, Battle.net, itch.io, Ubisoft) ──────────────────
+async function handleLocalProviderAuth(providerId, displayName) {
+  const provider = providers?.[providerId];
+  if (!provider || typeof provider.detectInstalled !== 'function') {
+    return { error: `${displayName} provider not available` };
+  }
+  const detected = provider.detectInstalled();
+  if (detected?.error) return { error: detected.error };
+  const accountData = {
+    connected: true,
+    displayName,
+    gameCount: Array.isArray(detected?.games) ? detected.games.length : 0,
+    lastSync: new Date().toISOString(),
+  };
+  persistAccountData(providerId, accountData);
+  return { success: true, displayName, gameCount: accountData.gameCount, localOnly: true };
+}
+
+async function handleProviderImport(providerId) {
+  let apiKey = null;
+  if (providerId === 'itchio') {
+    try { apiKey = safeStore.getPassword('cereal-itchio', 'default') || null; } catch (e) { /* ignore */ }
+  }
+  return runProviderImportWithProgress(providerId, apiKey ? { apiKey } : {});
+}
+
+// ─── Helper: extract code + validate state from OAuth callback URL ───────────
+function extractOAuthCode(url) {
+  const u = new URL(url);
+  const code = u.searchParams.get('code');
+  const error = u.searchParams.get('error');
+  const returnedState = u.searchParams.get('state');
+  if (error) return { error: u.searchParams.get('error_description') || error };
+  if (returnedState && !validateOAuthState(returnedState)) return { error: 'Security validation failed (state mismatch)' };
+  if (!code) return { error: 'No authorization code received' };
+  return { code };
+}
+
+function saveAccountAndReturn(platform, data) {
+  persistAccountData(platform, { ...data, connected: true });
+  detachAccountSecrets(platform);
+}
+
+// ── Steam OpenID Sign-in ──
+ipcMain.handle('accounts:steam:auth', async () => {
+  const c = auth.CONFIG.steam;
+  return runOAuthFlow({
+    partition: 'auth:steam', ...c.windowSize,
+    authUrl: auth.buildSteamAuthUrl(),
+    redirectMatch: (url) => url.startsWith(c.returnUrl),
+    onRedirect: async (url, finish) => {
+      try {
+        const steamId = auth.extractSteamId(url);
+        if (!steamId) { finish({ error: 'Could not extract Steam ID' }); return; }
+        const profile = await auth.fetchSteamProfile(steamId);
+        saveAccountAndReturn('steam', { steamId, ...profile });
+        finish({ success: true, steamId, ...profile });
+      } catch (e) { finish({ error: e.message }); }
+    },
   });
 });
 
 ipcMain.handle('accounts:steam:import', async () => {
-  if (!providers || !providers.steam || !providers.steam.importLibrary) return { error: 'Steam provider not available' };
-  try {
-    const notify = (evt) => { try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('import:progress', { provider: 'steam', ...evt }); } catch(e) {} };
-    let apiKey = null;
-    try { const r = safeStore.getPassword('cereal-steam', 'default'); if (r) apiKey = r; } catch(e) {}
-    const res = await providers.steam.importLibrary({ db, saveDB, notify, apiKey });
-    return res;
-  } catch (e) { return { error: 'Steam import failed: ' + e.message }; }
+  if (!providers?.steam?.importLibrary) return { error: 'Steam provider not available' };
+  let apiKey = null;
+  try { const r = safeStore.getPassword('cereal-steam', 'default'); if (r) apiKey = r; } catch (e) {}
+  return runProviderImportWithProgress('steam', { apiKey });
 });
 
 // ── GOG OAuth2 ──
-const GOG_CLIENT_ID = '46899977096215655';
-const GOG_CLIENT_SECRET = '9d85c43b1482497dbbce61f6e4aa173a433796eeae2571a61f67c3cbc6b19c65';
-const GOG_REDIRECT = 'https://embed.gog.com/on_login_success?origin=client';
-
 ipcMain.handle('accounts:gog:auth', async () => {
-  return new Promise((resolve) => {
-    const oauthState = generateOAuthState();
-    const authSession = session.fromPartition('auth:gog:' + Date.now());
-    const authWin = createAuthWindow(500, 700, authSession);
-    let resolved = false;
-    let authTimeout = null;
-    const cleanup = () => {
-      if (authTimeout) { clearTimeout(authTimeout); authTimeout = null; }
-      try { authSession.clearStorageData(); } catch(e) {}
-    };
-    authTimeout = setTimeout(() => {
-      if (!resolved) { resolved = true; cleanup(); try { authWin.close(); } catch(e) {} resolve({ error: 'Authentication timed out' }); }
-    }, AUTH_TIMEOUT_MS);
-    const authUrl = `https://login.gog.com/auth?client_id=${GOG_CLIENT_ID}&redirect_uri=${encodeURIComponent(GOG_REDIRECT)}&response_type=code&layout=client2&state=${oauthState}`;
-    const handleUrl = (url) => {
-      if (resolved) return;
-      if (url.includes('on_login_success') && url.includes('code=')) {
-        resolved = true;
-        cleanup();
-        try {
-          const u = new URL(url);
-          const code = u.searchParams.get('code');
-          // Validate CSRF state if returned by server
-          const returnedState = u.searchParams.get('state');
-          if (returnedState && !validateOAuthState(returnedState)) {
-            authWin.close();
-            resolve({ error: 'Security validation failed (state mismatch)' });
-            return;
-          }
-          authWin.close();
-          httpGetJson(`https://auth.gog.com/token?client_id=${GOG_CLIENT_ID}&client_secret=${GOG_CLIENT_SECRET}&grant_type=authorization_code&code=${encodeURIComponent(code)}&redirect_uri=${encodeURIComponent(GOG_REDIRECT)}`).then(r => {
-            if (r.data?.access_token) {
-              if (!db.accounts) db.accounts = {};
-              db.accounts.gog = {
-                accessToken: r.data.access_token,
-                refreshToken: r.data.refresh_token,
-                expiresAt: Date.now() + (r.data.expires_in || 3600) * 1000,
-                userId: r.data.user_id,
-                connected: true,
-              };
-              saveDB(db);
-              resolve({ success: true, userId: r.data.user_id });
-            } else {
-              resolve({ error: 'Token exchange failed' });
-            }
-          }).catch(e => resolve({ error: e.message }));
-        } catch (e) { resolve({ error: e.message }); }
-      }
-    };
-    // Restrict navigation to allowed domains
-    authWin.webContents.on('will-navigate', (event, url) => {
-      if (url.includes('on_login_success')) { handleUrl(url); return; }
-      if (!isAllowedAuthDomain(url)) { event.preventDefault(); }
-    });
-    authWin.webContents.on('will-redirect', (event, url) => handleUrl(url));
-    authWin.webContents.on('did-navigate', (event, url) => handleUrl(url));
-    authWin.on('closed', () => { cleanup(); if (!resolved) { resolved = true; resolve({ error: 'cancelled' }); } });
-    authWin.loadURL(authUrl);
+  const c = auth.CONFIG.gog;
+  const oauthState = generateOAuthState();
+  return runOAuthFlow({
+    partition: 'auth:gog', ...c.windowSize,
+    authUrl: auth.buildGogAuthUrl(oauthState),
+    redirectMatch: (url) => url.includes('on_login_success') && url.includes('code='),
+    onRedirect: async (url, finish) => {
+      try {
+        const { code, error } = extractOAuthCode(url);
+        if (error) { finish({ error }); return; }
+        const tokens = await auth.exchangeGogCode(code);
+        if (tokens.error) { finish(tokens); return; }
+        saveAccountAndReturn('gog', tokens);
+        finish({ success: true, userId: tokens.userId });
+      } catch (e) { finish({ error: e.message }); }
+    },
   });
 });
 
-async function refreshGogToken() {
-  const acct = (db.accounts || {}).gog;
-  if (!acct?.refreshToken) return false;
-  try {
-    const r = await httpGetJson(`https://auth.gog.com/token?client_id=${GOG_CLIENT_ID}&client_secret=${GOG_CLIENT_SECRET}&grant_type=refresh_token&refresh_token=${encodeURIComponent(acct.refreshToken)}`);
-    if (r.data?.access_token) {
-      acct.accessToken = r.data.access_token;
-      acct.refreshToken = r.data.refresh_token || acct.refreshToken;
-      acct.expiresAt = Date.now() + (r.data.expires_in || 3600) * 1000;
-      saveDB(db);
-      return true;
-    }
-  } catch (e) { /* ignore */ }
-  return false;
-}
-
 ipcMain.handle('accounts:gog:import', async () => {
-  if (!providers || !providers.gog || !providers.gog.importLibrary) return { error: 'GOG provider not available' };
-  try {
-    const notify = (evt) => { try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('import:progress', { provider: 'gog', ...evt }); } catch(e) {} };
-    const res = await providers.gog.importLibrary({ db, saveDB, notify });
-    return res;
-  } catch (e) { return { error: 'GOG import failed: ' + e.message }; }
+  if (!providers?.gog?.importLibrary) return { error: 'GOG provider not available' };
+  return importWithTokenRefresh('gog');
 });
 
 // ── Epic Games OAuth ──
-const EPIC_CLIENT_ID = 'xyza7891muomRmynIITa';
-const EPIC_REDIRECT = 'https://localhost/epic-callback';
-
 ipcMain.handle('accounts:epic:auth', async () => {
-  return new Promise((resolve) => {
-    const oauthState = generateOAuthState();
-    const authSession = session.fromPartition('auth:epic:' + Date.now());
-    const authWin = createAuthWindow(800, 700, authSession);
-    let resolved = false;
-    let authTimeout = null;
-    const cleanup = () => {
-      if (authTimeout) { clearTimeout(authTimeout); authTimeout = null; }
-      try { authSession.clearStorageData(); } catch(e) {}
-    };
-    authTimeout = setTimeout(() => {
-      if (!resolved) { resolved = true; cleanup(); try { authWin.close(); } catch(e) {} resolve({ error: 'Authentication timed out' }); }
-    }, AUTH_TIMEOUT_MS);
-    const authUrl = `https://www.epicgames.com/id/authorize?client_id=${EPIC_CLIENT_ID}&response_type=code&redirect_uri=${encodeURIComponent(EPIC_REDIRECT)}&scope=basic_profile&state=${oauthState}`;
-    const handleUrl = (url) => {
-      if (resolved) return;
-      if (url.startsWith(EPIC_REDIRECT) || url.startsWith('https://localhost/epic-callback')) {
-        resolved = true;
-        cleanup();
-        try {
-          const u = new URL(url);
-          const code = u.searchParams.get('code');
-          const returnedState = u.searchParams.get('state');
-          authWin.close();
-          if (!code) { resolve({ error: 'No authorization code received' }); return; }
-          // Validate CSRF state
-          if (returnedState && !validateOAuthState(returnedState)) {
-            resolve({ error: 'Security validation failed (state mismatch)' });
-            return;
-          }
-          const basicAuth = Buffer.from(EPIC_CLIENT_ID + ':').toString('base64');
-          httpPost('https://account-public-service-prod.ol.epicgames.com/account/api/oauth/token', {
-            grant_type: 'authorization_code',
-            code,
-            redirect_uri: EPIC_REDIRECT,
-          }, { 'Authorization': 'Basic ' + basicAuth }).then(r => {
-            if (r.data?.access_token) {
-              if (!db.accounts) db.accounts = {};
-              db.accounts.epic = {
-                accessToken: r.data.access_token,
-                refreshToken: r.data.refresh_token,
-                expiresAt: Date.now() + (r.data.expires_in || 3600) * 1000,
-                accountId: r.data.account_id,
-                displayName: r.data.displayName || r.data.display_name || 'Epic User',
-                connected: true,
-              };
-              saveDB(db);
-              resolve({ success: true, displayName: db.accounts.epic.displayName });
-            } else {
-              resolve({ error: 'Token exchange failed (status ' + r.status + ')' });
-            }
-          }).catch(e => resolve({ error: e.message }));
-        } catch (e) { authWin.close(); resolve({ error: e.message }); }
-      }
-    };
-    authWin.webContents.on('will-navigate', (event, url) => {
-      if (url.startsWith(EPIC_REDIRECT)) { event.preventDefault(); handleUrl(url); return; }
-      if (!isAllowedAuthDomain(url)) { event.preventDefault(); }
-    });
-    authWin.webContents.on('will-redirect', (event, url) => { if (url.startsWith(EPIC_REDIRECT)) { event.preventDefault(); handleUrl(url); } });
-    authWin.webContents.on('did-navigate', (event, url) => handleUrl(url));
-    authWin.on('closed', () => { cleanup(); if (!resolved) { resolved = true; resolve({ error: 'cancelled' }); } });
-    authWin.loadURL(authUrl);
+  const c = auth.CONFIG.epic;
+  const oauthState = generateOAuthState();
+  return runOAuthFlow({
+    partition: 'auth:epic', ...c.windowSize,
+    authUrl: auth.buildEpicAuthUrl(oauthState),
+    redirectMatch: (url) => url.startsWith(c.redirectUri),
+    onRedirect: async (url, finish) => {
+      try {
+        const { code, error } = extractOAuthCode(url);
+        if (error) { finish({ error }); return; }
+        const tokens = await auth.exchangeEpicCode(code);
+        if (tokens.error) { finish(tokens); return; }
+        saveAccountAndReturn('epic', tokens);
+        finish({ success: true, displayName: tokens.displayName });
+      } catch (e) { finish({ error: e.message }); }
+    },
   });
 });
 
-async function refreshEpicToken() {
-  const acct = (db.accounts || {}).epic;
-  if (!acct?.refreshToken) return false;
-  try {
-    const basicAuth = Buffer.from(EPIC_CLIENT_ID + ':').toString('base64');
-    const r = await httpPost('https://account-public-service-prod.ol.epicgames.com/account/api/oauth/token', {
-      grant_type: 'refresh_token',
-      refresh_token: acct.refreshToken,
-    }, { 'Authorization': 'Basic ' + basicAuth });
-    if (r.data?.access_token) {
-      acct.accessToken = r.data.access_token;
-      acct.refreshToken = r.data.refresh_token || acct.refreshToken;
-      acct.expiresAt = Date.now() + (r.data.expires_in || 3600) * 1000;
-      saveDB(db);
-      return true;
-    }
-  } catch (e) { /* ignore */ }
-  return false;
-}
-
 ipcMain.handle('accounts:epic:import', async () => {
-  if (!providers || !providers.epic || !providers.epic.importLibrary) return { error: 'Epic provider not available' };
-  try {
-    const notify = (evt) => { try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('import:progress', { provider: 'epic', ...evt }); } catch(e) {} };
-    const res = await providers.epic.importLibrary({ db, saveDB, notify });
-    return res;
-  } catch (e) { return { error: 'Epic import failed: ' + e.message }; }
+  if (!providers?.epic?.importLibrary) return { error: 'Epic provider not available' };
+  return importWithTokenRefresh('epic');
 });
 
 // ── Xbox / Microsoft OAuth ──
-// Microsoft Identity Platform with Xbox Live scope
-const MS_CLIENT_ID = '1fec8e78-bce4-4aaf-ab1b-5451cc387264'; // Xbox public client
-const MS_REDIRECT = 'https://login.microsoftonline.com/common/oauth2/nativeclient';
-const MS_SCOPE = 'XboxLive.signin XboxLive.offline_access openid profile';
-
 ipcMain.handle('accounts:xbox:auth', async () => {
-  return new Promise((resolve) => {
-    const oauthState = generateOAuthState();
-    const authSession = session.fromPartition('auth:xbox:' + Date.now());
-    const authWin = createAuthWindow(600, 700, authSession);
-    let resolved = false;
-    let authTimeout = null;
-    const cleanup = () => {
-      if (authTimeout) { clearTimeout(authTimeout); authTimeout = null; }
-      try { authSession.clearStorageData(); } catch(e) {}
-    };
-    authTimeout = setTimeout(() => {
-      if (!resolved) { resolved = true; cleanup(); try { authWin.close(); } catch(e) {} resolve({ error: 'Authentication timed out' }); }
-    }, AUTH_TIMEOUT_MS);
-    const authUrl = `https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize?client_id=${MS_CLIENT_ID}&response_type=code&redirect_uri=${encodeURIComponent(MS_REDIRECT)}&scope=${encodeURIComponent(MS_SCOPE)}&response_mode=query&state=${oauthState}`;
-    const handleUrl = (url) => {
-      if (resolved) return;
-      if (url.startsWith(MS_REDIRECT)) {
-        resolved = true;
-        cleanup();
-        try {
-          const u = new URL(url);
-          const code = u.searchParams.get('code');
-          const error = u.searchParams.get('error');
-          const returnedState = u.searchParams.get('state');
-          authWin.close();
-          if (error) { resolve({ error: u.searchParams.get('error_description') || error }); return; }
-          if (!code) { resolve({ error: 'No authorization code' }); return; }
-          // Validate CSRF state
-          if (returnedState && !validateOAuthState(returnedState)) {
-            resolve({ error: 'Security validation failed (state mismatch)' });
-            return;
-          }
-          // Exchange code for MS token
-          httpPost('https://login.microsoftonline.com/consumers/oauth2/v2.0/token', {
-            client_id: MS_CLIENT_ID,
-            grant_type: 'authorization_code',
-            code,
-            redirect_uri: MS_REDIRECT,
-            scope: MS_SCOPE,
-          }).then(async msR => {
-            if (!msR.data?.access_token) { resolve({ error: 'MS token exchange failed' }); return; }
-            try {
-              // Authenticate with Xbox Live
-              const xblR = await httpPost('https://user.auth.xboxlive.com/user/authenticate', JSON.stringify({
-                Properties: { AuthMethod: 'RPS', SiteName: 'user.auth.xboxlive.com', RpsTicket: 'd=' + msR.data.access_token },
-                RelyingParty: 'http://auth.xboxlive.com', TokenType: 'JWT'
-              }), { 'Content-Type': 'application/json', 'x-xbl-contract-version': '1' });
-              if (!xblR.data?.Token) { resolve({ error: 'Xbox Live auth failed' }); return; }
-              const xblToken = xblR.data.Token;
-              const userHash = xblR.data.DisplayClaims?.xui?.[0]?.uhs || '';
-              // Get XSTS token
-              const xstsR = await httpPost('https://xsts.auth.xboxlive.com/xsts/authorize', JSON.stringify({
-                Properties: { SandboxId: 'RETAIL', UserTokens: [xblToken] },
-                RelyingParty: 'http://xboxlive.com', TokenType: 'JWT'
-              }), { 'Content-Type': 'application/json', 'x-xbl-contract-version': '1' });
-              if (!xstsR.data?.Token) { resolve({ error: 'XSTS auth failed' }); return; }
-              const xstsToken = xstsR.data.Token;
-              const gamertag = xstsR.data.DisplayClaims?.xui?.[0]?.gtg || '';
-              const xuid = xstsR.data.DisplayClaims?.xui?.[0]?.xid || '';
-              // Get profile image
-              let avatarUrl = '';
-              try {
-                const profR = await httpGetJson(`https://profile.xboxlive.com/users/xuid(${xuid})/profile/settings?settings=GameDisplayPicRaw`, {
-                  'Authorization': 'XBL3.0 x=' + userHash + ';' + xstsToken,
-                  'x-xbl-contract-version': '3',
-                });
-                avatarUrl = profR.data?.profileUsers?.[0]?.settings?.[0]?.value || '';
-              } catch(e) { /* skip avatar */ }
-              if (!db.accounts) db.accounts = {};
-              db.accounts.xbox = {
-                msAccessToken: msR.data.access_token,
-                msRefreshToken: msR.data.refresh_token,
-                msExpiresAt: Date.now() + (msR.data.expires_in || 3600) * 1000,
-                xblToken, xstsToken, userHash, xuid, gamertag, avatarUrl,
-                connected: true,
-              };
-              saveDB(db);
-              resolve({ success: true, gamertag, avatarUrl });
-            } catch (e) { resolve({ error: 'Xbox auth chain failed: ' + e.message }); }
-          }).catch(e => resolve({ error: e.message }));
-        } catch (e) { authWin.close(); resolve({ error: e.message }); }
-      }
-    };
-    authWin.webContents.on('will-navigate', (event, url) => {
-      if (url.startsWith(MS_REDIRECT)) { event.preventDefault(); handleUrl(url); return; }
-      if (!isAllowedAuthDomain(url)) { event.preventDefault(); }
-    });
-    authWin.webContents.on('will-redirect', (event, url) => { if (url.startsWith(MS_REDIRECT)) { event.preventDefault(); handleUrl(url); } });
-    authWin.webContents.on('did-navigate', (event, url) => handleUrl(url));
-    authWin.on('closed', () => { cleanup(); if (!resolved) { resolved = true; resolve({ error: 'cancelled' }); } });
-    authWin.loadURL(authUrl);
+  const c = auth.CONFIG.xbox;
+  const oauthState = generateOAuthState();
+  return runOAuthFlow({
+    partition: 'auth:xbox', ...c.windowSize,
+    authUrl: auth.buildXboxAuthUrl(oauthState),
+    redirectMatch: (url) => url.startsWith(c.redirectUri),
+    onRedirect: async (url, finish) => {
+      try {
+        const { code, error } = extractOAuthCode(url);
+        if (error) { finish({ error }); return; }
+        const tokens = await auth.exchangeXboxCode(code);
+        if (tokens.error) { finish(tokens); return; }
+        saveAccountAndReturn('xbox', tokens);
+        finish({ success: true, gamertag: tokens.gamertag, avatarUrl: tokens.avatarUrl });
+      } catch (e) { finish({ error: 'Xbox auth chain failed: ' + e.message }); }
+    },
   });
 });
 
-async function refreshXboxTokens() {
-  const acct = (db.accounts || {}).xbox;
-  if (!acct?.msRefreshToken) return false;
-  try {
-    const msR = await httpPost('https://login.microsoftonline.com/consumers/oauth2/v2.0/token', {
-      client_id: MS_CLIENT_ID, grant_type: 'refresh_token',
-      refresh_token: acct.msRefreshToken, scope: MS_SCOPE,
-    });
-    if (!msR.data?.access_token) return false;
-    acct.msAccessToken = msR.data.access_token;
-    acct.msRefreshToken = msR.data.refresh_token || acct.msRefreshToken;
-    acct.msExpiresAt = Date.now() + (msR.data.expires_in || 3600) * 1000;
-    // Re-auth XBL + XSTS
-    const xblR = await httpPost('https://user.auth.xboxlive.com/user/authenticate', JSON.stringify({
-      Properties: { AuthMethod: 'RPS', SiteName: 'user.auth.xboxlive.com', RpsTicket: 'd=' + msR.data.access_token },
-      RelyingParty: 'http://auth.xboxlive.com', TokenType: 'JWT'
-    }), { 'Content-Type': 'application/json', 'x-xbl-contract-version': '1' });
-    if (!xblR.data?.Token) return false;
-    acct.xblToken = xblR.data.Token;
-    acct.userHash = xblR.data.DisplayClaims?.xui?.[0]?.uhs || acct.userHash;
-    const xstsR = await httpPost('https://xsts.auth.xboxlive.com/xsts/authorize', JSON.stringify({
-      Properties: { SandboxId: 'RETAIL', UserTokens: [acct.xblToken] },
-      RelyingParty: 'http://xboxlive.com', TokenType: 'JWT'
-    }), { 'Content-Type': 'application/json', 'x-xbl-contract-version': '1' });
-    if (!xstsR.data?.Token) return false;
-    acct.xstsToken = xstsR.data.Token;
-    saveDB(db);
-    return true;
-  } catch (e) { return false; }
-}
-
 ipcMain.handle('accounts:xbox:import', async () => {
-  if (!providers || !providers.xbox || !providers.xbox.importLibrary) return { error: 'Xbox provider not available' };
-  try {
-    const notify = (evt) => { try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('import:progress', { provider: 'xbox', ...evt }); } catch(e) {} };
-    const res = await providers.xbox.importLibrary({ db, saveDB, notify });
-    return res;
-  } catch (e) { return { error: 'Xbox import failed: ' + e.message }; }
+  if (!providers?.xbox?.importLibrary) return { error: 'Xbox provider not available' };
+  return runProviderImportWithProgress('xbox');
 });
+
+// ── Local-Only Providers ──
+ipcMain.handle('accounts:ea:auth', async () => handleLocalProviderAuth('ea', 'EA App'));
+ipcMain.handle('accounts:battlenet:auth', async () => handleLocalProviderAuth('battlenet', 'Battle.net'));
+ipcMain.handle('accounts:itchio:auth', async () => handleLocalProviderAuth('itchio', 'itch.io'));
+ipcMain.handle('accounts:ubisoft:auth', async () => handleLocalProviderAuth('ubisoft', 'Ubisoft Connect'));
+
+ipcMain.handle('accounts:ea:import', async () => handleProviderImport('ea'));
+ipcMain.handle('accounts:battlenet:import', async () => handleProviderImport('battlenet'));
+ipcMain.handle('accounts:itchio:import', async () => handleProviderImport('itchio'));
+ipcMain.handle('accounts:ubisoft:import', async () => handleProviderImport('ubisoft'));
 
 // ─── chiaki-ng Auto-Setup (first run) ─────────────────────────────────────────
 // If chiaki-ng is not bundled and no system install is found, automatically
@@ -3642,13 +3617,3 @@ ipcMain.handle('categories:remove', (event, category) => {
   return db.categories;
 });
 
-// ─── Playtime Tracking ───────────────────────────────────────────────────────
-ipcMain.handle('playtime:add', (event, id, minutes) => {
-  const game = db.games.find(g => g.id === id);
-  if (game) {
-    game.playtimeMinutes = (game.playtimeMinutes || 0) + minutes;
-    saveDB(db);
-    return game;
-  }
-  return null;
-});

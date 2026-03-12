@@ -1,17 +1,4 @@
-const https = require('https');
-
-function httpGetJson(url, headers) {
-  return new Promise((resolve, reject) => {
-    https.get(url, { headers: { 'User-Agent': 'CerealLauncher/1.0', ...(headers || {}) } }, (res) => {
-      let data = '';
-      res.on('data', c => data += c);
-      res.on('end', () => {
-        try { resolve({ status: res.statusCode, data: JSON.parse(data) }); }
-        catch (e) { resolve({ status: res.statusCode, data: null, raw: data }); }
-      });
-    }).on('error', e => reject(e));
-  });
-}
+const { httpGetJson } = require('./http');
 
 async function validateKey(apiKey) {
   if (!apiKey) return { ok: false, error: 'no-key' };
