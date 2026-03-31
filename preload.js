@@ -40,6 +40,7 @@ contextBridge.exposeInMainWorld('api', {
   setChiakiStream: (gameId, streamConfig) => ipcRenderer.invoke('games:setChiakiStream', gameId, streamConfig),
 
   // chiaki-ng deep integration
+  chiakiStartStreamDirect: (opts) => ipcRenderer.invoke('chiaki:startStreamDirect', opts),
   chiakiStartStream: (gameId) => ipcRenderer.invoke('chiaki:startStream', gameId),
   chiakiStopStream: (gameId) => ipcRenderer.invoke('chiaki:stopStream', gameId),
   chiakiGetSessions: () => ipcRenderer.invoke('chiaki:getSessions'),
@@ -50,6 +51,7 @@ contextBridge.exposeInMainWorld('api', {
   chiakiSetStreamBounds: (opts) => ipcRenderer.invoke('chiaki:setStreamBounds', opts),
 
   // xCloud (Xbox Cloud Gaming)
+  xcloudStartDirect: (url) => ipcRenderer.invoke('xcloud:startDirect', { url }),
   xcloudStart: (opts) => ipcRenderer.invoke('xcloud:start', opts),
   xcloudStop: (gameId) => ipcRenderer.invoke('xcloud:stop', gameId),
   xcloudGetSessions: () => ipcRenderer.invoke('xcloud:getSessions'),
@@ -119,6 +121,10 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('update:event', (event, data) => callback(data));
     return () => ipcRenderer.removeAllListeners('update:event');
   },
+
+  // System media controls (SMTC)
+  getMediaInfo: () => ipcRenderer.invoke('media:getInfo'),
+  mediaControl: (action) => ipcRenderer.invoke('media:control', action),
 
   // Secure API key storage
   saveApiKey: (provider, apiKey) => ipcRenderer.invoke('keys:set', { service: `cereal-${provider}`, account: 'default', secret: apiKey }),

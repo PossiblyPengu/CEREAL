@@ -1,0 +1,17 @@
+{
+  "name": "smtc-native",
+  "version": "1.0.0",
+  "description": "Native Node-API addon for Windows System Media Transport Controls",
+  "main": "index.js",
+  "scripts": {
+    "build": "node-gyp rebuild",
+    "configure": "node-gyp configure"
+  },
+  "dependencies": {
+    "node-addon-api": "^7.0.0"
+  },
+  "devDependencies": {
+    "node-gyp": "^10.0.0"
+  },
+  "gypfile": true
+}

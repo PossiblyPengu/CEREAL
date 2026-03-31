@@ -1009,7 +1009,14 @@ const DB_PATH = path.join(app ? app.getPath('userData') : '.', 'games.json');
 function loadDB() {
   try {
     if (fs.existsSync(DB_PATH)) {
-      return JSON.parse(fs.readFileSync(DB_PATH, 'utf-8'));
+      const data = JSON.parse(fs.readFileSync(DB_PATH, 'utf-8'));
+      // Purge streaming-platform entries — PSN/Xbox are not tracked in the library
+      if (data.games) {
+        const before = data.games.length;
+        data.games = data.games.filter(g => g.platform !== 'psn' && g.platform !== 'psremote' && g.platform !== 'xbox');
+        if (data.games.length !== before) saveDB(data);
+      }
+      return data;
     }
   } catch (e) {
     console.error('Failed to load DB:', e);
@@ -1138,6 +1145,12 @@ if (!gotLock) { app.quit(); } else {
   });
 }
 
+function destroyTray() {
+  if (!trayIcon) return;
+  try { trayIcon.destroy(); } catch (e) { /* ok */ }
+  trayIcon = null;
+}
+
 function createTray() {
   if (trayIcon) return;
   // 16x16 simple cereal-gold icon
@@ -1162,7 +1175,7 @@ app.whenReady().then(() => {
     saveDB(db);
   }
   createWindow();
-  createTray();
+  if (db.settings && db.settings.closeToTray) createTray();
 
   try { globalShortcut.register('CommandOrControl+Shift+I', toggleDevTools); } catch (e) { console.error('Failed to register DevTools shortcut (Ctrl+Shift+I):', e.message); }
   try { globalShortcut.register('F12', toggleDevTools); } catch (e) { console.error('Failed to register DevTools shortcut (F12):', e.message); }
@@ -2344,7 +2357,29 @@ ipcMain.handle('games:launch', async (event, id) => {
       }
 
       const chiakiConfig = db.chiakiConfig || {};
-      const args = buildChiakiArgs(game, chiakiConfig);
+      const consoles = chiakiConfig.consoles || [];
+
+      // Supplement missing chiaki fields from stored console config
+      let effectiveGame = game;
+      if (!game.chiakiHost || !game.chiakiRegistKey) {
+        const matched = game.chiakiHost
+          ? consoles.find(c => c.host === game.chiakiHost)
+          : consoles.find(c => c.registKey && c.morning);
+        if (matched) {
+          effectiveGame = {
+            ...game,
+            chiakiHost:      game.chiakiHost      || matched.host,
+            chiakiNickname:  game.chiakiNickname  || matched.nickname || '',
+            chiakiProfile:   game.chiakiProfile   || matched.profile  || '',
+            chiakiRegistKey: game.chiakiRegistKey || matched.registKey || '',
+            chiakiMorning:   game.chiakiMorning   || matched.morning  || '',
+          };
+        } else if (!game.chiakiHost) {
+          return { success: false, error: 'No registered PlayStation console found. Open Remote Play to add and register a console first.' };
+        }
+      }
+
+      const args = buildChiakiArgs(effectiveGame, chiakiConfig);
       const session = startChiakiSession(id, chiakiExe, args);
     } else if (game.platform === 'xbox') {
       // Xbox — embed xCloud in-app or launch via Xbox app
@@ -2360,9 +2395,11 @@ ipcMain.handle('games:launch', async (event, id) => {
       return { success: false, error: 'Executable not found' };
     }
 
-    // Track playtime start
-    game.lastPlayed = new Date().toISOString();
-    saveDB(db);
+    // Track playtime start (skip for streaming platforms — not tracked)
+    if (!['psn', 'psremote', 'xbox'].includes(game.platform)) {
+      game.lastPlayed = new Date().toISOString();
+      saveDB(db);
+    }
 
     // Minimize window on launch if enabled
     if (db.settings && db.settings.minimizeOnLaunch && mainWindow) {
@@ -2906,6 +2943,12 @@ ipcMain.handle('settings:save', (event, newSettings) => {
   // Update Windows startup registration
   if ('launchOnStartup' in newSettings) {
     try { app.setLoginItemSettings({ openAtLogin: !!newSettings.launchOnStartup }); } catch (e) { /* ok */ }
+  }
+
+  // Create or destroy tray based on closeToTray setting
+  if ('closeToTray' in newSettings) {
+    if (newSettings.closeToTray) createTray();
+    else destroyTray();
   }
 
   return db.settings;
@@ -3502,6 +3545,26 @@ ipcMain.handle('games:setChiakiStream', (event, gameId, streamConfig) => {
 });
 
 // ─── Chiaki Stream Management (deep integration) ─────────────────────────────
+ipcMain.handle('chiaki:startStreamDirect', (event, opts) => {
+  const chiakiExe = resolveChiakiExe();
+  if (!chiakiExe) return { success: false, error: 'chiaki-ng not found. Run scripts/setup-chiaki.ps1 to install it.' };
+
+  const sessionKey = 'console:' + (opts.host || 'unknown');
+  const gameData = {
+    chiakiHost:       opts.host        || '',
+    chiakiNickname:   opts.nickname    || '',
+    chiakiProfile:    opts.profile     || '',
+    chiakiRegistKey:  opts.registKey   || '',
+    chiakiMorning:    opts.morning     || '',
+    chiakiFullscreen: opts.fullscreen !== false,
+    chiakiDisplayMode: opts.displayMode || '',
+  };
+  const chiakiConfig = db.chiakiConfig || {};
+  const args = buildChiakiArgs(gameData, chiakiConfig);
+  const session = startChiakiSession(sessionKey, chiakiExe, args);
+  return { success: true, sessionKey, state: session.state };
+});
+
 ipcMain.handle('chiaki:startStream', (event, gameId) => {
   const game = db.games.find(g => g.id === gameId);
   if (!game) return { success: false, error: 'Game not found' };
@@ -3528,6 +3591,15 @@ ipcMain.handle('chiaki:getSessions', () => {
 });
 
 // ─── xCloud IPC handlers ──────────────────────────────────────────────────────
+ipcMain.handle('xcloud:startDirect', (event, { url }) => {
+  try {
+    startXcloudSession('xbox:cloud', url || 'https://www.xbox.com/play');
+    return { success: true, sessionKey: 'xbox:cloud' };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
 ipcMain.handle('xcloud:start', (event, { gameId, url }) => {
   try {
     startXcloudSession(gameId, url);
@@ -3543,6 +3615,60 @@ ipcMain.handle('xcloud:stop', (event, gameId) => {
 
 ipcMain.handle('xcloud:getSessions', () => {
   return getActiveXcloudSessions();
+});
+
+// Native SMTC addon - lazy loaded
+let smtcNative = null;
+function getSmtcNative() {
+  if (!smtcNative) {
+    try {
+      smtcNative = require('./native/smtc');
+      console.log('[media] native addon loaded');
+    } catch (e) {
+      console.log('[media] failed to load native addon:', e.message);
+    }
+  }
+  return smtcNative;
+}
+
+ipcMain.handle('media:getInfo', async () => {
+  const smtc = getSmtcNative();
+  if (!smtc) return {};
+  
+  try {
+    const info = smtc.getMediaInfo();
+    console.log('[media] native result:', info);
+    
+    if (info.error) {
+      console.log('[media] error:', info.error);
+      return {};
+    }
+    
+    return {
+      title: info.title || '',
+      artist: info.artist || '',
+      album: info.album || '',
+      playing: info.playing,
+      position: Math.floor(info.position || 0),
+      duration: Math.floor(info.duration || 0)
+    };
+  } catch (e) {
+    console.log('[media] exception:', e.message);
+    return {};
+  }
+});
+
+ipcMain.handle('media:control', (event, action) => {
+  const smtc = getSmtcNative();
+  if (!smtc) return false;
+  
+  try {
+    smtc.sendMediaKey(action);
+    return true;
+  } catch (e) {
+    console.log('[media] control error:', e.message);
+    return false;
+  }
 });
 
 ipcMain.handle('chiaki:openGui', () => {

@@ -484,6 +484,25 @@
     .stream-pill-btn .sp-icon svg,.stream-pill-btn .sp-icon img{width:16px;height:16px}
     .plat-logo{display:block;width:100%;height:100%;object-fit:contain}
 
+    .media-player{position:fixed;bottom:18px;left:18px;z-index:49;display:flex;align-items:center;gap:0;border-radius:16px;background:rgba(13,13,22,0.82);backdrop-filter:blur(22px);border:1px solid rgba(255,255,255,0.06);box-shadow:0 8px 32px rgba(0,0,0,0.5),0 0 0 1px rgba(255,255,255,0.03);overflow:hidden;transition:width var(--speed-normal),opacity var(--speed-normal);min-width:42px;max-width:320px;-webkit-app-region:no-drag}
+    .media-player.collapsed{max-width:42px}
+    .media-player-art{width:42px;height:42px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.04);color:var(--text-4);cursor:pointer;position:relative;overflow:hidden}
+    .media-player-art img{width:100%;height:100%;object-fit:cover;position:absolute;inset:0}
+    .media-player-art svg{width:16px;height:16px;flex-shrink:0}
+    .media-player-info{flex:1;min-width:0;padding:0 2px 0 10px;overflow:hidden}
+    .media-player-title{font-size:11px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3}
+    .media-player-artist{font-size:10px;color:var(--text-4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;line-height:1.3}
+    .media-player-controls{display:flex;align-items:center;gap:0;padding:0 4px;flex-shrink:0}
+    .media-player-controls button{width:30px;height:42px;border:none;background:none;color:var(--text-3);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:color var(--speed-fast);border-radius:0}
+    .media-player-controls button:hover{color:var(--text)}
+    .media-player-controls button svg{width:13px;height:13px;flex-shrink:0}
+    .media-player-controls .play-btn svg{width:15px;height:15px}
+    .media-player-progress{position:absolute;bottom:0;left:0;height:2px;background:var(--accent);opacity:0.7;border-radius:0 2px 2px 0;transition:width 1s linear;pointer-events:none}
+    .media-player.no-media .media-player-art{opacity:0.35}
+    .media-collapsed-btn{width:42px;height:42px;border:none;background:none;color:var(--text-4);cursor:pointer;display:flex;align-items:center;justify-content:center}
+    .media-collapsed-btn:hover{color:var(--text-2)}
+    .media-collapsed-btn svg{width:15px;height:15px}
+
     .gp-focus{outline:2px solid var(--accent) !important;outline-offset:2px;box-shadow:0 0 16px color-mix(in srgb,var(--accent) 40%,transparent) !important}
     .gp-focus.game-card{outline-offset:0;border-radius:10px}
     .gp-focus.orb-body{outline-offset:4px;border-radius:50%}
@@ -1062,7 +1081,7 @@
       return (
         <SidePanel show={show} onClose={onClose} title={editGame ? 'Edit Game' : 'Add Game'} foot={<><button className="btn-flat" onClick={onClose}>Cancel</button><button className="btn-accent" onClick={handleSave}>{editGame?'Update':'Add'}</button></>}>
           <div className="field"><label>Name</label><input value={f.name} onChange={e=>setF(p=>({...p,name:e.target.value}))} placeholder="Game title" /></div>
-          <div className="field"><label>Platform</label><select value={f.platform} onChange={e=>setF(p=>({...p,platform:e.target.value}))}>{Object.keys(PLATFORMS).map(k=><option key={k} value={k}>{PLATFORMS[k].label}</option>)}</select></div>
+          <div className="field"><label>Platform</label><select value={f.platform} onChange={e=>setF(p=>({...p,platform:e.target.value}))}>{Object.keys(PLATFORMS).filter(k=>!STREAMING_PLATFORMS.includes(k)).map(k=><option key={k} value={k}>{PLATFORMS[k].label}</option>)}</select></div>
           {['steam','epic','gog'].includes(f.platform) && <div className="field"><label>Platform ID</label><input value={f.platformId||''} onChange={e=>setF(p=>({...p,platformId:e.target.value}))} placeholder="App ID" /></div>}
           {f.platform === 'custom' && <div className="field"><label>Executable</label><div style={{display:'flex',gap:'8px'}}><input value={f.executablePath||''} onChange={e=>setF(p=>({...p,executablePath:e.target.value}))} placeholder="Path to .exe" style={{flex:1}} /><button className="btn-flat" onClick={browse}>Browse</button></div></div>}
           <div className="field"><label>Cover Image</label><div style={{display:'flex',gap:'8px'}}><input value={f.coverUrl||''} onChange={e=>setF(p=>({...p,coverUrl:e.target.value}))} placeholder="URL or file path" style={{flex:1}} /><button className="btn-flat" onClick={()=>browseImg('coverUrl')}>File</button><button className="btn-flat" style={{color:'var(--accent)'}} onClick={async ()=>{ if(!f.name.trim()) return; try { const url = await onOpenArtPicker({ gameName: f.name, platform: f.platform, field: 'coverUrl', autoSave: !!editGame }); if (url) { if (editGame) { const out = { ...f, coverUrl: url, metacritic: f.metacritic ? Number(f.metacritic) : null }; if (!out.metacritic && out.metacritic !== 0) delete out.metacritic; try { const res = await onSave(out); if (typeof onUpdated === 'function') onUpdated(res || out); } catch(e) { if (flash) flash('Save failed: ' + (e?.message || e)); } } else { setF(p=>({...p,coverUrl:url})); } } } catch(e) { if (flash) flash('Art search failed: ' + (e?.message || e)); } }} disabled={!f.name.trim()}>Search</button></div>{f.coverUrl && <img className="cover-preview" src={f.coverUrl} alt="" onError={e=>e.target.style.display='none'} onLoad={e=>e.target.style.display='block'} />}</div>
@@ -1303,6 +1322,69 @@
       );
     }
 
+    function MediaPlayer({ tbPos, viewMode }) {
+      const [media, setMedia] = useState({});
+      const [collapsed, setCollapsed] = useState(false);
+      const pollRef = useRef(null);
+
+      const fetchMedia = async () => {
+        if (!window.api?.getMediaInfo) return;
+        try { 
+          const info = await window.api.getMediaInfo(); 
+          console.log('[MediaPlayer] got info:', info);
+          setMedia(info || {}); 
+        } catch(e) { 
+          console.log('[MediaPlayer] error:', e);
+        }
+      };
+
+      useEffect(() => {
+        fetchMedia();
+        pollRef.current = setInterval(fetchMedia, 3000);
+        return () => clearInterval(pollRef.current);
+      }, []);
+
+      const ctrl = (action) => { window.api?.mediaControl?.(action); setTimeout(fetchMedia, 600); };
+
+      const pos = tbPos || 'top';
+      const isOrbit = viewMode === 'orbit';
+      const bottom = pos === 'bottom' ? 60 : isOrbit ? 56 : 18;
+      const left   = pos === 'left'   ? 72 : 18;
+
+      const hasMedia = !!(media.title || media.artist);
+      const progress = (media.duration > 0) ? Math.min(100, media.position / media.duration * 100) : 0;
+
+      const iMusic  = <svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 3v11.5a3.5 3.5 0 1 0 2 3.14V7h6V3H9z"/></svg>;
+      const iPrev   = <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>;
+      const iNext   = <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zm10-12v12h2V6h-2z"/></svg>;
+      const iPause  = <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>;
+      const iPlay   = <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>;
+      const iRefresh= <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.76L13 11h7V4l-2.35 2.35z"/></svg>;
+
+      const content = collapsed ? (
+        <div className="media-player collapsed" style={{bottom, left}}>
+          <button className="media-collapsed-btn" onClick={() => setCollapsed(false)} title="Media controls">{iMusic}</button>
+        </div>
+      ) : (
+        <div className={'media-player' + (hasMedia ? '' : ' no-media')} style={{bottom, left}}>
+          <div className="media-player-art" onClick={() => setCollapsed(true)} title="Collapse">{iMusic}</div>
+          <div className="media-player-info">
+            <div className="media-player-title">{hasMedia ? (media.title || '—') : <span style={{color:'var(--text-4)',fontWeight:400}}>Nothing playing</span>}</div>
+            {hasMedia && <div className="media-player-artist">{media.artist || media.album || ''}</div>}
+          </div>
+          <div className="media-player-controls">
+            <button onClick={() => ctrl('prev')} title="Previous">{iPrev}</button>
+            <button className="play-btn" onClick={() => ctrl('playpause')} title={media.playing ? 'Pause' : 'Play'}>{media.playing ? iPause : iPlay}</button>
+            <button onClick={() => ctrl('next')} title="Next">{iNext}</button>
+            <button onClick={fetchMedia} title="Refresh">{iRefresh}</button>
+          </div>
+          {progress > 0 && <div className="media-player-progress" style={{width: progress + '%'}}/>}
+        </div>
+      );
+
+      return ReactDOM.createPortal(content, document.body);
+    }
+
     function StreamOverlay({ sessions, games, onStop }) {
       var [isFs, setIsFs] = useState(false);
       var [barVisible, setBarVisible] = useState(true);
@@ -1426,12 +1508,14 @@
           setRegResult(r);
           setRegistering(r.success ? 'success' : 'failed');
           if (r.success) {
-            const upd = {
-              ...chiakiConfig,
-              consoles: (chiakiConfig.consoles || []).map(c =>
-                c.host === regForm.host ? { ...c, registKey: r.registKey || '', morning: r.morning || '' } : c
-              ),
-            };
+            const existingConsoles = chiakiConfig.consoles || [];
+            const alreadyInList = existingConsoles.some(c => c.host === regForm.host);
+            const updatedConsoles = alreadyInList
+              ? existingConsoles.map(c =>
+                  c.host === regForm.host ? { ...c, registKey: r.registKey || '', morning: r.morning || '' } : c
+                )
+              : [...existingConsoles, { nickname: regForm.host, host: regForm.host, profile: '', registKey: r.registKey || '', morning: r.morning || '' }];
+            const upd = { ...chiakiConfig, consoles: updatedConsoles };
             await window.api.saveChiakiConfig(upd);
             setChiakiConfig(upd);
             flash('Console registered!');
@@ -1445,15 +1529,8 @@
         setActiveTab('consoles');
       };
 
-      const startStream = async (g) => {
-        if (window.api) {
-          const r = await window.api.chiakiStartStream(g.id);
-          flash(r.success ? 'Starting stream: ' + g.name : 'Error: ' + r.error);
-        }
-      };
-
-      const stopStream = async (gid) => {
-        if (window.api) await window.api.chiakiStopStream(gid);
+      const stopStream = async (sessionKey) => {
+        if (window.api) await window.api.chiakiStopStream(sessionKey);
         flash('Stream stopped');
       };
 
@@ -1474,29 +1551,24 @@
       const chiakiMissing = statusClass === 'missing';
 
       const getSessionForConsole = (c) => {
-        const connGame = games.find(g => g.platform === 'psn' && g.chiakiHost === c.host);
-        if (!connGame) return { game: null, session: null, isLive: false };
-        const sess = chiakiSessions[connGame.id];
+        const sessionKey = 'console:' + c.host;
+        const sess = chiakiSessions[sessionKey];
         const isLive = sess && sess.state && sess.state !== 'disconnected';
-        return { game: connGame, session: sess, isLive };
+        return { sessionKey, session: sess, isLive };
       };
 
       const connectConsole = async (c) => {
-        let g = games.find(gg => gg.platform === 'psn' && gg.chiakiHost === c.host);
-        if (!g && window.api) {
-          g = await window.api.addGame({
-            name: c.nickname || 'PS Remote Play', platform: 'psn',
-            chiakiNickname: c.nickname, chiakiHost: c.host, chiakiProfile: c.profile || '',
-            chiakiRegistKey: c.registKey || '', chiakiMorning: c.morning || '', chiakiFullscreen: true,
-          });
-          if (g) setGames(prev => [...prev, g]);
-        }
-        if (g) startStream(g);
+        if (!window.api) return;
+        const r = await window.api.chiakiStartStreamDirect({
+          host: c.host, nickname: c.nickname || '', profile: c.profile || '',
+          registKey: c.registKey || '', morning: c.morning || '',
+        });
+        flash(r.success ? 'Connecting to ' + (c.nickname || c.host) + '...' : 'Error: ' + r.error);
       };
 
       const renderConsoleCard = (c, i) => {
         const hasKeys = !!c.registKey && !!c.morning;
-        const { game: connGame, session: connSess, isLive } = getSessionForConsole(c);
+        const { sessionKey, session: connSess, isLive } = getSessionForConsole(c);
         const isStreaming = connSess?.state === 'streaming';
 
         return (
@@ -1537,17 +1609,18 @@
             </div>
             <div className="conn-actions">
               {isLive
-                ? <button className="btn-sm danger" onClick={() => stopStream(connGame.id)}>Stop</button>
-                : hasKeys
-                  ? <>
-                      <button className="btn-sm primary" onClick={() => connectConsole(c)} disabled={chiakiMissing}>Connect</button>
-                      <button className="btn-sm" title="Wake console from rest mode" onClick={async () => {
-                        flash('Sending wake signal...');
-                        const r = await window.api?.chiakiWakeConsole?.({ host: c.host, credentials: { registKey: c.registKey } });
-                        flash(r?.success ? 'Wake signal sent to ' + c.nickname : 'Wake failed: ' + (r?.error || 'unknown'));
-                      }} disabled={chiakiMissing}>Wake</button>
-                    </>
-                  : <button className="btn-sm" onClick={() => { setRegForm(p => ({...p, host: c.host})); setActiveTab('register'); }}>Register</button>
+                ? <button className="btn-sm danger" onClick={() => stopStream(sessionKey)}>Stop</button>
+                : <>
+                    <button className="btn-sm primary" onClick={() => connectConsole(c)} disabled={chiakiMissing}>Connect</button>
+                    {hasKeys
+                      ? <button className="btn-sm" title="Wake console from rest mode" onClick={async () => {
+                          flash('Sending wake signal...');
+                          const r = await window.api?.chiakiWakeConsole?.({ host: c.host, credentials: { registKey: c.registKey } });
+                          flash(r?.success ? 'Wake signal sent to ' + c.nickname : 'Wake failed: ' + (r?.error || 'unknown'));
+                        }} disabled={chiakiMissing}>Wake</button>
+                      : <button className="btn-sm" onClick={() => { setRegForm(p => ({...p, host: c.host})); setActiveTab('register'); }}>Register</button>
+                    }
+                  </>
               }
               <button className="btn-sm danger" onClick={() => removeConsole(i)}>
                 <span style={{display:'flex',width:12,height:12}}>{I.trash}</span>
@@ -1740,10 +1813,8 @@
       );
     }
 
-    function XcloudPanel({ show, onClose, flash, games, setGames }) {
-      const [xboxInfo, setXboxInfo] = useState({ games:[], xboxAppFound:false, cloudGamingUrl:'https://www.xbox.com/play' });
-      const [editingGame, setEditingGame] = useState(null);
-      const [streamUrl, setStreamUrl] = useState('');
+    function XcloudPanel({ show, onClose, flash }) {
+      const [xboxInfo, setXboxInfo] = useState({ xboxAppFound:false, cloudGamingUrl:'https://www.xbox.com/play' });
 
       useEffect(() => {
         if (!show) return;
@@ -1754,31 +1825,16 @@
         })();
       }, [show]);
 
-      const xboxGames = games.filter(g => g.platform === 'xbox');
       const cloudUrl = xboxInfo.cloudGamingUrl || 'https://www.xbox.com/play';
 
-      const setGameStreamUrl = async () => {
-        if (!editingGame || !streamUrl) return;
-        const updated = { ...editingGame, streamUrl };
-        if (window.api) {
-          const u = await window.api.updateGame(updated);
-          if (u) setGames(g => g.map(x => x.id === editingGame.id ? u : x));
-        } else {
-          setGames(g => g.map(x => x.id === editingGame.id ? { ...x, streamUrl } : x));
-        }
-        setEditingGame(null);
-        setStreamUrl('');
-        flash('Cloud URL saved');
-      };
-
-      const launchXcloud = (gameId, url) => {
-        if (window.api?.xcloudStart) {
-          window.api.xcloudStart({ gameId, url });
+      const launchXcloud = (url) => {
+        if (window.api?.xcloudStartDirect) {
+          window.api.xcloudStartDirect(url || cloudUrl);
           onClose();
-          flash('Launching xCloud...');
+          flash('Launching Xbox Cloud Gaming...');
         } else {
-          window.open(url, '_blank');
-          flash('Opening xCloud...');
+          window.open(url || cloudUrl, '_blank');
+          flash('Opening in browser...');
         }
       };
 
@@ -1791,49 +1847,10 @@
               <div className="chiaki-disc-detail">xbox.com/play</div>
             </div>
             <div className="chiaki-disc-actions">
-              <button className="btn-sm primary" onClick={() => launchXcloud('xcloud_hub', cloudUrl)}>Launch</button>
+              <button className="btn-sm primary" onClick={() => launchXcloud(cloudUrl)}>Launch</button>
               <button className="btn-sm" onClick={() => { window.open(cloudUrl, '_blank'); flash('Opening in browser...'); }}>Browser</button>
             </div>
           </div>
-
-          {xboxGames.length > 0 && <div className="conn-section">Xbox Games</div>}
-
-          {xboxGames.map(g => (
-            <div key={g.id} className="conn-card">
-              <div className="conn-icon" style={{background:'#0e6a0e',width:32,height:32,fontSize:11}}>X</div>
-              <div className="conn-info">
-                <div className="conn-name">{g.name}</div>
-                <div className="conn-detail">{g.streamUrl ? 'Cloud URL set' : 'No cloud URL'}</div>
-              </div>
-              <div className="conn-actions">
-                {g.streamUrl && window.api?.xcloudStart && (
-                  <button className="btn-sm primary" onClick={() => launchXcloud(g.id, g.streamUrl)}>Stream</button>
-                )}
-                <button className="btn-sm" onClick={() => { setEditingGame(g); setStreamUrl(g.streamUrl || ''); }}>Config</button>
-              </div>
-            </div>
-          ))}
-
-          {editingGame && (
-            <div style={{marginTop:12,padding:14,borderRadius:10,background:'var(--glass)',border:'1px solid var(--accent-border)'}}>
-              <div style={{fontSize:12,fontWeight:600,color:'var(--text)',marginBottom:10}}>Stream: {editingGame.name}</div>
-              <div className="field">
-                <label>xCloud URL</label>
-                <input value={streamUrl} onChange={e => setStreamUrl(e.target.value)} placeholder="https://www.xbox.com/play/games/..."/>
-              </div>
-              <div style={{display:'flex',gap:8,justifyContent:'flex-end',marginTop:8}}>
-                <button className="btn-flat" onClick={() => { setEditingGame(null); setStreamUrl(''); }}>Cancel</button>
-                <button className="btn-accent" onClick={setGameStreamUrl}>Save</button>
-              </div>
-            </div>
-          )}
-
-          {xboxGames.length === 0 && !editingGame && (
-            <div className="chiaki-console-empty">
-              No Xbox games in your library.<br/>
-              <span style={{fontSize:10,color:'var(--text-4)',marginTop:4,display:'block'}}>Connect your Xbox account in Platforms to import games.</span>
-            </div>
-          )}
         </SidePanel>
       );
     }
@@ -2980,7 +2997,7 @@
       const isDimmed=game=>{if(tab==='all')return false;if(tab==='favorites')return !game.favorite;if(tab==='recent')return!game.lastPlayed;return game.platform!==tab;};
 
       const filteredGames=useMemo(()=>{
-        var list=[...games];
+        var list=games.filter(g=>!STREAMING_PLATFORMS.includes(g.platform));
         if(tab==='favorites')list=list.filter(g=>g.favorite);
         else if(tab==='recent')list=list.filter(g=>g.lastPlayed).sort((a,b)=>new Date(b.lastPlayed)-new Date(a.lastPlayed));
         else if(tab!=='all')list=list.filter(g=>g.platform===tab);
@@ -3363,7 +3380,7 @@
           <DetectPanel show={showDetect} onClose={()=>setShowDetect(false)} onImport={doImport}/>
           <PlatformsPanel show={showPlatforms} onClose={()=>setShowPlatforms(false)} flash={flash} setGames={setGames} onOpenChiaki={()=>setShowChiaki(true)} onOpenXcloud={()=>setShowXcloud(true)}/>
           <ChiakiPanel show={showChiaki} onClose={()=>setShowChiaki(false)} flash={flash} games={games} setGames={setGames} chiakiSessions={chiakiSessions}/>
-          <XcloudPanel show={showXcloud} onClose={()=>setShowXcloud(false)} flash={flash} games={games} setGames={setGames}/>
+          <XcloudPanel show={showXcloud} onClose={()=>setShowXcloud(false)} flash={flash}/>
           <SettingsPanel show={showSettings} onClose={()=>setShowSettings(false)} flash={flash} settings={settings} onSettingsChange={onSettingsChange} setGames={setGames} setCats={setCats} onOpenPlatforms={()=>{setShowSettings(false);setTimeout(()=>setShowPlatforms(true),150);}} onOpenDetect={()=>{setShowSettings(false);setTimeout(()=>setShowDetect(true),150);}} onSync={doSync} onFetchMetadata={doFetchAllMetadata} onRunWizard={()=>setShowWizard(true)} />
           <StartupWizard show={showWizard} onClose={()=>setShowWizard(false)} />
           {globalArtPicker && (
@@ -3391,6 +3408,7 @@
               </div>
             </div>
           )}
+          <MediaPlayer tbPos={tbPos} viewMode={viewMode} />
           {viewMode==='orbit'&&<div className="zoom-hud">
             <button className="zoom-btn" onClick={fitAll} title="Fit all" aria-label="Fit all"><span style={{display:'flex',width:14,height:14}}>{I.fit}</span></button>
             <button className="zoom-btn" onClick={zoomOut} title="Zoom out" aria-label="Zoom out"><span style={{display:'flex',width:14,height:14}}>{I.zOut}</span></button>

@@ -1,0 +1,99 @@
+#include <napi.h>
+#include <windows.h>
+#include <winrt/Windows.Foundation.h>
+#include <winrt/Windows.Media.Control.h>
+#include <winrt/Windows.Storage.Streams.h>
+#include <chrono>
+
+using namespace winrt;
+using namespace Windows::Foundation;
+using namespace Windows::Media::Control;
+
+// Convert hstring to std::string
+std::string toString(const winrt::hstring& hs) {
+    if (hs.empty()) return "";
+    int size = WideCharToMultiByte(CP_UTF8, 0, hs.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    std::string result(size - 1, 0);
+    WideCharToMultiByte(CP_UTF8, 0, hs.c_str(), -1, result.data(), size, nullptr, nullptr);
+    return result;
+}
+
+// Get media info synchronously
+Napi::Object GetMediaInfo(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+    Napi::Object result = Napi::Object::New(env);
+
+    try {
+        // Initialize WinRT
+        winrt::init_apartment();
+
+        // Get session manager
+        auto manager = GlobalSystemMediaTransportControlsSessionManager::RequestAsync().get();
+        if (!manager) {
+            result.Set("playing", Napi::Boolean::New(env, false));
+            return result;
+        }
+
+        // Get current session
+        auto session = manager.GetCurrentSession();
+        if (!session) {
+            // Try to get any session
+            auto sessions = manager.GetSessions();
+            if (sessions.Size() == 0) {
+                result.Set("playing", Napi::Boolean::New(env, false));
+                return result;
+            }
+            session = sessions.GetAt(0);
+        }
+
+        // Get media properties
+        auto props = session.TryGetMediaPropertiesAsync().get();
+        auto playback = session.GetPlaybackInfo();
+        auto timeline = session.GetTimelineProperties();
+
+        // Build result
+        result.Set("title", Napi::String::New(env, toString(props.Title())));
+        result.Set("artist", Napi::String::New(env, toString(props.Artist())));
+        result.Set("album", Napi::String::New(env, toString(props.AlbumTitle())));
+        result.Set("playing", Napi::Boolean::New(env, playback.PlaybackStatus() == GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing));
+        
+        auto pos = timeline.Position();
+        auto dur = timeline.EndTime();
+        result.Set("position", Napi::Number::New(env, static_cast<double>(pos.count()) / 10000000.0)); // Convert to seconds
+        result.Set("duration", Napi::Number::New(env, static_cast<double>(dur.count()) / 10000000.0));
+
+    } catch (const winrt::hresult_error& e) {
+        result.Set("error", Napi::String::New(env, toString(e.message())));
+        result.Set("playing", Napi::Boolean::New(env, false));
+    } catch (...) {
+        result.Set("error", Napi::String::New(env, "Unknown exception"));
+        result.Set("playing", Napi::Boolean::New(env, false));
+    }
+
+    return result;
+}
+
+// Send media key
+void SendMediaKey(const Napi::CallbackInfo& info) {
+    if (info.Length() < 1 || !info[0].IsString()) return;
+    
+    std::string action = info[0].As<Napi::String>().Utf8Value();
+    
+    WORD vk = 0;
+    if (action == "playpause") vk = VK_MEDIA_PLAY_PAUSE;
+    else if (action == "next") vk = VK_MEDIA_NEXT_TRACK;
+    else if (action == "prev") vk = VK_MEDIA_PREV_TRACK;
+    else return;
+
+    // Send key press
+    keybd_event(vk, 0, KEYEVENTF_EXTENDEDKEY, 0);
+    keybd_event(vk, 0, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP, 0);
+}
+
+Napi::Object Init(Napi::Env env, Napi::Object exports) {
+    exports.Set("getMediaInfo", Napi::Function::New(env, GetMediaInfo));
+    exports.Set("sendMediaKey", Napi::Function::New(env, SendMediaKey));
+    return exports;
+}
+
+NODE_API_MODULE(smtc, Init)
