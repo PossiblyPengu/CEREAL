@@ -93,11 +93,32 @@
     .nav-btn{width:30px;height:30px;border:none;background:none;border-radius:8px;color:var(--text-3);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all var(--speed-fast)}
     .nav-btn:hover{background:var(--glass);color:var(--text)}
     .nav-btn svg{width:14px;height:14px}
-    .settings-quick-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:20px}
-    .settings-qa-btn{display:flex;align-items:center;gap:8px;padding:12px 14px;border-radius:10px;border:1px solid var(--glass-border);background:var(--glass);color:var(--text-2);font-size:11px;font-weight:500;font-family:inherit;cursor:pointer;transition:all var(--speed-fast)}
-    .settings-qa-btn:hover{background:var(--accent-soft);border-color:var(--accent-border);color:var(--accent)}
-    .settings-qa-btn svg{width:16px;height:16px;flex-shrink:0;opacity:0.7}
-    .settings-qa-btn:hover svg{opacity:1}
+    .settings-layout{display:flex;gap:18px;align-items:flex-start}
+    .settings-nav{width:150px;flex-shrink:0;display:flex;flex-direction:column;gap:4px;position:sticky;top:0;align-self:flex-start}
+    .settings-nav button{border:none;background:none;border-radius:8px;padding:8px 10px;text-align:left;color:var(--text-3);font-size:11px;font-weight:600;letter-spacing:0.4px;cursor:pointer;transition:all var(--speed-fast)}
+    .settings-nav button:hover{color:var(--text-2);background:var(--glass)}
+    .settings-nav button.active{color:var(--accent);background:var(--accent-soft);box-shadow:0 0 0 1px var(--accent-border)}
+    .settings-content{flex:1;min-width:0}
+    .settings-summary{margin-bottom:20px;border-radius:12px;border:1px solid var(--glass-border);background:var(--glass);padding:16px}
+    .settings-summary-card{margin-bottom:12px}
+    .settings-summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}
+    .settings-summary-item{padding:10px;border-radius:8px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.04)}
+    .settings-summary-label{font-size:10px;font-weight:700;color:var(--text-4);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px}
+    .settings-summary-value{font-size:13px;font-weight:600;color:var(--text)}
+    .settings-summary-value.mono{font-family:"Segoe UI",Consolas,monospace;font-size:11px;color:var(--text-2)}
+    .settings-action-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}
+    .settings-action-card{border:1px solid var(--glass-border);background:var(--surface);border-radius:10px;padding:12px;display:flex;align-items:flex-start;gap:12px;color:var(--text-2);font-size:11px;font-weight:500;cursor:pointer;text-align:left;transition:all var(--speed-fast)}
+    .settings-action-card:hover:not(:disabled){border-color:var(--accent-border);color:var(--accent)}
+    .settings-action-card:disabled{opacity:0.4;cursor:default}
+    .settings-action-icon{width:28px;height:28px;border-radius:8px;background:var(--glass);display:flex;align-items:center;justify-content:center;color:var(--text-3)}
+    .settings-action-card:hover:not(:disabled) .settings-action-icon{color:var(--accent)}
+    .settings-action-label{font-size:12px;font-weight:600;color:var(--text)}
+    .settings-action-desc{font-size:10px;color:var(--text-3);margin-top:2px;line-height:1.4}
+    @media (max-width: 680px){
+      .settings-layout{flex-direction:column}
+      .settings-nav{position:static;width:100%;flex-direction:row;flex-wrap:wrap;gap:6px}
+      .settings-nav button{flex:1;text-align:center}
+    }
 
     .orb-field{position:fixed;inset:0;z-index:1}
     .orb{position:absolute;transform:translate(-50%,-50%);z-index:2;animation:orbDrift var(--drift-dur,20s) ease-in-out infinite alternate;animation-delay:var(--drift-delay,0s);transition:z-index 0s}
@@ -334,6 +355,45 @@
     .chiaki-bar.missing .chiaki-bar-dot{background:var(--red)}
     .chiaki-bar-text{flex:1;font-size:12px;color:var(--text-2)}
     .chiaki-bar-ver{font-size:10px;color:var(--text-3);font-weight:600}
+    .chiaki-mode-row{display:flex;align-items:center;gap:10px;margin-bottom:14px;padding:10px 14px;border-radius:8px;background:var(--glass)}
+    .chiaki-mode-icon{display:flex;width:14px;height:14px;color:var(--text-3);flex-shrink:0}
+    .chiaki-mode-label{flex:1;font-size:11px;color:var(--text-2)}
+    .chiaki-missing-hint{padding:12px 14px;border-radius:8px;background:var(--glass);margin-bottom:14px;font-size:11px;color:var(--text-3);line-height:1.6}
+    .chiaki-missing-hint strong{color:var(--accent);font-weight:600}
+    .chiaki-section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+    .chiaki-section-head .conn-section{margin:0}
+    .chiaki-console-empty{text-align:center;padding:28px;color:var(--text-4);font-size:11px}
+    .chiaki-add-form{padding:14px;border-radius:10px;background:var(--glass);border:1px solid var(--glass-border);margin-bottom:12px}
+    .chiaki-add-form .field-row{display:flex;gap:8px;margin-bottom:8px}
+    .chiaki-add-form .field-row .field{flex:1}
+    .chiaki-add-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:10px}
+    .chiaki-discover-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+    .chiaki-discover-head span{font-size:11px;color:var(--text-3)}
+    .chiaki-disc-card{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:8px;border:1px solid var(--glass-border);background:var(--glass);margin-bottom:8px}
+    .chiaki-disc-icon{width:36px;height:36px;border-radius:8px;background:#003087;display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:700;flex-shrink:0}
+    .chiaki-disc-info{flex:1;min-width:0}
+    .chiaki-disc-name{font-size:12px;font-weight:600;color:var(--text)}
+    .chiaki-disc-detail{font-size:10px;color:var(--text-3);margin-top:2px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+    .chiaki-disc-tag{padding:1px 6px;border-radius:4px;font-size:9px;font-weight:700;letter-spacing:0.3px}
+    .chiaki-disc-tag.ps5{background:rgba(0,48,135,0.15);color:#4d8fff}
+    .chiaki-disc-tag.ps4{background:rgba(0,48,135,0.1);color:#6b9eff}
+    .chiaki-disc-tag.live{background:rgba(52,211,153,0.12);color:var(--green)}
+    .chiaki-disc-actions{display:flex;gap:6px;flex-shrink:0}
+    .chiaki-reg-intro{font-size:11px;color:var(--text-3);margin-bottom:14px;line-height:1.6}
+    .chiaki-reg-steps{padding:12px 14px;border-radius:8px;background:var(--glass);margin-bottom:14px;font-size:11px;color:var(--text-3);line-height:1.8}
+    .chiaki-reg-steps .reg-step-title{font-weight:600;color:var(--text-2);margin-bottom:6px}
+    .chiaki-reg-steps .reg-step{display:flex;gap:8px;align-items:baseline;margin-bottom:2px}
+    .chiaki-reg-steps .reg-step-num{width:16px;height:16px;border-radius:50%;background:var(--accent-soft);color:var(--accent);font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px}
+    .chiaki-reg-steps .reg-step-text{flex:1}
+    .chiaki-reg-steps .reg-step-text span{color:var(--text)}
+    .chiaki-reg-actions{display:flex;gap:8px;margin-top:12px}
+    .chiaki-live-badge{display:inline-flex;align-items:center;gap:4px;color:var(--green);font-size:10px;font-weight:700;margin-left:6px}
+    .chiaki-live-badge::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse 1.5s ease-in-out infinite}
+    .chiaki-unreg-badge{color:var(--text-4);font-size:10px;margin-left:6px}
+    .chiaki-session-stats{display:flex;gap:12px;padding:8px 12px;border-radius:6px;background:rgba(0,48,135,0.08);border:1px solid rgba(0,48,135,0.15);margin-top:8px}
+    .chiaki-stat{text-align:center;flex:1}
+    .chiaki-stat-val{font-size:13px;font-weight:700;color:var(--text)}
+    .chiaki-stat-lbl{font-size:8px;font-weight:700;color:var(--text-4);text-transform:uppercase;letter-spacing:0.5px}
     .detect-status{padding:10px 14px;border-radius:8px;margin-bottom:12px;font-size:12px;text-align:center}
     .detect-status.scanning{background:rgba(74,158,255,0.06);color:var(--blue)}
     .detect-status.done{background:rgba(52,211,153,0.06);color:var(--green)}
@@ -483,26 +543,46 @@
     .settings-section-title.collapsed svg{transform:rotate(-90deg)}
     .settings-section-body{padding:6px}
     .settings-section-body.collapsed{display:none}
-    .settings-row{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-radius:6px;margin-bottom:2px;min-height:42px;transition:background var(--speed-fast)}
+    .settings-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:16px;padding:10px 14px;border-radius:6px;margin-bottom:2px;min-height:42px;transition:background var(--speed-fast)}
     .settings-row:hover{background:rgba(255,255,255,0.02)}
     .settings-row:last-child{margin-bottom:0}
-    .settings-row-info{flex:1;min-width:0}
+    .settings-row-info{min-width:0}
     .settings-row-label{font-size:12px;font-weight:500;color:var(--text)}
     .settings-row-desc{font-size:10px;color:var(--text-3);margin-top:2px}
-    .settings-toggle{position:relative;width:36px;height:20px;border-radius:10px;border:none;background:var(--text-4);cursor:pointer;transition:background var(--speed-normal);flex-shrink:0;margin-left:12px;padding:0}
+    .settings-toggle{position:relative;width:36px;height:20px;border-radius:10px;border:none;background:var(--text-4);cursor:pointer;transition:background var(--speed-normal);flex-shrink:0;padding:0}
     .settings-toggle.on{background:var(--accent)}
     .settings-toggle::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:white;transition:transform var(--speed-normal)}
     .settings-toggle.on::after{transform:translateX(16px)}
-    .settings-select{padding:5px 10px;border-radius:6px;border:1px solid var(--glass-border);background:var(--glass);color:var(--text);font-size:11px;font-family:inherit;cursor:pointer;outline:none;flex-shrink:0;margin-left:12px}
+    .settings-select{padding:5px 10px;border-radius:6px;border:1px solid var(--glass-border);background:var(--glass);color:var(--text);font-size:11px;font-family:inherit;cursor:pointer;outline:none;flex-shrink:0}
     .settings-select option{background:var(--surface)}
-    .settings-color{width:28px;height:28px;border-radius:6px;border:2px solid var(--glass-border);cursor:pointer;padding:0;overflow:hidden;flex-shrink:0;margin-left:12px}
+    .settings-color{width:28px;height:28px;border-radius:6px;border:2px solid var(--glass-border);cursor:pointer;padding:0;overflow:hidden;flex-shrink:0}
+    @media (max-width:560px){
+      .settings-row{grid-template-columns:1fr;gap:8px}
+      .settings-select,.settings-toggle,.settings-btn,.btn-sm,.settings-color{margin-left:0;width:100%}
+    }
     .settings-color::-webkit-color-swatch-wrapper{padding:0}
     .settings-color::-webkit-color-swatch{border:none;border-radius:4px}
-    .settings-danger-zone{padding:14px;border-radius:10px;border:1px solid rgba(248,113,113,0.15);background:rgba(248,113,113,0.03)}
-    .settings-about{text-align:center;padding:20px 0 8px;color:var(--text-3)}
-    .settings-about-logo{font-size:13px;font-weight:300;letter-spacing:5px;text-transform:uppercase;background:linear-gradient(135deg,var(--accent),var(--text-2));background-clip:text;-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:6px}
+    .settings-danger-grid{display:flex;flex-direction:column;gap:8px;padding:4px 8px}
+    .settings-danger-card{border:1px solid rgba(248,113,113,0.25);background:rgba(248,113,113,0.05);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:6px;box-shadow:0 6px 22px rgba(248,113,113,0.08)}
+    .settings-danger-card h4{font-size:12px;color:var(--red);margin:0}
+    .settings-danger-card p{font-size:10px;color:var(--text-3);margin:0}
+    .settings-danger-actions{display:flex;gap:8px;flex-wrap:wrap}
+    .settings-about{text-align:center;padding:24px 0 8px;color:var(--text-3);border-top:1px solid var(--glass-border);margin-top:8px}
+    .settings-about-logo{font-size:14px;font-weight:300;letter-spacing:6px;text-transform:uppercase;background:linear-gradient(135deg,var(--accent),var(--text-2));background-clip:text;-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:6px}
     .settings-about-ver{font-size:11px;color:var(--text-4);margin-bottom:4px}
     .settings-about-author{font-size:10px;color:var(--text-4)}
+    .settings-kbd{padding:2px 8px;border-radius:4px;background:var(--glass);border:1px solid var(--glass-border);color:var(--text-2);font-family:inherit;font-size:10px;font-weight:600;white-space:nowrap}
+    .settings-shortcuts-grid{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;font-size:11px;color:var(--text-3);padding:4px 8px 8px;align-items:center}
+    .settings-summary-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-top:14px}
+    .settings-summary-btn{border:1px solid var(--glass-border);background:rgba(255,255,255,0.02);border-radius:8px;padding:8px 10px;display:flex;align-items:center;gap:8px;color:var(--text-3);font-size:10px;font-weight:600;font-family:inherit;cursor:pointer;transition:all var(--speed-fast);white-space:nowrap}
+    .settings-summary-btn:hover{border-color:var(--accent-border);color:var(--accent);background:var(--accent-soft)}
+    .settings-summary-btn svg{width:14px;height:14px;flex-shrink:0;opacity:0.7}
+    .settings-summary-btn:hover svg{opacity:1}
+    .sgdb-key-row{display:flex;gap:6px;align-items:center;margin-bottom:6px}
+    .sgdb-key-row input{flex:1;padding:6px 10px;border-radius:6px;border:1px solid var(--glass-border);background:var(--glass);color:var(--text);font-size:11px;font-family:inherit}
+    .sgdb-key-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+    .sgdb-key-status{font-size:10px;margin-left:4px}
+    .sgdb-key-saved{margin-top:6px;font-size:10px;color:var(--text-4)}
     .theme-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:4px}
     .theme-swatch{position:relative;border:2px solid var(--glass-border);border-radius:10px;background:none;cursor:pointer;padding:0;overflow:hidden;transition:all var(--speed-normal);display:flex;flex-direction:column;align-items:center}
     .theme-swatch:hover{border-color:var(--text-3)}
@@ -1298,31 +1378,364 @@
       const [registering, setRegistering] = useState(null);
       const [regForm, setRegForm] = useState({ host:'', psnAccountId:'', pin:'' });
       const [regResult, setRegResult] = useState(null);
-      useEffect(() => { if(!show)return;(async()=>{ if(window.api){var st=await window.api.getChiakiStatus();var cfg=await window.api.getChiakiConfig();setChiakiStatus(st);setChiakiConfig(cfg||{executablePath:'',consoles:[],cerealMode:true});}else{setChiakiStatus({status:'bundled',version:'1.6.4'});setChiakiConfig({executablePath:'',consoles:[{nickname:'PS5-Living-Room',host:'192.168.1.50',profile:'default'}],cerealMode:true});}})(); }, [show]);
-      var addConsole=async()=>{if(!newConsole.nickname||!newConsole.host)return;var u={...chiakiConfig,consoles:[...(chiakiConfig.consoles||[]),newConsole]};if(window.api)await window.api.saveChiakiConfig(u);setChiakiConfig(u);setNewConsole({nickname:'',host:'',profile:''});setShowAddConsole(false);flash('Console added');};
-      var removeConsole=async idx=>{var u={...chiakiConfig,consoles:chiakiConfig.consoles.filter((_,i)=>i!==idx)};if(window.api)await window.api.saveChiakiConfig(u);setChiakiConfig(u);flash('Console removed');};
-      var doDiscover=async()=>{setDiscovering(true);setDiscovered([]);if(window.api){var r=await window.api.chiakiDiscoverConsoles();setDiscovered(r.consoles||[]);}else{await new Promise(r=>setTimeout(r,2000));setDiscovered([{name:'PS5-FEC1',host:'192.168.1.50'},{name:'PS5-Bedroom',host:'192.168.1.75'}]);}setDiscovering(false);};
-      var doRegister=async()=>{if(!regForm.host||!regForm.pin)return;setRegistering('working');if(window.api){var r=await window.api.chiakiRegisterConsole(regForm);setRegResult(r);setRegistering(r.success?'success':'failed');if(r.success){var updated={...chiakiConfig,consoles:(chiakiConfig.consoles||[]).map(c=>c.host===regForm.host?{...c,registKey:r.registKey||'',morning:r.morning||''}:c)};await window.api.saveChiakiConfig(updated);setChiakiConfig(updated);flash('Console registered!');}}else{await new Promise(r=>setTimeout(r,2000));setRegResult({success:true,registKey:'DEMO_KEY_123',morning:'DEMO_MORNING_456'});setRegistering('success');flash('Console registered! (demo)');}};
-      var addDiscoveredAsConsole=c=>{setNewConsole({nickname:c.name,host:c.host,profile:''});setShowAddConsole(true);setActiveTab('consoles');};
-      var startStream=async g=>{if(window.api){var r=await window.api.chiakiStartStream(g.id);flash(r.success?'Starting stream: '+g.name:'Error: '+r.error);}else flash('Starting stream: '+g.name+' (demo)');};
-      var stopStream=async gid=>{if(window.api)await window.api.chiakiStopStream(gid);flash('Stream stopped');};
-      var openChiakiGui=async()=>{if(window.api){var r=await window.api.chiakiOpenGui();flash(r.success?'chiaki-ng GUI opened':'Error: '+r.error);}else flash('chiaki-ng GUI (demo)');};
-      var toggleCerealMode=async()=>{var u={...chiakiConfig,cerealMode:!chiakiConfig.cerealMode};if(window.api)await window.api.saveChiakiConfig(u);setChiakiConfig(u);};
-      var statusClass=chiakiStatus?.status||'missing';var chiakiMissing=statusClass==='missing';
+
+      useEffect(() => {
+        if (!show) return;
+        (async () => {
+          if (window.api) {
+            const st = await window.api.getChiakiStatus();
+            const cfg = await window.api.getChiakiConfig();
+            setChiakiStatus(st);
+            setChiakiConfig(cfg || { executablePath:'', consoles:[], cerealMode:true });
+          }
+        })();
+      }, [show]);
+
+      const addConsole = async () => {
+        if (!newConsole.nickname || !newConsole.host) return;
+        const updated = { ...chiakiConfig, consoles: [...(chiakiConfig.consoles || []), newConsole] };
+        if (window.api) await window.api.saveChiakiConfig(updated);
+        setChiakiConfig(updated);
+        setNewConsole({ nickname:'', host:'', profile:'' });
+        setShowAddConsole(false);
+        flash('Console added');
+      };
+
+      const removeConsole = async (idx) => {
+        const updated = { ...chiakiConfig, consoles: chiakiConfig.consoles.filter((_, i) => i !== idx) };
+        if (window.api) await window.api.saveChiakiConfig(updated);
+        setChiakiConfig(updated);
+        flash('Console removed');
+      };
+
+      const doDiscover = async () => {
+        setDiscovering(true);
+        setDiscovered([]);
+        if (window.api) {
+          const r = await window.api.chiakiDiscoverConsoles();
+          setDiscovered(r.consoles || []);
+        }
+        setDiscovering(false);
+      };
+
+      const doRegister = async () => {
+        if (!regForm.host || !regForm.pin) return;
+        setRegistering('working');
+        if (window.api) {
+          const r = await window.api.chiakiRegisterConsole(regForm);
+          setRegResult(r);
+          setRegistering(r.success ? 'success' : 'failed');
+          if (r.success) {
+            const upd = {
+              ...chiakiConfig,
+              consoles: (chiakiConfig.consoles || []).map(c =>
+                c.host === regForm.host ? { ...c, registKey: r.registKey || '', morning: r.morning || '' } : c
+              ),
+            };
+            await window.api.saveChiakiConfig(upd);
+            setChiakiConfig(upd);
+            flash('Console registered!');
+          }
+        }
+      };
+
+      const addDiscoveredAsConsole = (c) => {
+        setNewConsole({ nickname: c.name || 'PlayStation', host: c.host, profile:'' });
+        setShowAddConsole(true);
+        setActiveTab('consoles');
+      };
+
+      const startStream = async (g) => {
+        if (window.api) {
+          const r = await window.api.chiakiStartStream(g.id);
+          flash(r.success ? 'Starting stream: ' + g.name : 'Error: ' + r.error);
+        }
+      };
+
+      const stopStream = async (gid) => {
+        if (window.api) await window.api.chiakiStopStream(gid);
+        flash('Stream stopped');
+      };
+
+      const openChiakiGui = async () => {
+        if (window.api) {
+          const r = await window.api.chiakiOpenGui();
+          flash(r.success ? 'chiaki-ng GUI opened' : 'Error: ' + r.error);
+        }
+      };
+
+      const toggleCerealMode = async () => {
+        const updated = { ...chiakiConfig, cerealMode: !chiakiConfig.cerealMode };
+        if (window.api) await window.api.saveChiakiConfig(updated);
+        setChiakiConfig(updated);
+      };
+
+      const statusClass = chiakiStatus?.status || 'missing';
+      const chiakiMissing = statusClass === 'missing';
+
+      const getSessionForConsole = (c) => {
+        const connGame = games.find(g => g.platform === 'psn' && g.chiakiHost === c.host);
+        if (!connGame) return { game: null, session: null, isLive: false };
+        const sess = chiakiSessions[connGame.id];
+        const isLive = sess && sess.state && sess.state !== 'disconnected';
+        return { game: connGame, session: sess, isLive };
+      };
+
+      const connectConsole = async (c) => {
+        let g = games.find(gg => gg.platform === 'psn' && gg.chiakiHost === c.host);
+        if (!g && window.api) {
+          g = await window.api.addGame({
+            name: c.nickname || 'PS Remote Play', platform: 'psn',
+            chiakiNickname: c.nickname, chiakiHost: c.host, chiakiProfile: c.profile || '',
+            chiakiRegistKey: c.registKey || '', chiakiMorning: c.morning || '', chiakiFullscreen: true,
+          });
+          if (g) setGames(prev => [...prev, g]);
+        }
+        if (g) startStream(g);
+      };
+
+      const renderConsoleCard = (c, i) => {
+        const hasKeys = !!c.registKey && !!c.morning;
+        const { game: connGame, session: connSess, isLive } = getSessionForConsole(c);
+        const isStreaming = connSess?.state === 'streaming';
+
+        return (
+          <div key={i} className="conn-card">
+            <div className="conn-icon" style={{background:'#003087'}}>PS</div>
+            <div className="conn-info">
+              <div className="conn-name">
+                {c.nickname}
+                {isLive && <span className="chiaki-live-badge">LIVE</span>}
+                {!isLive && !hasKeys && <span className="chiaki-unreg-badge">Not registered</span>}
+              </div>
+              <div className="conn-detail">
+                {c.host}{c.profile ? ' / ' + c.profile : ''}
+                {isStreaming && connSess.streamInfo?.resolution && (
+                  <span> — {connSess.streamInfo.resolution}{connSess.streamInfo.fps ? ' / ' + connSess.streamInfo.fps + 'fps' : ''}</span>
+                )}
+              </div>
+              {isStreaming && connSess.quality?.bitrate && (
+                <div className="chiaki-session-stats">
+                  <div className="chiaki-stat">
+                    <div className="chiaki-stat-val">{connSess.quality.bitrate.toFixed(1)}</div>
+                    <div className="chiaki-stat-lbl">Mbps</div>
+                  </div>
+                  {connSess.quality.fpsActual && <div className="chiaki-stat">
+                    <div className="chiaki-stat-val">{Math.round(connSess.quality.fpsActual)}</div>
+                    <div className="chiaki-stat-lbl">FPS</div>
+                  </div>}
+                  {connSess.quality.latencyMs != null && <div className="chiaki-stat">
+                    <div className="chiaki-stat-val">{Math.round(connSess.quality.latencyMs)}</div>
+                    <div className="chiaki-stat-lbl">Latency</div>
+                  </div>}
+                  {connSess.quality.packetLoss != null && <div className="chiaki-stat">
+                    <div className="chiaki-stat-val">{connSess.quality.packetLoss.toFixed(1)}%</div>
+                    <div className="chiaki-stat-lbl">Loss</div>
+                  </div>}
+                </div>
+              )}
+            </div>
+            <div className="conn-actions">
+              {isLive
+                ? <button className="btn-sm danger" onClick={() => stopStream(connGame.id)}>Stop</button>
+                : hasKeys
+                  ? <>
+                      <button className="btn-sm primary" onClick={() => connectConsole(c)} disabled={chiakiMissing}>Connect</button>
+                      <button className="btn-sm" title="Wake console from rest mode" onClick={async () => {
+                        flash('Sending wake signal...');
+                        const r = await window.api?.chiakiWakeConsole?.({ host: c.host, credentials: { registKey: c.registKey } });
+                        flash(r?.success ? 'Wake signal sent to ' + c.nickname : 'Wake failed: ' + (r?.error || 'unknown'));
+                      }} disabled={chiakiMissing}>Wake</button>
+                    </>
+                  : <button className="btn-sm" onClick={() => { setRegForm(p => ({...p, host: c.host})); setActiveTab('register'); }}>Register</button>
+              }
+              <button className="btn-sm danger" onClick={() => removeConsole(i)}>
+                <span style={{display:'flex',width:12,height:12}}>{I.trash}</span>
+              </button>
+            </div>
+          </div>
+        );
+      };
+
+      const renderDiscoverCard = (c, i) => {
+        const consoleType = (c.type || '').toUpperCase();
+        const isPS5 = consoleType.includes('PS5') || consoleType.includes('5');
+        const isPS4 = consoleType.includes('PS4') || consoleType.includes('4');
+        const alreadyAdded = (chiakiConfig.consoles || []).some(x => x.host === c.host);
+
+        return (
+          <div key={i} className="chiaki-disc-card">
+            <div className="chiaki-disc-icon">{isPS5 ? 'PS5' : isPS4 ? 'PS4' : 'PS'}</div>
+            <div className="chiaki-disc-info">
+              <div className="chiaki-disc-name">{c.name || 'PlayStation'}</div>
+              <div className="chiaki-disc-detail">
+                {c.host}
+                {(isPS5 || isPS4) && <span className={'chiaki-disc-tag ' + (isPS5 ? 'ps5' : 'ps4')}>{isPS5 ? 'PS5' : 'PS4'}</span>}
+                {c.state === 'standby' && <span style={{color:'var(--text-4)',fontSize:9,fontWeight:600}}>Standby</span>}
+                {c.state === 'ready' && <span style={{color:'var(--green)',fontSize:9,fontWeight:600}}>Awake</span>}
+                {c.firmwareVersion && <span>{c.firmwareVersion}</span>}
+                {c.runningTitle && <span className="chiaki-disc-tag live">{c.runningTitle}</span>}
+                {alreadyAdded && <span style={{color:'var(--green)',fontSize:9,fontWeight:700}}>Added</span>}
+              </div>
+            </div>
+            <div className="chiaki-disc-actions">
+              {!alreadyAdded && <button className="btn-sm primary" onClick={() => addDiscoveredAsConsole(c)}>Add</button>}
+              <button className="btn-sm" onClick={() => { setRegForm(p => ({...p, host: c.host})); setActiveTab('register'); }}>Register</button>
+            </div>
+          </div>
+        );
+      };
+
       return (
-        <SidePanel show={show} onClose={onClose} title="PlayStation Remote Play" wide headActions={<button className="btn-sm" onClick={openChiakiGui} title="Open chiaki-ng GUI"><span style={{display:'flex',width:14,height:14}}>{I.globe}</span></button>}>
-          <div className={'chiaki-bar '+statusClass}><div className="chiaki-bar-dot"/><div className="chiaki-bar-text">{statusClass==='bundled'?'chiaki-ng bundled':statusClass==='system'?'chiaki-ng (system)':'chiaki-ng not found'}</div>{chiakiStatus?.version&&<div className="chiaki-bar-ver">v{chiakiStatus.version}</div>}</div>
-          {chiakiMissing&&<div style={{padding:'12px 14px',borderRadius:'8px',background:'var(--glass)',marginBottom:'14px',fontSize:'11px',color:'var(--text-3)',lineHeight:1.6}}>Run <span style={{color:'var(--accent)',fontWeight:600}}>scripts/build-chiaki.ps1</span> to build from source.</div>}
-          <div style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'14px',padding:'10px 14px',borderRadius:'8px',background:'var(--glass)'}}><span style={{display:'flex',width:14,height:14,color:'var(--text-3)'}}>{I.gear}</span><span style={{flex:1,fontSize:'11px',color:'var(--text-2)'}}>Cereal integration mode</span><button className={'btn-sm'+(chiakiConfig.cerealMode?' primary':'')} onClick={toggleCerealMode} style={{fontSize:'10px',padding:'3px 10px'}}>{chiakiConfig.cerealMode?'ON':'OFF'}</button></div>
-          <div className="sub-tabs">{['consoles','discover','register'].map(t=><button key={t} className={'sub-tab'+(activeTab===t?' active':'')} onClick={()=>setActiveTab(t)}>{t}</button>)}</div>
-          {activeTab==='consoles'&&<>
-            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'10px'}}><div className="conn-section" style={{margin:0}}>Registered Consoles</div><button className="btn-sm" onClick={()=>setShowAddConsole(!showAddConsole)}>+ Add</button></div>
-            {showAddConsole&&<div style={{padding:'14px',borderRadius:'10px',background:'var(--glass)',border:'1px solid var(--glass-border)',marginBottom:'12px'}}><div className="field-row"><div className="field"><label>Nickname</label><input value={newConsole.nickname} onChange={e=>setNewConsole(p=>({...p,nickname:e.target.value}))} placeholder="PS5-Living-Room"/></div><div className="field"><label>Host IP</label><input value={newConsole.host} onChange={e=>setNewConsole(p=>({...p,host:e.target.value}))} placeholder="192.168.1.x"/></div></div><div className="field"><label>Profile</label><input value={newConsole.profile} onChange={e=>setNewConsole(p=>({...p,profile:e.target.value}))} placeholder="default"/></div><div style={{display:'flex',gap:'8px',justifyContent:'flex-end'}}><button className="btn-flat" onClick={()=>setShowAddConsole(false)}>Cancel</button><button className="btn-accent" onClick={addConsole}>Add</button></div></div>}
-            {(chiakiConfig.consoles||[]).length===0&&!showAddConsole&&<div style={{textAlign:'center',padding:'20px',color:'var(--text-4)',fontSize:'11px'}}>No consoles.</div>}
-            {(chiakiConfig.consoles||[]).map((c,i)=>{var hasKeys=!!c.registKey&&!!c.morning;var connGame=games.find(g=>g.platform==='psn'&&g.chiakiHost===c.host);var connSess=connGame&&chiakiSessions[connGame.id];var isLive=connSess&&connSess.state&&connSess.state!=='disconnected';var doConnect=async()=>{var g=connGame;if(!g){if(window.api){g=await window.api.addGame({name:c.nickname||'PS Remote Play',platform:'psn',chiakiNickname:c.nickname,chiakiHost:c.host,chiakiProfile:c.profile||'',chiakiRegistKey:c.registKey||'',chiakiMorning:c.morning||'',chiakiFullscreen:true});if(g)setGames(prev=>[...prev,g]);}};if(g)startStream(g);};return<div key={i} className="conn-card"><div className="conn-icon" style={{background:'#003087'}}>PS</div><div className="conn-info"><div className="conn-name">{c.nickname}</div><div className="conn-detail">{c.host}{c.profile?' / '+c.profile:''}{isLive?<span style={{color:'var(--green)',marginLeft:6}}>LIVE</span>:(!hasKeys?<span style={{color:'var(--text-4)',marginLeft:6}}>Not registered</span>:'')}</div></div><div className="conn-actions">{isLive?<button className="btn-sm danger" onClick={()=>stopStream(connGame.id)}>Stop</button>:(hasKeys?<button className="btn-sm primary" onClick={doConnect} disabled={chiakiMissing}>Connect</button>:<button className="btn-sm" onClick={()=>{setRegForm(p=>({...p,host:c.host}));setActiveTab('register');}}>Register</button>)}<button className="btn-sm danger" onClick={()=>removeConsole(i)}><span style={{display:'flex',width:12,height:12}}>{I.trash}</span></button></div></div>;})}
+        <SidePanel show={show} onClose={onClose} title="PlayStation Remote Play" wide
+          headActions={<button className="btn-sm" onClick={openChiakiGui} title="Open chiaki-ng GUI"><span style={{display:'flex',width:14,height:14}}>{I.globe}</span></button>}
+        >
+          <div className={'chiaki-bar ' + statusClass}>
+            <div className="chiaki-bar-dot"/>
+            <div className="chiaki-bar-text">
+              {statusClass === 'bundled' ? 'chiaki-ng bundled' : statusClass === 'system' ? 'chiaki-ng (system)' : 'chiaki-ng not found'}
+            </div>
+            {chiakiStatus?.version && <div className="chiaki-bar-ver">v{chiakiStatus.version}</div>}
+          </div>
+
+          {chiakiMissing && (
+            <div className="chiaki-missing-hint">
+              chiaki-ng is required for Remote Play. Run <strong>scripts/setup-chiaki.ps1</strong> to download it automatically.
+            </div>
+          )}
+
+          <div className="chiaki-mode-row">
+            <span className="chiaki-mode-icon">{I.gear}</span>
+            <span className="chiaki-mode-label">Cereal integration mode</span>
+            <button className={'btn-sm' + (chiakiConfig.cerealMode ? ' primary' : '')} onClick={toggleCerealMode} style={{fontSize:10,padding:'3px 10px'}}>
+              {chiakiConfig.cerealMode ? 'ON' : 'OFF'}
+            </button>
+          </div>
+
+          <div className="sub-tabs">
+            {['consoles','discover','register'].map(t => (
+              <button key={t} className={'sub-tab' + (activeTab === t ? ' active' : '')} onClick={() => setActiveTab(t)}>{t}</button>
+            ))}
+          </div>
+
+          {activeTab === 'consoles' && <>
+            <div className="chiaki-section-head">
+              <div className="conn-section">Registered Consoles</div>
+              <button className="btn-sm" onClick={() => setShowAddConsole(!showAddConsole)}>+ Add</button>
+            </div>
+
+            {showAddConsole && (
+              <div className="chiaki-add-form">
+                <div className="field-row">
+                  <div className="field">
+                    <label>Nickname</label>
+                    <input value={newConsole.nickname} onChange={e => setNewConsole(p => ({...p, nickname: e.target.value}))} placeholder="PS5-Living-Room"/>
+                  </div>
+                  <div className="field">
+                    <label>Host IP</label>
+                    <input value={newConsole.host} onChange={e => setNewConsole(p => ({...p, host: e.target.value}))} placeholder="192.168.1.x"/>
+                  </div>
+                </div>
+                <div className="field">
+                  <label>Profile</label>
+                  <input value={newConsole.profile} onChange={e => setNewConsole(p => ({...p, profile: e.target.value}))} placeholder="default"/>
+                </div>
+                <div className="chiaki-add-actions">
+                  <button className="btn-flat" onClick={() => setShowAddConsole(false)}>Cancel</button>
+                  <button className="btn-accent" onClick={addConsole}>Add Console</button>
+                </div>
+              </div>
+            )}
+
+            {(chiakiConfig.consoles || []).length === 0 && !showAddConsole && (
+              <div className="chiaki-console-empty">
+                No consoles registered. Use the <strong>Discover</strong> tab to find consoles on your network,<br/>
+                or click <strong>+ Add</strong> to add one manually.
+              </div>
+            )}
+
+            {(chiakiConfig.consoles || []).map((c, i) => renderConsoleCard(c, i))}
           </>}
-          {activeTab==='discover'&&<><div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'12px'}}><span style={{fontSize:'11px',color:'var(--text-3)'}}>Scan for PlayStation consoles</span><button className="btn-sm primary" onClick={doDiscover} disabled={discovering||chiakiMissing}>{discovering?<><span className="spinner" style={{marginRight:6}}/>Scanning</>:'Scan Network'}</button></div>{discovered.map((c,i)=><div key={i} className="conn-card"><div className="conn-icon" style={{background:'#003087'}}>PS</div><div className="conn-info"><div className="conn-name">{c.name||'PlayStation'}</div><div className="conn-detail">{c.host}</div></div><button className="btn-sm primary" onClick={()=>addDiscoveredAsConsole(c)}>Add</button><button className="btn-sm" onClick={()=>{setRegForm(p=>({...p,host:c.host}));setActiveTab('register');}}>Register</button></div>)}{!discovering&&discovered.length===0&&<div style={{textAlign:'center',padding:'28px',color:'var(--text-4)',fontSize:'11px'}}>Click Scan to find consoles.</div>}</>}
-          {activeTab==='register'&&<><div style={{fontSize:'11px',color:'var(--text-3)',marginBottom:'14px',lineHeight:1.6}}>Register your PlayStation console for Remote Play. This is a one-time setup.</div><div style={{padding:'12px 14px',borderRadius:'8px',background:'var(--glass)',marginBottom:'14px',fontSize:'11px',color:'var(--text-3)',lineHeight:1.8}}><div style={{fontWeight:600,color:'var(--text-2)',marginBottom:6}}>Setup Steps</div><div>1. On your console, go to <span style={{color:'var(--text)'}}>Settings &gt; System &gt; Remote Play</span> and enable it.</div><div>2. Go to <span style={{color:'var(--text)'}}>Settings &gt; System &gt; Remote Play &gt; Link Device</span> to get the 8-digit link code.</div><div>3. Get your PSN Account ID — visit <a href="#" onClick={e=>{e.preventDefault();window.api?.openExternal&&window.api.openExternal('https://psn.flipscreen.games/');}} style={{color:'var(--accent)',textDecoration:'underline',cursor:'pointer'}}>psn.flipscreen.games</a> and sign in with your PSN account. Copy the Base64 Account ID.</div><div>4. Enter your console IP (use the Discover tab to find it), Account ID, and link code below.</div></div><div className="field"><label>Console IP</label><input value={regForm.host} onChange={e=>setRegForm(p=>({...p,host:e.target.value}))} placeholder="192.168.1.x"/></div><div className="field"><label>PSN Account ID (Base64)</label><input value={regForm.psnAccountId} onChange={e=>setRegForm(p=>({...p,psnAccountId:e.target.value}))} placeholder="e.g. ab12CDef3ghIjk..."/></div><div className="field"><label>Link Code</label><input value={regForm.pin} onChange={e=>setRegForm(p=>({...p,pin:e.target.value}))} placeholder="8-digit code from console"/></div>{registering==='working'&&<div className="detect-status scanning" style={{display:'flex',alignItems:'center',gap:'8px',justifyContent:'center'}}><span className="spinner"/>Registering...</div>}{registering==='success'&&regResult&&<div className="detect-status done">Registered!{regResult.registKey?' Key: '+regResult.registKey.slice(0,12)+'...':''}</div>}{registering==='failed'&&regResult&&<div className="detect-status err">{regResult.error||'Registration failed'}</div>}<div style={{display:'flex',justifyContent:'flex-end',marginTop:'12px'}}><button className="btn-accent" onClick={doRegister} disabled={registering==='working'||chiakiMissing}>Register</button></div></>}
+
+          {activeTab === 'discover' && <>
+            <div className="chiaki-discover-head">
+              <span>Scan your network for PlayStation consoles</span>
+              <button className="btn-sm primary" onClick={doDiscover} disabled={discovering || chiakiMissing}>
+                {discovering ? <><span className="spinner" style={{marginRight:6}}/>Scanning</> : 'Scan Network'}
+              </button>
+            </div>
+
+            {discovered.map((c, i) => renderDiscoverCard(c, i))}
+
+            {!discovering && discovered.length === 0 && (
+              <div className="chiaki-console-empty">
+                Click <strong>Scan Network</strong> to find PlayStation consoles.<br/>
+                <span style={{fontSize:10,color:'var(--text-4)',marginTop:4,display:'block'}}>Make sure your console is on and connected to the same network.</span>
+              </div>
+            )}
+          </>}
+
+          {activeTab === 'register' && <>
+            <div className="chiaki-reg-intro">
+              Register your PlayStation console for Remote Play. This is a one-time setup per console.
+            </div>
+
+            <div className="chiaki-reg-steps">
+              <div className="reg-step-title">Setup Steps</div>
+              <div className="reg-step">
+                <div className="reg-step-num">1</div>
+                <div className="reg-step-text">On your console, go to <span>Settings &gt; System &gt; Remote Play</span> and enable it.</div>
+              </div>
+              <div className="reg-step">
+                <div className="reg-step-num">2</div>
+                <div className="reg-step-text">Go to <span>Settings &gt; System &gt; Remote Play &gt; Link Device</span> to get the 8-digit link code.</div>
+              </div>
+              <div className="reg-step">
+                <div className="reg-step-num">3</div>
+                <div className="reg-step-text">Get your PSN Account ID — visit{' '}
+                  <a href="#" onClick={e => { e.preventDefault(); window.api?.openExternal && window.api.openExternal('https://psn.flipscreen.games/'); }} style={{color:'var(--accent)',textDecoration:'underline'}}>
+                    psn.flipscreen.games
+                  </a>{' '}and sign in. Copy the Base64 Account ID.
+                </div>
+              </div>
+              <div className="reg-step">
+                <div className="reg-step-num">4</div>
+                <div className="reg-step-text">Enter console IP, Account ID, and link code below.</div>
+              </div>
+            </div>
+
+            <div className="field">
+              <label>Console IP</label>
+              <input value={regForm.host} onChange={e => setRegForm(p => ({...p, host: e.target.value}))} placeholder="192.168.1.x"/>
+            </div>
+            <div className="field">
+              <label>PSN Account ID (Base64)</label>
+              <input value={regForm.psnAccountId} onChange={e => setRegForm(p => ({...p, psnAccountId: e.target.value}))} placeholder="e.g. ab12CDef3ghIjk..."/>
+            </div>
+            <div className="field">
+              <label>Link Code</label>
+              <input value={regForm.pin} onChange={e => setRegForm(p => ({...p, pin: e.target.value}))} placeholder="8-digit code from console" maxLength={8}/>
+            </div>
+
+            {registering === 'working' && (
+              <div className="detect-status scanning" style={{display:'flex',alignItems:'center',gap:8,justifyContent:'center'}}>
+                <span className="spinner"/>Registering...
+              </div>
+            )}
+            {registering === 'success' && regResult && (
+              <div className="detect-status done">Registered successfully! Keys saved to console config.</div>
+            )}
+            {registering === 'failed' && (
+              <div className="detect-status err">Registration failed{regResult?.error ? ': ' + regResult.error : ''}</div>
+            )}
+
+            <div className="chiaki-reg-actions">
+              <button className="btn-accent" onClick={doRegister} disabled={registering === 'working' || chiakiMissing || !regForm.host || !regForm.pin}>
+                Register Console
+              </button>
+              <button className="btn-flat" onClick={() => { setRegistering(null); setRegResult(null); }}>Reset</button>
+            </div>
+          </>}
         </SidePanel>
       );
     }
@@ -1331,16 +1744,96 @@
       const [xboxInfo, setXboxInfo] = useState({ games:[], xboxAppFound:false, cloudGamingUrl:'https://www.xbox.com/play' });
       const [editingGame, setEditingGame] = useState(null);
       const [streamUrl, setStreamUrl] = useState('');
-      useEffect(() => { if(!show)return;(async()=>{ if(window.api){try{var xb=await window.api.detectXbox();setXboxInfo(xb);}catch(e){}}else setXboxInfo({games:[],xboxAppFound:true,cloudGamingUrl:'https://www.xbox.com/play'});})(); }, [show]);
-      var xboxGames=games.filter(g=>g.platform==='xbox');
-      var setGameStreamUrl=async()=>{if(!editingGame||!streamUrl)return;var updated={...editingGame,streamUrl};if(window.api){var u=await window.api.updateGame(updated);if(u)setGames(g=>g.map(x=>x.id===editingGame.id?u:x));}else setGames(g=>g.map(x=>x.id===editingGame.id?{...x,streamUrl}:x));setEditingGame(null);setStreamUrl('');flash('Cloud URL saved');};
+
+      useEffect(() => {
+        if (!show) return;
+        (async () => {
+          if (window.api) {
+            try { const xb = await window.api.detectXbox(); setXboxInfo(xb); } catch(e) {}
+          }
+        })();
+      }, [show]);
+
+      const xboxGames = games.filter(g => g.platform === 'xbox');
+      const cloudUrl = xboxInfo.cloudGamingUrl || 'https://www.xbox.com/play';
+
+      const setGameStreamUrl = async () => {
+        if (!editingGame || !streamUrl) return;
+        const updated = { ...editingGame, streamUrl };
+        if (window.api) {
+          const u = await window.api.updateGame(updated);
+          if (u) setGames(g => g.map(x => x.id === editingGame.id ? u : x));
+        } else {
+          setGames(g => g.map(x => x.id === editingGame.id ? { ...x, streamUrl } : x));
+        }
+        setEditingGame(null);
+        setStreamUrl('');
+        flash('Cloud URL saved');
+      };
+
+      const launchXcloud = (gameId, url) => {
+        if (window.api?.xcloudStart) {
+          window.api.xcloudStart({ gameId, url });
+          onClose();
+          flash('Launching xCloud...');
+        } else {
+          window.open(url, '_blank');
+          flash('Opening xCloud...');
+        }
+      };
+
       return (
         <SidePanel show={show} onClose={onClose} title="Xbox Cloud Gaming">
-          <div style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'14px',padding:'12px 14px',borderRadius:'8px',background:'var(--glass)'}}><div className="conn-icon" style={{background:'#0e6a0e',width:32,height:32,fontSize:11}}>X</div><div style={{flex:1}}><div style={{fontSize:'12px',fontWeight:600,color:'var(--text)'}}>Xbox Cloud Gaming</div><div style={{fontSize:'10px',color:'var(--text-3)'}}>xbox.com/play</div></div><button className="btn-sm primary" onClick={()=>{if(window.api&&window.api.xcloudStart){window.api.xcloudStart({gameId:'xcloud_hub',url:xboxInfo.cloudGamingUrl||'https://www.xbox.com/play'});onClose();flash('Launching xCloud...');}else{window.open(xboxInfo.cloudGamingUrl||'https://www.xbox.com/play','_blank');flash('Opening xCloud...');}}}>Launch</button><button className="btn-sm" onClick={()=>{window.open(xboxInfo.cloudGamingUrl||'https://www.xbox.com/play','_blank');flash('Opening in browser...');}}>Browser</button></div>
-          {xboxGames.length>0&&<div className="conn-section">Xbox Games</div>}
-          {xboxGames.map(g=><div key={g.id} className="conn-card"><div className="conn-icon" style={{background:'#0e6a0e',width:32,height:32,fontSize:11}}>X</div><div className="conn-info"><div className="conn-name">{g.name}</div><div className="conn-detail">{g.streamUrl?'Cloud URL set':'No cloud URL'}</div></div><div className="conn-actions">{g.streamUrl&&window.api&&window.api.xcloudStart&&<button className="btn-sm primary" onClick={()=>{window.api.xcloudStart({gameId:g.id,url:g.streamUrl});onClose();flash('Streaming '+g.name+'...');}}>Stream</button>}<button className="btn-sm" onClick={()=>{setEditingGame(g);setStreamUrl(g.streamUrl||'');}}>Config</button></div></div>)}
-          {editingGame&&<div style={{marginTop:'12px',padding:'14px',borderRadius:'10px',background:'var(--glass)',border:'1px solid var(--accent-border)'}}><div style={{fontSize:'12px',fontWeight:600,color:'var(--text)',marginBottom:'10px'}}>Stream: {editingGame.name}</div><div className="field"><label>xCloud URL</label><input value={streamUrl} onChange={e=>setStreamUrl(e.target.value)} placeholder="https://www.xbox.com/play/games/..."/></div><div style={{display:'flex',gap:'8px',justifyContent:'flex-end'}}><button className="btn-flat" onClick={()=>{setEditingGame(null);setStreamUrl('');}}>Cancel</button><button className="btn-accent" onClick={setGameStreamUrl}>Save</button></div></div>}
-          {xboxGames.length===0&&<div style={{textAlign:'center',padding:'20px',color:'var(--text-4)',fontSize:'11px'}}>No Xbox games.</div>}
+          <div className="chiaki-disc-card" style={{marginBottom:14}}>
+            <div className="conn-icon" style={{background:'#0e6a0e',width:36,height:36,fontSize:11}}>X</div>
+            <div className="chiaki-disc-info">
+              <div className="chiaki-disc-name">Xbox Cloud Gaming</div>
+              <div className="chiaki-disc-detail">xbox.com/play</div>
+            </div>
+            <div className="chiaki-disc-actions">
+              <button className="btn-sm primary" onClick={() => launchXcloud('xcloud_hub', cloudUrl)}>Launch</button>
+              <button className="btn-sm" onClick={() => { window.open(cloudUrl, '_blank'); flash('Opening in browser...'); }}>Browser</button>
+            </div>
+          </div>
+
+          {xboxGames.length > 0 && <div className="conn-section">Xbox Games</div>}
+
+          {xboxGames.map(g => (
+            <div key={g.id} className="conn-card">
+              <div className="conn-icon" style={{background:'#0e6a0e',width:32,height:32,fontSize:11}}>X</div>
+              <div className="conn-info">
+                <div className="conn-name">{g.name}</div>
+                <div className="conn-detail">{g.streamUrl ? 'Cloud URL set' : 'No cloud URL'}</div>
+              </div>
+              <div className="conn-actions">
+                {g.streamUrl && window.api?.xcloudStart && (
+                  <button className="btn-sm primary" onClick={() => launchXcloud(g.id, g.streamUrl)}>Stream</button>
+                )}
+                <button className="btn-sm" onClick={() => { setEditingGame(g); setStreamUrl(g.streamUrl || ''); }}>Config</button>
+              </div>
+            </div>
+          ))}
+
+          {editingGame && (
+            <div style={{marginTop:12,padding:14,borderRadius:10,background:'var(--glass)',border:'1px solid var(--accent-border)'}}>
+              <div style={{fontSize:12,fontWeight:600,color:'var(--text)',marginBottom:10}}>Stream: {editingGame.name}</div>
+              <div className="field">
+                <label>xCloud URL</label>
+                <input value={streamUrl} onChange={e => setStreamUrl(e.target.value)} placeholder="https://www.xbox.com/play/games/..."/>
+              </div>
+              <div style={{display:'flex',gap:8,justifyContent:'flex-end',marginTop:8}}>
+                <button className="btn-flat" onClick={() => { setEditingGame(null); setStreamUrl(''); }}>Cancel</button>
+                <button className="btn-accent" onClick={setGameStreamUrl}>Save</button>
+              </div>
+            </div>
+          )}
+
+          {xboxGames.length === 0 && !editingGame && (
+            <div className="chiaki-console-empty">
+              No Xbox games in your library.<br/>
+              <span style={{fontSize:10,color:'var(--text-4)',marginTop:4,display:'block'}}>Connect your Xbox account in Platforms to import games.</span>
+            </div>
+          )}
         </SidePanel>
       );
     }
@@ -1402,20 +1895,14 @@
         flash('Library exported');
       };
 
-      const doImport = async (id) => {
-        setImporting(id);
-        const r = await window.api.platformImport(id);
-        setImporting('');
-        if(r.error){flash(r.error);return;}
-        if(r.games) setGames(r.games);
-        // Standardized feedback breakdown
-        const newCount = Array.isArray(r.imported) ? r.imported.length : (r.added || 0);
-        const updatedCount = Array.isArray(r.updated) ? r.updated.length : (r.updated || 0);
-        let parts = [];
-        if (newCount) parts.push(newCount + ' new');
-        if (updatedCount) parts.push(updatedCount + ' updated');
-        flash('Import: ' + (parts.length ? parts.join(', ') : 'no changes'));
-        flash('Imported ' + (r.added || 0) + ' new games');
+      const doFileImport = async () => {
+        if (!window.api?.importLibrary) { flash('Import not available'); return; }
+        var r = await window.api.importLibrary();
+        if (r.cancelled) return;
+        if (r.error) { flash('Import failed: ' + r.error); return; }
+        if (r.games) setGames(r.games);
+        if (r.categories) setCats(r.categories);
+        flash('Library imported successfully');
       };
 
       const doClearCovers = async () => {
@@ -1462,233 +1949,370 @@
       const [collapsed, setCollapsed] = useState({});
       const toggleSection = id => setCollapsed(c => ({ ...c, [id]: !c[id] }));
       const chevron = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>;
-      const Section = ({ id, title, children }) => (
-        <div className="settings-section">
-          <div className={'settings-section-title' + (collapsed[id] ? ' collapsed' : '')} onClick={() => toggleSection(id)}>
-            <span>{title}</span>{chevron}
+      const Section = ({ id, title, children, sectionRef }) => {
+        const assignRef = (el) => {
+          if (typeof sectionRef === 'function') sectionRef(el);
+        };
+        return (
+          <div className="settings-section" ref={assignRef} data-section-id={id} id={`settings-${id}`}>
+            <div className={'settings-section-title' + (collapsed[id] ? ' collapsed' : '')} onClick={() => toggleSection(id)}>
+              <span>{title}</span>{chevron}
+            </div>
+            <div className={'settings-section-body' + (collapsed[id] ? ' collapsed' : '')}>{children}</div>
           </div>
-          <div className={'settings-section-body' + (collapsed[id] ? ' collapsed' : '')}>{children}</div>
-        </div>
-      );
+        );
+      };
+
+      const sections = [
+        { id: 'appearance', label: 'Appearance' },
+        { id: 'behavior', label: 'Behavior' },
+        { id: 'system', label: 'System' },
+        { id: 'metadata', label: 'Metadata & Art' },
+        { id: 'library', label: 'Library' },
+        { id: 'shortcuts', label: 'Shortcuts' },
+        { id: 'danger', label: 'Danger Zone' }
+      ];
+
+      const [activeSection, setActiveSection] = useState('appearance');
+      const sectionRefs = useRef({});
+      const contentRef = useRef(null);
+      const scrollToSection = id => {
+        const el = sectionRefs.current[id];
+        if (!el) return;
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        setActiveSection(id);
+      };
+      const setSectionRef = (id, el) => {
+        if (el) sectionRefs.current[id] = el;
+      };
+
+      useEffect(() => {
+        const root = contentRef.current;
+        if (!root) return;
+        const observer = new IntersectionObserver((entries) => {
+          const firstVisible = entries
+            .filter(e => e.isIntersecting)
+            .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+          if (firstVisible) {
+            const id = firstVisible.target.getAttribute('data-section-id');
+            if (id) setActiveSection(id);
+          }
+        }, { root, threshold: 0.4 });
+        sections.forEach(sec => {
+          const el = sectionRefs.current[sec.id];
+          if (el) observer.observe(el);
+        });
+        return () => observer.disconnect();
+      }, [sections, show]);
+
+      const renderSummary = () => {
+        const gameCount = Array.isArray(window._games) ? window._games.length : 0;
+        const themeName = (THEMES[local.theme || 'midnight'] || {}).label || 'Midnight';
+        const platformCounts = {};
+        if (Array.isArray(window._games)) {
+          window._games.forEach(g => {
+            const p = g.platform || 'unknown';
+            platformCounts[p] = (platformCounts[p] || 0) + 1;
+          });
+        }
+        const topPlatform = Object.entries(platformCounts).sort((a, b) => b[1] - a[1])[0];
+        const favCount = Array.isArray(window._games) ? window._games.filter(g => g.favorite).length : 0;
+        return (
+          <div className="settings-summary">
+            <div className="settings-summary-grid">
+              <div className="settings-summary-item">
+                <div className="settings-summary-label">Version</div>
+                <div className="settings-summary-value mono">v{appVersion}</div>
+              </div>
+              <div className="settings-summary-item">
+                <div className="settings-summary-label">Library</div>
+                <div className="settings-summary-value">{gameCount} game{gameCount !== 1 ? 's' : ''}</div>
+              </div>
+              <div className="settings-summary-item">
+                <div className="settings-summary-label">Favorites</div>
+                <div className="settings-summary-value">{favCount}</div>
+              </div>
+              <div className="settings-summary-item">
+                <div className="settings-summary-label">Top Platform</div>
+                <div className="settings-summary-value">{topPlatform ? topPlatform[0] : '—'}</div>
+              </div>
+            </div>
+            <div className="settings-summary-actions">
+              <button className="settings-summary-btn" onClick={onSync} title="Sync playtime from Steam">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+                Sync Playtime
+              </button>
+              <button className="settings-summary-btn" onClick={onFetchMetadata} title="Fetch metadata for all games">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Fetch Metadata
+              </button>
+              <button className="settings-summary-btn" onClick={onOpenPlatforms} title="Manage connected accounts">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+                Platforms
+              </button>
+              <button className="settings-summary-btn" onClick={onOpenDetect} title="Detect installed games">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                Detect Games
+              </button>
+            </div>
+          </div>
+        );
+      };
 
       return (
         <SidePanel show={show} onClose={onClose} title="Settings" wide>
-          <div className="settings-quick-actions">
-            <button className="settings-qa-btn" onClick={onOpenDetect}>{I.scan}<span>Detect Games</span></button>
-            <button className="settings-qa-btn" onClick={()=>{if(onSync)onSync();}}>{I.sync}<span>Sync Playtime</span></button>
-            <button className="settings-qa-btn" onClick={onOpenPlatforms}>{I.link}<span>Platforms</span></button>
-            <button className="settings-qa-btn" onClick={()=>{if(onFetchMetadata)onFetchMetadata();}}>{I.download}<span>Fetch Metadata</span></button>
-          </div>
-          <Section id="appearance" title="Appearance">
-            <div className="theme-grid" style={{padding:'4px 8px 10px'}}>
-              {Object.entries(THEMES).map(([key, t]) => (
-                <button key={key} className={'theme-swatch' + ((local.theme || 'midnight') === key ? ' active' : '')} onClick={() => { update('theme', key); applyTheme(key); }} title={t.label}>
-                  <div className="theme-swatch-preview">
-                    <div style={{background:t.preview[0],flex:1}}/>
-                    <div style={{background:t.preview[2],flex:1}}/>
-                  </div>
-                  <div className="theme-swatch-accent" style={{background:t.accent}}/>
-                  <div className="theme-swatch-label">{t.label}</div>
+          <div className="settings-layout">
+            <div className="settings-nav" role="tablist">
+              {sections.map(sec => (
+                <button key={sec.id} className={sec.id === activeSection ? 'active' : ''} onClick={() => scrollToSection(sec.id)}>
+                  {sec.label}
                 </button>
               ))}
             </div>
-            <div className="settings-row">
-              <div className="settings-row-info"><div className="settings-row-label">Default View</div><div className="settings-row-desc">View shown on startup</div></div>
-              <select className="settings-select" value={local.defaultView || 'orbit'} onChange={e => update('defaultView', e.target.value)}>
-                <option value="orbit">Galaxy Orbit</option>
-                <option value="cards">Card Grid</option>
-              </select>
-            </div>
-            <div className="settings-row">
-              <div className="settings-row-info"><div className="settings-row-label">Star Density</div><div className="settings-row-desc">Background star count</div></div>
-              <select className="settings-select" value={local.starDensity || 'normal'} onChange={e => update('starDensity', e.target.value)}>
-                <option value="low">Low</option>
-                <option value="normal">Normal</option>
-                <option value="high">High</option>
-              </select>
-            </div>
-            <div className="settings-row">
-              <div className="settings-row-info"><div className="settings-row-label">Toolbar Position</div><div className="settings-row-desc">Place toolbar at screen edge</div></div>
-              <select className="settings-select" value={local.toolbarPosition || 'top'} onChange={e => update('toolbarPosition', e.target.value)}>
-                <option value="top">Top</option>
-                <option value="bottom">Bottom</option>
-                <option value="left">Left</option>
-                <option value="right">Right</option>
-              </select>
-            </div>
-            <div className="settings-row">
-              <div className="settings-row-info"><div className="settings-row-label">UI Scale</div><div className="settings-row-desc">Font size and zoom level</div></div>
-              <select className="settings-select" value={local.uiScale || '1'} onChange={e => { update('uiScale', e.target.value); applyUiScale(e.target.value); }}>
-                <option value="0.9">Small</option>
-                <option value="1">Normal</option>
-                <option value="1.1">Large</option>
-                <option value="1.25">X-Large</option>
-              </select>
-            </div>
-            <div className="settings-row">
-              <div className="settings-row-info"><div className="settings-row-label">Animations</div><div className="settings-row-desc">Orbit drift and transitions</div></div>
-              <Toggle value={local.showAnimations !== false} onChange={v => update('showAnimations', v)} />
-            </div>
-          </Section>
+            <div className="settings-content" ref={contentRef}>
+              {renderSummary()}
 
-          <Section id="behavior" title="Behavior">
-            <div className="settings-row">
-              <div className="settings-row-info"><div className="settings-row-label">Default Tab</div><div className="settings-row-desc">Starting filter when app opens</div></div>
-              <select className="settings-select" value={local.defaultTab || 'all'} onChange={e => update('defaultTab', e.target.value)}>
-                <option value="all">All</option>
-                <option value="favorites">Favorites</option>
-                <option value="recent">Recent</option>
-              </select>
-            </div>
-            <div className="settings-row">
-              <div className="settings-row-info"><div className="settings-row-label">Auto-Sync Playtime</div><div className="settings-row-desc">Sync Steam playtime on launch</div></div>
-              <Toggle value={!!local.autoSyncPlaytime} onChange={v => update('autoSyncPlaytime', v)} />
-            </div>
-            <div className="settings-row">
-              <div className="settings-row-info"><div className="settings-row-label">Minimize on Game Launch</div><div className="settings-row-desc">Hide window when starting a game</div></div>
-              <Toggle value={!!local.minimizeOnLaunch} onChange={v => update('minimizeOnLaunch', v)} />
-            </div>
-            <div className="settings-row">
-              <div className="settings-row-info"><div className="settings-row-label">Discord Rich Presence</div><div className="settings-row-desc">Show currently playing game on Discord</div></div>
-              <Toggle value={!!local.discordPresence} onChange={v => update('discordPresence', v)} />
-            </div>
-          </Section>
-
-          <Section id="system" title="System">
-            <div className="settings-row">
-              <div className="settings-row-info"><div className="settings-row-label">Launch on Startup</div><div className="settings-row-desc">Start Cereal when Windows boots</div></div>
-              <Toggle value={!!local.launchOnStartup} onChange={v => update('launchOnStartup', v)} />
-            </div>
-            <div className="settings-row">
-              <div className="settings-row-info"><div className="settings-row-label">Close to System Tray</div><div className="settings-row-desc">Keep running in background when closed</div></div>
-              <Toggle value={!!local.closeToTray} onChange={v => update('closeToTray', v)} />
-            </div>
-            <div className="settings-row">
-              <div className="settings-row-info"><div className="settings-row-label">Start Minimized</div><div className="settings-row-desc">Launch hidden to system tray</div></div>
-              <Toggle value={!!local.startMinimized} onChange={v => update('startMinimized', v)} />
-            </div>
-            <div className="settings-row">
-              <div className="settings-row-info"><div className="settings-row-label">Remember Window Position</div><div className="settings-row-desc">Restore window bounds on startup</div></div>
-              <button className={'settings-toggle'+((local.rememberWindowBounds||local.rememberWindowBounds===undefined)?' on':'')} onClick={()=>update('rememberWindowBounds', !(local.rememberWindowBounds||local.rememberWindowBounds===undefined))} />
-            </div>
-            <div className="settings-row">
-              <div className="settings-row-info">
-                <div className="settings-row-label">Software Update</div>
-                <div className="settings-row-desc">
-                  {updateStatus === 'checking' && 'Checking for updates...'}
-                  {updateStatus === 'downloading' && `Downloading update... ${updateProgress}%`}
-                  {updateStatus === 'ready' && 'Update ready — restart to apply'}
-                  {updateStatus === 'up-to-date' && `v${appVersion} is up to date`}
-                  {updateStatus === 'error' && (updateError || 'Update check failed')}
-                  {!updateStatus && `v${appVersion}`}
+              <Section id="appearance" title="Appearance" sectionRef={el => setSectionRef('appearance', el)}>
+                <div className="theme-grid" style={{padding:'4px 8px 10px'}}>
+                  {Object.entries(THEMES).map(([key, t]) => (
+                    <button key={key} className={'theme-swatch' + ((local.theme || 'midnight') === key ? ' active' : '')} onClick={() => { update('theme', key); applyTheme(key); }} title={t.label}>
+                      <div className="theme-swatch-preview">
+                        <div style={{background:t.preview[0],flex:1}} />
+                        <div style={{background:t.preview[2],flex:1}} />
+                      </div>
+                      <div className="theme-swatch-accent" style={{background:t.accent}} />
+                      <div className="theme-swatch-label">{t.label}</div>
+                    </button>
+                  ))}
                 </div>
-              </div>
-              {updateStatus === 'ready'
-                ? <button className="settings-btn" style={{background:'var(--accent)',color:'#fff'}} onClick={() => window.api?.installUpdate?.()}>Restart</button>
-                : <button className="settings-btn" disabled={updateStatus === 'checking' || updateStatus === 'downloading'} onClick={() => { setUpdateStatus('checking'); setUpdateError(null); window.api?.checkForUpdate?.(); }}>Check for Updates</button>
-              }
-            </div>
-            <div className="settings-row">
-              <div className="settings-row-info">
-                <div className="settings-row-label">chiaki-ng Update</div>
-                <div className="settings-row-desc">
-                  {chiakiUpd?.checking && 'Checking...'}
-                  {chiakiUpd?.updating && 'Downloading and installing...'}
-                  {chiakiUpd?.done && `Updated to ${chiakiUpd.version}`}
-                  {chiakiUpd?.error && chiakiUpd.error}
-                  {chiakiUpd?.hasUpdate && `${chiakiUpd.current || 'unknown'} → ${chiakiUpd.latest}`}
-                  {chiakiUpd && !chiakiUpd.checking && !chiakiUpd.updating && !chiakiUpd.done && !chiakiUpd.error && !chiakiUpd.hasUpdate && `${chiakiUpd.current || 'not installed'} is up to date`}
-                  {!chiakiUpd && 'PlayStation Remote Play engine'}
+                <div className="settings-row">
+                  <div className="settings-row-info"><div className="settings-row-label">Default View</div><div className="settings-row-desc">View shown on startup</div></div>
+                  <select className="settings-select" value={local.defaultView || 'orbit'} onChange={e => update('defaultView', e.target.value)}>
+                    <option value="orbit">Galaxy Orbit</option>
+                    <option value="cards">Card Grid</option>
+                  </select>
                 </div>
-              </div>
-              {chiakiUpd?.hasUpdate
-                ? <button className="settings-btn" style={{background:'var(--accent)',color:'#fff'}} onClick={async () => { setChiakiUpd({updating:true}); const r = await window.api?.chiakiUpdate?.(); if (r?.ok) setChiakiUpd({done:true,version:r.version}); else setChiakiUpd({error:r?.error||'Update failed'}); }}>Update</button>
-                : <button className="settings-btn" disabled={!!chiakiUpd?.checking || !!chiakiUpd?.updating} onClick={async () => { setChiakiUpd({checking:true}); const r = await window.api?.chiakiCheckUpdate?.(); if (r?.error) setChiakiUpd({error:r.error}); else setChiakiUpd(r); }}>Check</button>
-              }
-            </div>
-          </Section>
-
-          <Section id="metadata" title="Metadata & Art">
-            <div className="settings-row">
-              <div className="settings-row-info"><div className="settings-row-label">Metadata Source</div><div className="settings-row-desc">Where to fetch game info and covers</div></div>
-              <select className="settings-select" value={local.metadataSource || 'steam'} onChange={e => update('metadataSource', e.target.value)}>
-                <option value="steam">Steam Store</option>
-                <option value="wikipedia">Wikipedia</option>
-              </select>
-            </div>
-            <div style={{margin:'2px 8px 10px',fontSize:'10px',color:'var(--text-4)',lineHeight:1.6}}>
-              {(local.metadataSource === 'steam' || !local.metadataSource) && <><strong style={{color:'var(--text-3)'}}>Steam Store</strong> &mdash; No account needed. Best covers, screenshots, and Metacritic scores.</>}
-              {local.metadataSource === 'wikipedia' && <><strong style={{color:'var(--text-3)'}}>Wikipedia</strong> &mdash; No account needed. Descriptions, developer, publisher, and genres.</>}
-            </div>
-            <div style={{padding:'0 8px 8px',fontSize:11,color:'var(--text-3)',lineHeight:1.6}}>
-              <strong>SteamGridDB</strong> &mdash; Custom game art search. <a href="#" onClick={e=>{e.preventDefault();window.api?.openExternal&&window.api.openExternal('https://www.steamgriddb.com/profile/preferences/api');}} style={{color:'var(--accent)',textDecoration:'underline',cursor:'pointer'}}>Get your API key here</a>
-            </div>
-            <div style={{padding:'0 8px 8px'}}>
-              <div className="field" style={{marginBottom:8}}>
-                <label>SteamGridDB API Key</label>
-                <div style={{display:'flex',gap:6,alignItems:'center'}}>
-                  <input type="password" value={sgKey} onChange={e=>{setSgKey(e.target.value);setSgStatus(null);}} placeholder={sgSavedKey?sgSavedKey.slice(0,6)+'...':'Paste API key'} style={{flex:1}} />
-                  <button className="btn-flat" onClick={async()=>{ if(!window.api?.readClipboard)return flash('Clipboard not available'); const txt=await window.api.readClipboard(); if(!txt)return flash('Clipboard empty'); const k=txt.trim(); setSgKey(k); setSgStatus('checking'); const vr=await window.api.validateApiKey('steamgriddb',k); if(vr?.ok){const sr=await window.api.saveApiKey('steamgriddb',k);if(sr?.ok){setSgSavedKey(k);flash('SteamGridDB key saved');}}else{setSgStatus('invalid');flash('Key is invalid');} }}>Paste</button>
+                <div className="settings-row">
+                  <div className="settings-row-info"><div className="settings-row-label">Star Density</div><div className="settings-row-desc">Background star count</div></div>
+                  <select className="settings-select" value={local.starDensity || 'normal'} onChange={e => update('starDensity', e.target.value)}>
+                    <option value="low">Low</option>
+                    <option value="normal">Normal</option>
+                    <option value="high">High</option>
+                  </select>
                 </div>
-              </div>
-              <div style={{display:'flex',gap:6,alignItems:'center'}}>
-                <button className="btn-sm" onClick={async()=>{ const k=sgKey||sgSavedKey; if(!k){flash('No key to validate');return;} setSgStatus('checking'); const r=await window.api.validateApiKey('steamgriddb',k); setSgStatus(r.ok?'valid':('invalid: '+(r.error||'unknown'))); }}>Validate</button>
-                <button className="btn-sm primary" onClick={async()=>{ if(!sgKey){flash('Enter a key first');return;} const r=await window.api.saveApiKey('steamgriddb',sgKey); if(r?.ok){setSgSavedKey(sgKey);flash('Key saved securely');}else flash('Save failed: '+r?.error); }}>Save</button>
-                {sgSavedKey&&<button className="btn-sm danger" onClick={async()=>{ const r=await window.api.deleteApiKey('steamgriddb'); if(r?.ok){setSgSavedKey(null);setSgKey('');flash('Key deleted');}else flash('Delete failed'); }}>Delete</button>}
-                {sgStatus&&<span style={{fontSize:10,marginLeft:4,color:sgStatus==='valid'?'var(--green)':sgStatus==='checking'?'var(--text-3)':'var(--red)'}}>{sgStatus}</span>}
-              </div>
-              {sgSavedKey&&<div style={{marginTop:6,fontSize:10,color:'var(--text-4)'}}>Saved: {sgSavedKey.slice(0,6)}...</div>}
-            </div>
-          </Section>
-
-          <Section id="library" title="Library Data">
-            <div className="settings-row">
-              <div className="settings-row-info"><div className="settings-row-label">Export Library</div><div className="settings-row-desc">Save games and settings to a file</div></div>
-              <button className="btn-sm primary" onClick={doExport}>Export</button>
-            </div>
-            <div className="settings-row">
-              <div className="settings-row-info"><div className="settings-row-label">Import Library</div><div className="settings-row-desc">Load games from an exported file</div></div>
-              <button className="btn-sm" onClick={doImport}>Import</button>
-            </div>
-            {dataPath && <div className="settings-row">
-              <div className="settings-row-info"><div className="settings-row-label">Data Location</div><div className="settings-row-desc" style={{wordBreak:'break-all',fontSize:'9px'}}>{dataPath}</div></div>
-            </div>}
-          </Section>
-
-          <Section id="shortcuts" title="Keyboard Shortcuts">
-            <div style={{display:'grid',gridTemplateColumns:'auto 1fr',gap:'6px 16px',fontSize:11,color:'var(--text-3)',padding:'4px 8px 8px'}}>
-              <kbd style={{padding:'2px 8px',borderRadius:4,background:'var(--glass)',border:'1px solid var(--glass-border)',color:'var(--text-2)',fontFamily:'inherit',fontSize:10}}>Ctrl+K</kbd><span>Search games</span>
-              <kbd style={{padding:'2px 8px',borderRadius:4,background:'var(--glass)',border:'1px solid var(--glass-border)',color:'var(--text-2)',fontFamily:'inherit',fontSize:10}}>Ctrl+,</kbd><span>Open settings</span>
-              <kbd style={{padding:'2px 8px',borderRadius:4,background:'var(--glass)',border:'1px solid var(--glass-border)',color:'var(--text-2)',fontFamily:'inherit',fontSize:10}}>Escape</kbd><span>Close panel / overlay</span>
-              <kbd style={{padding:'2px 8px',borderRadius:4,background:'var(--glass)',border:'1px solid var(--glass-border)',color:'var(--text-2)',fontFamily:'inherit',fontSize:10}}>&uarr; &darr;</kbd><span>Navigate search results</span>
-              <kbd style={{padding:'2px 8px',borderRadius:4,background:'var(--glass)',border:'1px solid var(--glass-border)',color:'var(--text-2)',fontFamily:'inherit',fontSize:10}}>Enter</kbd><span>Select search result</span>
-            </div>
-          </Section>
-
-          <Section id="danger" title="Danger Zone">
-            <div style={{padding:'4px 8px'}}>
-              <div className="settings-row" style={{marginBottom:4}}>
-                <div className="settings-row-info"><div className="settings-row-label" style={{color:'var(--red)'}}>Reset All Covers</div><div className="settings-row-desc">Clear custom art</div></div>
-                <button className={'btn-sm danger'} onClick={doClearCovers}>{confirmClearCovers ? 'Confirm?' : 'Reset'}</button>
-              </div>
-              <div className="settings-row" style={{marginBottom:4}}>
-                <div className="settings-row-info"><div className="settings-row-label" style={{color:'var(--red)'}}>Clear All Games</div><div className="settings-row-desc">Remove every game from your library</div></div>
-                <button className={'btn-sm danger'} onClick={doClearAll}>{confirmClear ? 'Confirm?' : 'Clear'}</button>
-              </div>
-              <div className="settings-row">
-                <div className="settings-row-info"><div className="settings-row-label" style={{color:'var(--red)'}}>Reset Settings</div><div className="settings-row-desc">Restore all options to defaults</div></div>
-                <div style={{display:'flex',gap:8}}>
-                  <button className="btn-sm danger" onClick={doReset}>Reset</button>
-                  <button className="btn-sm" onClick={async ()=>{ if(!confirm('Re-run setup wizard? This will open the first-run setup flow. Continue?')) return; if (window.api?.saveSettings) { await window.api.saveSettings({ firstRun: true }); } if (typeof onRunWizard === 'function') onRunWizard(true); flash('Setup wizard will run'); }}>Run Setup Wizard</button>
+                <div className="settings-row">
+                  <div className="settings-row-info"><div className="settings-row-label">Toolbar Position</div><div className="settings-row-desc">Place toolbar at screen edge</div></div>
+                  <select className="settings-select" value={local.toolbarPosition || 'top'} onChange={e => update('toolbarPosition', e.target.value)}>
+                    <option value="top">Top</option>
+                    <option value="bottom">Bottom</option>
+                    <option value="left">Left</option>
+                    <option value="right">Right</option>
+                  </select>
                 </div>
+                <div className="settings-row">
+                  <div className="settings-row-info"><div className="settings-row-label">UI Scale</div><div className="settings-row-desc">Font size and zoom level</div></div>
+                  <select className="settings-select" value={local.uiScale || '1'} onChange={e => { update('uiScale', e.target.value); applyUiScale(e.target.value); }}>
+                    <option value="0.9">Small</option>
+                    <option value="1">Normal</option>
+                    <option value="1.1">Large</option>
+                    <option value="1.25">X-Large</option>
+                  </select>
+                </div>
+                <div className="settings-row">
+                  <div className="settings-row-info"><div className="settings-row-label">Animations</div><div className="settings-row-desc">Orbit drift and transitions</div></div>
+                  <Toggle value={local.showAnimations !== false} onChange={v => update('showAnimations', v)} />
+                </div>
+              </Section>
+
+              <Section id="behavior" title="Behavior" sectionRef={el => setSectionRef('behavior', el)}>
+                <div className="settings-row">
+                  <div className="settings-row-info"><div className="settings-row-label">Default Tab</div><div className="settings-row-desc">Starting filter when app opens</div></div>
+                  <select className="settings-select" value={local.defaultTab || 'all'} onChange={e => update('defaultTab', e.target.value)}>
+                    <option value="all">All</option>
+                    <option value="favorites">Favorites</option>
+                    <option value="recent">Recent</option>
+                  </select>
+                </div>
+                <div className="settings-row">
+                  <div className="settings-row-info"><div className="settings-row-label">Auto-Sync Playtime</div><div className="settings-row-desc">Sync Steam playtime on launch</div></div>
+                  <Toggle value={!!local.autoSyncPlaytime} onChange={v => update('autoSyncPlaytime', v)} />
+                </div>
+                <div className="settings-row">
+                  <div className="settings-row-info"><div className="settings-row-label">Minimize on Game Launch</div><div className="settings-row-desc">Hide window when starting a game</div></div>
+                  <Toggle value={!!local.minimizeOnLaunch} onChange={v => update('minimizeOnLaunch', v)} />
+                </div>
+                <div className="settings-row">
+                  <div className="settings-row-info"><div className="settings-row-label">Discord Rich Presence</div><div className="settings-row-desc">Show currently playing game on Discord</div></div>
+                  <Toggle value={!!local.discordPresence} onChange={v => update('discordPresence', v)} />
+                </div>
+              </Section>
+
+              <Section id="system" title="System" sectionRef={el => setSectionRef('system', el)}>
+                <div className="settings-row">
+                  <div className="settings-row-info"><div className="settings-row-label">Launch on Startup</div><div className="settings-row-desc">Start Cereal when Windows boots</div></div>
+                  <Toggle value={!!local.launchOnStartup} onChange={v => update('launchOnStartup', v)} />
+                </div>
+                <div className="settings-row">
+                  <div className="settings-row-info"><div className="settings-row-label">Close to System Tray</div><div className="settings-row-desc">Keep running in background when closed</div></div>
+                  <Toggle value={!!local.closeToTray} onChange={v => update('closeToTray', v)} />
+                </div>
+                <div className="settings-row">
+                  <div className="settings-row-info"><div className="settings-row-label">Start Minimized</div><div className="settings-row-desc">Launch hidden to system tray</div></div>
+                  <Toggle value={!!local.startMinimized} onChange={v => update('startMinimized', v)} />
+                </div>
+                <div className="settings-row">
+                  <div className="settings-row-info"><div className="settings-row-label">Remember Window Position</div><div className="settings-row-desc">Restore window bounds on startup</div></div>
+                  <Toggle value={local.rememberWindowBounds !== false} onChange={v => update('rememberWindowBounds', v)} />
+                </div>
+                <div className="settings-row">
+                  <div className="settings-row-info">
+                    <div className="settings-row-label">Software Update</div>
+                    <div className="settings-row-desc">
+                      {updateStatus === 'checking' && 'Checking for updates...'}
+                      {updateStatus === 'downloading' && `Downloading... ${updateProgress}%`}
+                      {updateStatus === 'ready' && 'Update ready to install'}
+                      {updateStatus === 'up-to-date' && 'You are on the latest version'}
+                      {updateStatus === 'error' && (updateError || 'Update check failed')}
+                    </div>
+                  </div>
+                  <div style={{display:'flex',gap:8}}>
+                    <button className="btn-sm" onClick={async()=>{ setUpdateStatus('checking'); await window.api?.checkForUpdates?.(); }}>Check</button>
+                    {updateStatus === 'ready' && <button className="btn-sm primary" onClick={()=>window.api?.installUpdates?.()}>Install</button>}
+                  </div>
+                </div>
+                <div className="settings-row">
+                  <div className="settings-row-info">
+                    <div className="settings-row-label">chiaki-ng (Remote Play)</div>
+                    <div className="settings-row-desc">
+                      {!chiakiUpd && 'PlayStation Remote Play engine'}
+                      {chiakiUpd?.checking && 'Checking for updates...'}
+                      {chiakiUpd?.hasUpdate && `Update available: v${chiakiUpd.latest} (current: v${chiakiUpd.current})`}
+                      {chiakiUpd?.hasUpdate === false && `Up to date (v${chiakiUpd.current})`}
+                      {chiakiUpd?.updating && 'Updating...'}
+                      {chiakiUpd?.done && `Updated to v${chiakiUpd.version}`}
+                      {chiakiUpd?.error && `Error: ${chiakiUpd.error}`}
+                    </div>
+                  </div>
+                  <div style={{display:'flex',gap:8}}>
+                    <button className="btn-sm" disabled={chiakiUpd?.checking || chiakiUpd?.updating} onClick={async()=>{
+                      setChiakiUpd({checking:true});
+                      try {
+                        const s = await window.api?.getChiakiStatus?.();
+                        if (!s?.installed) { setChiakiUpd({error:'Not installed'}); return; }
+                        const r = await window.api?.chiakiCheckUpdate?.();
+                        if (r?.hasUpdate) setChiakiUpd({current:r.current,latest:r.latest,hasUpdate:true});
+                        else setChiakiUpd({current:r?.current||s.version,hasUpdate:false});
+                      } catch(e) { setChiakiUpd({error:e.message}); }
+                    }}>Check</button>
+                    {chiakiUpd?.hasUpdate && <button className="btn-sm primary" disabled={chiakiUpd?.updating} onClick={async()=>{
+                      setChiakiUpd(prev=>({...prev,updating:true}));
+                      try {
+                        const r = await window.api?.chiakiUpdate?.();
+                        if (r?.ok) setChiakiUpd({done:true,version:r.version});
+                        else setChiakiUpd({error:r?.error||'Update failed'});
+                      } catch(e) { setChiakiUpd({error:e.message}); }
+                    }}>Update</button>}
+                  </div>
+                </div>
+              </Section>
+
+              <Section id="metadata" title="Metadata & Art" sectionRef={el => setSectionRef('metadata', el)}>
+                <div className="settings-row">
+                  <div className="settings-row-info">
+                    <div className="settings-row-label">Metadata Source</div>
+                    <div className="settings-row-desc">
+                      {(local.metadataSource === 'steam' || !local.metadataSource) && 'Steam Store — covers, screenshots, scores'}
+                      {local.metadataSource === 'wikipedia' && 'Wikipedia — descriptions, developer, genres'}
+                    </div>
+                  </div>
+                  <select className="settings-select" value={local.metadataSource || 'steam'} onChange={e => update('metadataSource', e.target.value)}>
+                    <option value="steam">Steam Store</option>
+                    <option value="wikipedia">Wikipedia</option>
+                  </select>
+                </div>
+                <div className="settings-row" style={{flexDirection:'column',alignItems:'stretch'}}>
+                  <div className="settings-row-info" style={{marginBottom:8}}>
+                    <div className="settings-row-label">SteamGridDB API Key</div>
+                    <div className="settings-row-desc">Custom game art search. <a href="#" onClick={e=>{e.preventDefault();window.api?.openExternal&&window.api.openExternal('https://www.steamgriddb.com/profile/preferences/api');}} style={{color:'var(--accent)',textDecoration:'underline'}}>Get a key</a></div>
+                  </div>
+                  <div className="sgdb-key-row">
+                    <input type="password" value={sgKey} onChange={e=>{setSgKey(e.target.value);setSgStatus(null);}} placeholder={sgSavedKey?sgSavedKey.slice(0,6)+'...':'Paste API key'} />
+                    <button className="btn-sm" onClick={async()=>{ if(!window.api?.readClipboard)return flash('Clipboard not available'); const txt=await window.api.readClipboard(); if(!txt)return flash('Clipboard empty'); const k=txt.trim(); setSgKey(k); setSgStatus('checking'); const vr=await window.api.validateApiKey('steamgriddb',k); if(vr?.ok){const sr=await window.api.saveApiKey('steamgriddb',k);if(sr?.ok){setSgSavedKey(k);flash('SteamGridDB key saved');}}else{setSgStatus('invalid');flash('Key is invalid');} }}>Paste</button>
+                  </div>
+                  <div className="sgdb-key-actions">
+                    <button className="btn-sm" onClick={async()=>{ const k=sgKey||sgSavedKey; if(!k){flash('No key to validate');return;} setSgStatus('checking'); const r=await window.api.validateApiKey('steamgriddb',k); setSgStatus(r.ok?'valid':('invalid: '+(r.error||'unknown'))); }}>Validate</button>
+                    <button className="btn-sm primary" onClick={async()=>{ if(!sgKey){flash('Enter a key first');return;} const r=await window.api.saveApiKey('steamgriddb',sgKey); if(r?.ok){setSgSavedKey(sgKey);flash('Key saved securely');}else flash('Save failed: '+r?.error); }}>Save</button>
+                    {sgSavedKey&&<button className="btn-sm danger" onClick={async()=>{ const r=await window.api.deleteApiKey('steamgriddb'); if(r?.ok){setSgSavedKey(null);setSgKey('');flash('Key deleted');}else flash('Delete failed'); }}>Delete</button>}
+                    {sgStatus&&<span className="sgdb-key-status" style={{color:sgStatus==='valid'?'var(--green)':sgStatus==='checking'?'var(--text-3)':'var(--red)'}}>{sgStatus}</span>}
+                  </div>
+                  {sgSavedKey&&<div className="sgdb-key-saved">Saved: {sgSavedKey.slice(0,6)}...</div>}
+                </div>
+              </Section>
+
+              <Section id="library" title="Library Data" sectionRef={el => setSectionRef('library', el)}>
+                <div className="settings-row">
+                  <div className="settings-row-info"><div className="settings-row-label">Export Library</div><div className="settings-row-desc">Save games, categories, and settings to a JSON file</div></div>
+                  <button className="btn-sm primary" onClick={doExport}>Export</button>
+                </div>
+                <div className="settings-row">
+                  <div className="settings-row-info"><div className="settings-row-label">Import Library</div><div className="settings-row-desc">Load games from a previously exported file</div></div>
+                  <button className="btn-sm" onClick={doFileImport}>Import</button>
+                </div>
+                {dataPath && (
+                  <div className="settings-row">
+                    <div className="settings-row-info">
+                      <div className="settings-row-label">Data Location</div>
+                      <div className="settings-row-desc" style={{wordBreak:'break-all',fontFamily:'Consolas, monospace',fontSize:9,letterSpacing:'0.3px'}}>{dataPath}</div>
+                    </div>
+                  </div>
+                )}
+              </Section>
+
+              <Section id="shortcuts" title="Keyboard Shortcuts" sectionRef={el => setSectionRef('shortcuts', el)}>
+                <div className="settings-shortcuts-grid">
+                  <kbd className="settings-kbd">Ctrl+K</kbd><span>Search games</span>
+                  <kbd className="settings-kbd">Ctrl+N</kbd><span>Add a new game</span>
+                  <kbd className="settings-kbd">Ctrl+,</kbd><span>Open settings</span>
+                  <kbd className="settings-kbd">Escape</kbd><span>Close panel / overlay</span>
+                  <kbd className="settings-kbd">&uarr; &darr;</kbd><span>Navigate search results</span>
+                  <kbd className="settings-kbd">Enter</kbd><span>Select / confirm</span>
+                  <kbd className="settings-kbd">F12</kbd><span>Toggle developer tools</span>
+                </div>
+              </Section>
+
+              <Section id="danger" title="Danger Zone" sectionRef={el => setSectionRef('danger', el)}>
+                <div className="settings-danger-grid">
+                  <div className="settings-danger-card">
+                    <h4>Reset All Covers</h4>
+                    <p>Remove custom artwork and revert to default covers.</p>
+                    <div className="settings-danger-actions">
+                      <button className={'btn-sm danger'} onClick={doClearCovers}>{confirmClearCovers ? 'Are you sure?' : 'Reset Covers'}</button>
+                    </div>
+                  </div>
+                  <div className="settings-danger-card">
+                    <h4>Clear All Games</h4>
+                    <p>Permanently delete every game from your library. This can be undone immediately after.</p>
+                    <div className="settings-danger-actions">
+                      <button className={'btn-sm danger'} onClick={doClearAll}>{confirmClear ? 'Are you sure?' : 'Clear Library'}</button>
+                    </div>
+                  </div>
+                  <div className="settings-danger-card">
+                    <h4>Reset Settings</h4>
+                    <p>Restore all preferences to factory defaults.</p>
+                    <div className="settings-danger-actions">
+                      <button className="btn-sm danger" onClick={doReset}>Reset All</button>
+                      <button className="btn-sm" onClick={async ()=>{ if(!confirm('Re-run the first-time setup wizard?')) return; if (window.api?.saveSettings) { await window.api.saveSettings({ firstRun: true }); } if (typeof onRunWizard === 'function') onRunWizard(true); flash('Setup wizard will run'); }}>Re-run Wizard</button>
+                    </div>
+                  </div>
+                </div>
+              </Section>
+
+              <div className="settings-about">
+                <div className="settings-about-logo">Cereal</div>
+                <div className="settings-about-ver">v{appVersion}</div>
+                <div className="settings-about-author">Made with cereal by Andrew</div>
               </div>
             </div>
-          </Section>
-
-          <div className="settings-about">
-            <div className="settings-about-logo">Cereal</div>
-            <div className="settings-about-ver">v{appVersion}</div>
-            <div className="settings-about-author">by Andrew</div>
           </div>
         </SidePanel>
       );

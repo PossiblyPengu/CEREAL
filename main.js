@@ -429,14 +429,36 @@ function resolveChiakiExe(fallbackPath) {
 }
 
 function buildChiakiArgs(game, config) {
-  const args = [];
+  // chiaki-ng CLI: chiaki stream <nickname> <host> [options]
+  // 'nickname' identifies the registered console profile in chiaki's config.
+  // If we have registkey+morning we pass them directly; otherwise nickname is required.
+  const nickname = game.chiakiNickname || game.chiakiProfile || '';
+  const host = game.chiakiHost || '';
+  if (!host) return []; // No host = open GUI mode
 
-  // Pre-built chiaki-ng uses standard named options, no subcommands
-  if (game.chiakiHost)      args.push(`--host=${game.chiakiHost}`);
-  if (game.chiakiRegistKey) args.push(`--regist-key=${game.chiakiRegistKey}`);
-  if (game.chiakiMorning)   args.push(`--morning=${game.chiakiMorning}`);
-  if (game.chiakiProfile)   args.push(`--profile=${game.chiakiProfile}`);
-  if (game.chiakiFullscreen !== false && args.length > 0) args.push('--fullscreen');
+  const args = ['stream'];
+
+  // Positional: nickname then host
+  args.push(nickname || 'default');
+  args.push(host);
+
+  // Named options
+  if (game.chiakiRegistKey) args.push('--registkey', game.chiakiRegistKey);
+  if (game.chiakiMorning)   args.push('--morning', game.chiakiMorning);
+  if (game.chiakiProfile)   args.push('--profile', game.chiakiProfile);
+
+  // Always exit when stream ends so our session manager gets the exit event
+  args.push('--exit-app-on-stream-exit');
+
+  // Display mode
+  const displayMode = game.chiakiDisplayMode || config?.displayMode || 'fullscreen';
+  if (displayMode === 'zoom')        args.push('--zoom');
+  else if (displayMode === 'stretch') args.push('--stretch');
+  else                                args.push('--fullscreen');
+
+  // Optional features
+  if (game.chiakiDualsense || config?.dualsense) args.push('--dualsense');
+  if (game.chiakiPasscode) args.push('--passcode', game.chiakiPasscode);
 
   return args;
 }
@@ -473,35 +495,39 @@ function startChiakiSession(gameId, chiakiExe, args) {
     return session;
   }
 
-  // Managed session with piped stdout for JSON events
+  // Managed session with piped stdio
   session.process = spawn(chiakiExe, args, {
     cwd: chiakiDir,
     env,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 
-  // Parse stdout line by line for JSON status events
-  const rl = readline.createInterface({ input: session.process.stdout });
-  rl.on('line', (line) => {
+  // Stock chiaki-ng logs to stderr (Qt logging), not stdout.
+  // Parse BOTH streams for maximum compatibility.
+  let stderrBuf = '';
+
+  const processLine = (line) => {
     const trimmed = line.trim();
-    // Try parsing as JSON event (from --json-status or --cereal-mode)
+    if (!trimmed) return;
+    // Try JSON (future-proofing if chiaki ever adds structured output)
     if (trimmed.startsWith('{')) {
       try {
         const evt = JSON.parse(trimmed);
         handleChiakiJsonEvent(gameId, evt);
         return;
-      } catch (e) { /* not valid JSON, fall through to log scraping */ }
+      } catch (e) { /* not JSON */ }
     }
-    // Log scraping fallback for unpatched chiaki builds
     handleChiakiLogLine(gameId, trimmed);
-  });
+  };
 
-  // Capture stderr for error reporting
-  let stderrBuf = '';
-  session.process.stderr.on('data', (chunk) => {
-    stderrBuf += chunk.toString();
-    // Keep only last 4KB
+  const rlOut = readline.createInterface({ input: session.process.stdout });
+  rlOut.on('line', processLine);
+
+  const rlErr = readline.createInterface({ input: session.process.stderr });
+  rlErr.on('line', (line) => {
+    stderrBuf += line + '\n';
     if (stderrBuf.length > 4096) stderrBuf = stderrBuf.slice(-4096);
+    processLine(line);
   });
 
   session.process.on('exit', (code, signal) => {
@@ -511,14 +537,12 @@ function startChiakiSession(gameId, chiakiExe, args) {
     // Stop Win32 embed helper
     stopEmbedHelper(session);
 
-    // Interpret exit codes (from patch 005)
+    // Stock chiaki-ng: 0 = clean exit, non-zero = error/crash
     let reason = 'unknown';
     let wasError = true;
     if (code === 0) { reason = 'clean_exit'; wasError = false; }
-    else if (code === 1) { reason = 'transient_error'; }
-    else if (code === 2) { reason = 'auth_error'; }
-    else if (code === 3) { reason = 'console_not_found'; }
     else if (signal) { reason = 'killed'; wasError = false; }
+    else { reason = 'error'; }
 
     const elapsed = Math.floor((Date.now() - session.startTime) / 60000);
 
@@ -543,16 +567,23 @@ function startChiakiSession(gameId, chiakiExe, args) {
       }
     }
 
-    // Auto-reconnect for transient errors (patch 001 behavior in launcher)
-    if (code === 1 && session._reconnectAttempts < 5) {
-      session._reconnectAttempts = (session._reconnectAttempts || 0) + 1;
-      const delay = Math.min(1000 * Math.pow(2, session._reconnectAttempts - 1), 16000);
+    // Auto-reconnect for transient errors (non-zero exit, skip if auth/regist failure)
+    const isAuthError = stderrBuf.toLowerCase().includes('regist failed')
+                     || stderrBuf.toLowerCase().includes('auth')
+                     || stderrBuf.toLowerCase().includes('invalid psn');
+    const reconnectAttempts = session._reconnectAttempts || 0;
+    if (code !== 0 && !isAuthError && reconnectAttempts < 5) {
+      const nextAttempt = reconnectAttempts + 1;
+      const delay = Math.min(1000 * Math.pow(2, nextAttempt - 1), 16000);
       sendChiakiEvent(gameId, 'reconnecting', {
-        attempt: session._reconnectAttempts, maxAttempts: 5, delayMs: delay,
+        attempt: nextAttempt, maxAttempts: 5, delayMs: delay,
       });
+      // Carry reconnect count forward so the next session inherits it
+      const carryReconnect = nextAttempt;
       session._reconnectTimer = setTimeout(() => {
         if (chiakiSessions.has(gameId)) {
-          startChiakiSession(gameId, chiakiExe, args);
+          const newSession = startChiakiSession(gameId, chiakiExe, args);
+          if (newSession) newSession._reconnectAttempts = carryReconnect;
         }
       }, delay);
     } else {
@@ -594,7 +625,12 @@ function stopChiakiSession(gameId) {
 
   if (session.process && !session.process.killed) {
     try {
-      session.process.kill('SIGTERM');
+      if (process.platform === 'win32') {
+        // SIGTERM doesn't work for Qt GUI apps on Windows; use taskkill
+        spawn('taskkill', ['/pid', String(session.process.pid), '/t', '/f'], { stdio: 'ignore' });
+      } else {
+        session.process.kill('SIGTERM');
+      }
       // Force-kill after 3 seconds if still alive
       setTimeout(() => {
         try { if (!session.process.killed) session.process.kill('SIGKILL'); }
@@ -908,17 +944,36 @@ function handleChiakiLogLine(gameId, line) {
   const session = chiakiSessions.get(gameId);
   if (!session) return;
 
-  // Heuristic log scraping for unpatched chiaki builds
+  // Log scraping for stock chiaki-ng (logs to stderr in "[timestamp] [I/W/E] msg" format)
+  // Patterns taken from chiaki-ng session.c / stream_connection.c source
   const lower = line.toLowerCase();
-  if (lower.includes('session started') || lower.includes('stream connected')) {
-    session.state = 'streaming';
-    sendChiakiEvent(gameId, 'state', { state: 'streaming' });
-  } else if (lower.includes('connecting to') || lower.includes('session init')) {
-    session.state = 'connecting';
-    sendChiakiEvent(gameId, 'state', { state: 'connecting' });
-  } else if (lower.includes('disconnected') || lower.includes('session quit')) {
+
+  // Connecting phase
+  if (lower.includes('starting session request') || lower.includes('starting ctrl')) {
+    if (session.state !== 'streaming') {
+      session.state = 'connecting';
+      sendChiakiEvent(gameId, 'state', { state: 'connecting' });
+    }
+  }
+  // Streaming phase — Senkusha completes right before video starts
+  else if (lower.includes('senkusha completed successfully')
+        || lower.includes('streamconnection completed')
+        || lower.includes('stream connection started')
+        || lower.includes('video decoder')) {
+    if (session.state !== 'streaming') {
+      session.state = 'streaming';
+      session._reconnectAttempts = 0; // reset on successful stream
+      sendChiakiEvent(gameId, 'state', { state: 'streaming' });
+    }
+  }
+  // Session ended — let the exit handler manage state
+  else if (lower.includes('session has quit') || lower.includes('ctrl stopped')) {
     // Don't override — the exit handler will manage this
-  } else if (lower.includes('error') || lower.includes('failed')) {
+  }
+  // Errors worth surfacing
+  else if (lower.includes('ctrl has failed')
+        || lower.includes('streamconnection run failed')
+        || lower.includes('remote disconnected')) {
     sendChiakiEvent(gameId, 'log', { level: 'error', message: line });
   }
 }
@@ -3531,70 +3586,208 @@ ipcMain.handle('chiaki:registerConsole', (event, { host, psnAccountId, pin }) =>
 });
 
 ipcMain.handle('chiaki:discoverConsoles', () => {
-  // Native UDP discovery — PS4/PS5 respond to SRCH broadcasts on port 987.
-  // The pre-built chiaki-ng binary is GUI-only and has no CLI discover command.
+  // Matches chiaki-ng discovery.c exactly:
+  //   - SRCH uses LF (\n) not CRLF (\r\n)
+  //   - PS4: port 987,  protocol 00020020
+  //   - PS5: port 9302, protocol 00030010
+  //   - Local port 9303-9319
+  //   - HTTP 200 = ready, HTTP 620 = standby
   const dgram = require('dgram');
   const os    = require('os');
 
+  const TARGETS = [
+    { port: 987,  srch: Buffer.from('SRCH * HTTP/1.1\ndevice-discovery-protocol-version:00020020\n') },
+    { port: 9302, srch: Buffer.from('SRCH * HTTP/1.1\ndevice-discovery-protocol-version:00030010\n') },
+  ];
+
   return new Promise((resolve) => {
-    const DISCOVERY_PORT = 987;
-    const SRCH = Buffer.from('SRCH * HTTP/1.1\r\ndevice-discovery-protocol-version:00020020\r\n\r\n');
-    const found = new Map(); // host -> console object (dedup)
+    const found = new Map();
 
-    const sock = dgram.createSocket({ type: 'udp4', reuseAddr: true });
-
-    sock.on('error', (err) => {
-      try { sock.close(); } catch(e) {}
-      resolve({ success: false, consoles: [], error: err.message });
-    });
-
-    sock.on('message', (msg, rinfo) => {
+    // Message handler shared by all bind attempts
+    function onMessage(msg, rinfo) {
       const text = msg.toString();
-      if (!text.startsWith('HTTP/1.1 200')) return;
+      // chiaki: 200 = ready, 620 = standby
+      const statusMatch = text.match(/^HTTP\/1\.1\s+(\d+)/);
+      if (!statusMatch) return;
+      const httpCode = parseInt(statusMatch[1], 10);
+      if (httpCode !== 200 && httpCode !== 620) return;
 
-      const console_ = { host: rinfo.address };
-      for (const line of text.split('\r\n')) {
+      console.log('[discovery] response from', rinfo.address, 'status:', httpCode);
+
+      const state = httpCode === 200 ? 'ready' : 'standby';
+      const entry = { host: rinfo.address, state };
+
+      for (const line of text.split('\n')) {
         const colon = line.indexOf(':');
         if (colon === -1) continue;
         const k = line.substring(0, colon).trim().toLowerCase();
         const v = line.substring(colon + 1).trim();
-        if (k === 'host-name')            console_.name            = v;
-        if (k === 'host-type')            console_.type            = v;   // PS4 or PS5
-        if (k === 'host-id')              console_.hostId          = v;
-        if (k === 'system-version')       console_.firmwareVersion = v;
-        if (k === 'running-app-titleid')  console_.runningTitleId  = v;
-        if (k === 'running-app-name')     console_.runningTitle    = v;
+        if (k === 'host-name')            entry.name            = v;
+        if (k === 'host-type')            entry.type            = v;
+        if (k === 'host-id')              entry.hostId          = v;
+        if (k === 'system-version')       entry.firmwareVersion = v;
+        if (k === 'running-app-titleid')  entry.runningTitleId  = v;
+        if (k === 'running-app-name')     entry.runningTitle    = v;
+        if (k === 'device-discovery-protocol-version') entry.protocolVersion = v;
       }
 
-      if (!found.has(rinfo.address)) found.set(rinfo.address, console_);
-    });
+      const existing = found.get(rinfo.address);
+      if (existing) {
+        Object.assign(existing, Object.fromEntries(
+          Object.entries(entry).filter(([, v]) => v != null && v !== '')
+        ));
+      } else {
+        found.set(rinfo.address, entry);
+      }
+    }
 
-    sock.bind(0, () => {
-      sock.setBroadcast(true);
+    // Bind to port 9303-9319 like chiaki, then fallback to 0 (random)
+    const ports = [];
+    for (let p = 9303; p <= 9319; p++) ports.push(p);
+    ports.push(0);
 
-      // Build list of broadcast addresses from all non-loopback IPv4 interfaces
+    function tryBind(idx) {
+      const s = dgram.createSocket({ type: 'udp4', reuseAddr: true });
+      s.on('message', onMessage);
+      s.on('error', (err) => {
+        if (err.code === 'EADDRINUSE' && idx + 1 < ports.length) {
+          try { s.close(); } catch(e) {}
+          tryBind(idx + 1);
+        } else {
+          console.error('[discovery] bind failed:', err.message);
+          try { s.close(); } catch(e) {}
+          resolve({ success: false, consoles: [], error: err.message });
+        }
+      });
+      s.bind(ports[idx], () => {
+        console.log('[discovery] bound to port', ports[idx] || '(random)');
+        onBoundSock(s);
+      });
+    }
+    tryBind(0);
+
+    function onBoundSock(s) {
+      s.setBroadcast(true);
+
       const broadcasts = new Set(['255.255.255.255']);
       for (const addrs of Object.values(os.networkInterfaces())) {
         for (const addr of addrs) {
           if (addr.family !== 'IPv4' || addr.internal) continue;
-          const parts = addr.address.split('.');
-          parts[3] = '255';
-          broadcasts.add(parts.join('.'));
+          if (addr.netmask) {
+            const ipParts  = addr.address.split('.').map(Number);
+            const maskParts = addr.netmask.split('.').map(Number);
+            const bcast = ipParts.map((octet, i) => (octet | (~maskParts[i] & 0xFF))).join('.');
+            broadcasts.add(bcast);
+          } else {
+            const parts = addr.address.split('.');
+            parts[3] = '255';
+            broadcasts.add(parts.join('.'));
+          }
         }
       }
 
-      for (const bcast of broadcasts) {
-        sock.send(SRCH, DISCOVERY_PORT, bcast, (err) => {
-          if (err) console.error('[chiaki discovery] send error:', bcast, err.message);
-        });
-      }
+      console.log('[discovery] broadcasting to:', [...broadcasts]);
 
-      // Collect responses for 3 seconds
+      const sendRound = () => {
+        for (const bcast of broadcasts) {
+          for (const { port, srch } of TARGETS) {
+            s.send(srch, port, bcast, (err) => {
+              if (err) console.error('[discovery] send error:', bcast, port, err.message);
+            });
+          }
+        }
+      };
+
+      sendRound();
+      setTimeout(sendRound, 500);
+      setTimeout(sendRound, 1500);
+
       setTimeout(() => {
-        try { sock.close(); } catch(e) {}
+        console.log('[discovery] done, found', found.size, 'console(s)');
+        try { s.close(); } catch(e) {}
         resolve({ success: true, consoles: [...found.values()] });
-      }, 3000);
-    });
+      }, 4000);
+    }
+  });
+});
+
+// ─── Wake-on-LAN for PlayStation consoles ─────────────────────────────────────
+ipcMain.handle('chiaki:wakeConsole', (event, { host, credentials }) => {
+  // PS4/PS5 use a custom wake packet on UDP port 987, not standard WoL.
+  // Send a WAKEUP request with the registered credentials.
+  const dgram = require('dgram');
+
+  return new Promise((resolve) => {
+    const registKey = credentials?.registKey || '';
+    if (!registKey) {
+      return resolve({ success: false, error: 'No registration key — register the console first' });
+    }
+
+    // Attempt 1: Use chiaki CLI if available
+    const chiakiExe = resolveChiakiExe();
+    if (chiakiExe) {
+      const chiakiDir = path.dirname(chiakiExe);
+      const env = { ...process.env, PATH: `${chiakiDir};${process.env.PATH}` };
+      const args = ['wakeup', '--host', host, '--regist-key', registKey];
+
+      const proc = spawn(chiakiExe, args, { cwd: chiakiDir, env, stdio: ['ignore', 'pipe', 'pipe'] });
+      let output = '';
+      proc.stdout.on('data', d => output += d.toString());
+      proc.stderr.on('data', d => output += d.toString());
+      proc.on('exit', (code) => {
+        resolve({ success: code === 0, output, method: 'chiaki-cli' });
+      });
+      proc.on('error', () => {
+        // CLI failed, fall through to UDP
+        sendUdpWake();
+      });
+      setTimeout(() => { try { proc.kill(); } catch(e) {} }, 10000);
+      return;
+    }
+
+    // Attempt 2: Direct UDP wake packet
+    sendUdpWake();
+
+    function sendUdpWake() {
+      // Matches chiaki-ng discovery.c WAKEUP format exactly (LF, not CRLF)
+      // PS4 wakes on port 987, PS5 on port 9302
+      const WAKE_TARGETS = [
+        { port: 987,  msg: Buffer.from('WAKEUP * HTTP/1.1\nclient-type:vr\nauth-type:R\nmodel:w\napp-type:r\nuser-credential:' + registKey + '\ndevice-discovery-protocol-version:00020020\n') },
+        { port: 9302, msg: Buffer.from('WAKEUP * HTTP/1.1\nclient-type:vr\nauth-type:R\nmodel:w\napp-type:r\nuser-credential:' + registKey + '\ndevice-discovery-protocol-version:00030010\n') },
+      ];
+
+      const sock = dgram.createSocket('udp4');
+      sock.on('error', (err) => {
+        console.error('[wake] socket error:', err.message);
+        try { sock.close(); } catch(e) {}
+        resolve({ success: false, error: err.message, method: 'udp' });
+      });
+
+      sock.bind(0, () => {
+        sock.setBroadcast(true);
+        const hosts = [host];
+        const parts = host.split('.');
+        if (parts.length === 4) { parts[3] = '255'; hosts.push(parts.join('.')); }
+
+        let total = hosts.length * WAKE_TARGETS.length;
+        let sent = 0;
+        for (const target of hosts) {
+          for (const { port, msg } of WAKE_TARGETS) {
+            sock.send(msg, port, target, (err) => {
+              if (err) console.error('[wake] send error:', target, port, err.message);
+              sent++;
+              if (sent === total) {
+                setTimeout(() => {
+                  try { sock.close(); } catch(e) {}
+                  console.log('[wake] sent to', host, '(both ports)');
+                  resolve({ success: true, method: 'udp' });
+                }, 500);
+              }
+            });
+          }
+        }
+      });
+    }
   });
 });
 

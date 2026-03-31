@@ -46,6 +46,7 @@ contextBridge.exposeInMainWorld('api', {
   chiakiOpenGui: () => ipcRenderer.invoke('chiaki:openGui'),
   chiakiRegisterConsole: (opts) => ipcRenderer.invoke('chiaki:registerConsole', opts),
   chiakiDiscoverConsoles: () => ipcRenderer.invoke('chiaki:discoverConsoles'),
+  chiakiWakeConsole: (opts) => ipcRenderer.invoke('chiaki:wakeConsole', opts),
   chiakiSetStreamBounds: (opts) => ipcRenderer.invoke('chiaki:setStreamBounds', opts),
 
   // xCloud (Xbox Cloud Gaming)
