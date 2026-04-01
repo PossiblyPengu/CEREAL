@@ -65,13 +65,13 @@
     .win-ctrls button:last-child:hover{background:#e81123;color:white}
 
     .nav-pill{position:fixed;z-index:50;display:flex;align-items:center;gap:2px;padding:4px 10px;border-radius:22px;background:rgba(13,13,22,0.82);backdrop-filter:blur(24px);border:1px solid rgba(255,255,255,0.09);-webkit-app-region:no-drag;box-shadow:0 2px 0 rgba(255,255,255,0.05) inset,0 8px 32px rgba(0,0,0,0.7),0 2px 8px rgba(0,0,0,0.5);scale:var(--tb-scale,1)}
-    .nav-pill.pos-top{top:6px;left:50%;transform:translateX(-50%);flex-direction:row;max-width:calc(100vw - 12px);overflow-x:auto;overflow-y:visible;scrollbar-width:none}
+    .nav-pill.pos-top{top:6px;left:50%;transform:translateX(-50%);flex-direction:row;max-width:calc(100vw - 12px);overflow-x:auto;overflow-y:visible;scrollbar-width:none;animation:navSlideDown 0.4s cubic-bezier(0.16,1,0.3,1) backwards}
     .nav-pill.pos-top::-webkit-scrollbar{height:0}
-    .nav-pill.pos-bottom{bottom:6px;left:50%;transform:translateX(-50%);flex-direction:row;max-width:calc(100vw - 12px);overflow-x:auto;overflow-y:visible;scrollbar-width:none}
+    .nav-pill.pos-bottom{bottom:6px;left:50%;transform:translateX(-50%);flex-direction:row;max-width:calc(100vw - 12px);overflow-x:auto;overflow-y:visible;scrollbar-width:none;animation:navSlideUp 0.4s cubic-bezier(0.16,1,0.3,1) backwards}
     .nav-pill.pos-bottom::-webkit-scrollbar{height:0}
-    .nav-pill.pos-left{left:6px;top:50%;transform:translateY(-50%);flex-direction:column;align-items:stretch;padding:10px 6px;width:68px;max-height:calc(100vh - 40px);overflow-y:auto;overflow-x:hidden;scrollbar-width:none;border-radius:16px}
+    .nav-pill.pos-left{left:6px;top:50%;transform:translateY(-50%);flex-direction:column;align-items:stretch;padding:10px 6px;width:68px;max-height:calc(100vh - 40px);overflow-y:auto;overflow-x:hidden;scrollbar-width:none;border-radius:16px;animation:navSlideRight 0.4s cubic-bezier(0.16,1,0.3,1) backwards}
     .nav-pill.pos-left::-webkit-scrollbar{width:0}
-    .nav-pill.pos-right{right:6px;top:50%;transform:translateY(-50%);flex-direction:column;align-items:stretch;padding:10px 6px;width:68px;max-height:calc(100vh - 40px);overflow-y:auto;overflow-x:hidden;scrollbar-width:none;border-radius:16px}
+    .nav-pill.pos-right{right:6px;top:50%;transform:translateY(-50%);flex-direction:column;align-items:stretch;padding:10px 6px;width:68px;max-height:calc(100vh - 40px);overflow-y:auto;overflow-x:hidden;scrollbar-width:none;border-radius:16px;animation:navSlideLeft 0.4s cubic-bezier(0.16,1,0.3,1) backwards}
     .nav-pill.pos-right::-webkit-scrollbar{width:0}
     .nav-pill.pos-left .nav-brand,.nav-pill.pos-right .nav-brand{margin-right:0;margin-bottom:4px;text-align:center;padding:4px 0;letter-spacing:0;font-size:calc(var(--font-size) - 1px);writing-mode:vertical-lr;text-orientation:upright;align-self:center}
     .nav-pill.pos-left .nav-sep,.nav-pill.pos-right .nav-sep{width:80%;height:1px;margin:4px auto;align-self:center}
@@ -97,7 +97,7 @@
     .theme-picker-btn:hover{background:rgba(255,255,255,0.07);border-color:rgba(255,255,255,0.1)}
     .theme-picker-dot{width:14px;height:14px;border-radius:50%;flex-shrink:0}
     .theme-picker-chevron{width:8px;height:8px;opacity:0.4}
-    .theme-picker-popover{position:absolute;z-index:400;background:var(--surface);border:1px solid var(--glass-border);border-radius:12px;padding:8px;box-shadow:0 8px 32px rgba(0,0,0,0.6);display:flex;gap:5px;flex-wrap:wrap;width:128px}
+    .theme-picker-popover{position:absolute;z-index:400;background:var(--surface);border:1px solid var(--glass-border);border-radius:12px;padding:8px;box-shadow:0 8px 32px rgba(0,0,0,0.6);display:flex;gap:5px;flex-wrap:wrap;width:128px;animation:popoverIn 0.15s cubic-bezier(0.16,1,0.3,1)}
     .theme-dot{width:16px;height:16px;border-radius:50%;border:2px solid transparent;padding:0;cursor:pointer;transition:border-color 0.15s,transform 0.15s;flex-shrink:0;outline:none}
     .theme-dot:hover{transform:scale(1.2)}
     .theme-dot.active{border-color:rgba(255,255,255,0.75);box-shadow:0 0 6px var(--accent)}
@@ -185,8 +185,8 @@
 
     .orb-field{position:fixed;inset:0;z-index:1}
     .orb{position:absolute;transform:translate(-50%,-50%);z-index:2;animation:orbDrift var(--drift-dur,20s) ease-in-out infinite alternate;animation-delay:var(--drift-delay,0s);transition:z-index 0s}
-    .modal-overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(7,7,13,0.75);backdrop-filter:blur(6px);z-index:10001}
-    .modal-card{background:var(--card);border-radius:12px;padding:18px;width:780px;max-width:92%;box-shadow:0 10px 50px rgba(0,0,0,0.6);border:1px solid rgba(255,255,255,0.04)}
+    .modal-overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(7,7,13,0.75);backdrop-filter:blur(6px);z-index:10001;animation:fadeIn 0.2s ease}
+    .modal-card{background:var(--card);border-radius:12px;padding:18px;width:780px;max-width:92%;box-shadow:0 10px 50px rgba(0,0,0,0.6);border:1px solid rgba(255,255,255,0.04);animation:modalIn 0.25s cubic-bezier(0.16,1,0.3,1)}
     .acct-card{background:linear-gradient(180deg,rgba(255,255,255,0.01),transparent);padding:12px;border-radius:8px;border:1px solid rgba(255,255,255,0.03)}
     .acct-card.connected{border-color:var(--green);box-shadow:0 8px 28px rgba(52,211,153,0.06)}
     .acct-avatar{width:36px;height:36px;border-radius:8px;overflow:hidden;flex-shrink:0;background:rgba(255,255,255,0.03);display:flex;align-items:center;justify-content:center}
@@ -597,6 +597,21 @@
     @keyframes cardIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
     .cards-exiting{animation:cardsExit 0.5s cubic-bezier(0.4,0,1,1) both;transform-origin:center center}
     @keyframes cardsExit{0%{opacity:1;transform:scale(1)}85%{opacity:1;transform:scale(0.25)}100%{opacity:0;transform:scale(0.08)}}
+    @keyframes modalIn{from{opacity:0;transform:scale(0.96) translateY(6px)}to{opacity:1;transform:none}}
+    @keyframes popoverIn{from{opacity:0;transform:scale(0.9) translateY(-4px)}to{opacity:1;transform:none}}
+    @keyframes stepIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+    @keyframes panelOut{from{transform:translateX(0)}to{transform:translateX(100%)}}
+    @keyframes fadeOut{from{opacity:1}to{opacity:0}}
+    @keyframes focusOut{from{opacity:1;transform:none}to{opacity:0;transform:scale(0.98)}}
+    @keyframes bannerOut{from{opacity:1;transform:translateX(-50%) translateY(0)}to{opacity:0;transform:translateX(-50%) translateY(10px)}}
+    @keyframes navSlideDown{from{opacity:0;translate:0 -10px}to{opacity:1;translate:0 0}}
+    @keyframes navSlideUp{from{opacity:0;translate:0 10px}to{opacity:1;translate:0 0}}
+    @keyframes navSlideRight{from{opacity:0;translate:-10px 0}to{opacity:1;translate:0 0}}
+    @keyframes navSlideLeft{from{opacity:0;translate:10px 0}to{opacity:1;translate:0 0}}
+    .side-panel.closing{animation:panelOut 0.22s cubic-bezier(0.4,0,1,1) forwards}
+    .panel-backdrop.closing{animation:fadeOut 0.22s ease forwards}
+    .focus-overlay.closing{animation:focusOut 0.18s ease forwards}
+    .continue-banner.closing{animation:bannerOut 0.18s ease forwards}
     .card-cover{aspect-ratio:2/3;width:100%;overflow:hidden;position:relative;background:var(--card-up)}
     .card-cover img{width:100%;height:100%;object-fit:cover;display:block;transition:transform var(--speed-slow)}
     .game-card:hover .card-cover img{transform:scale(1.05)}
@@ -936,6 +951,12 @@
 
     function SidePanel({ show, onClose, title, wide, headActions, children, foot }) {
       const panelRef = useRef(null);
+      const [visible, setVisible] = useState(show);
+      const [closing, setClosing] = useState(false);
+      useEffect(() => {
+        if (show) { setVisible(true); setClosing(false); }
+        else if (visible) setClosing(true);
+      }, [show]);
       useEffect(() => {
         if (!show) return;
         var h = e => {
@@ -950,10 +971,10 @@
         window.addEventListener('keydown', h, true);
         return () => window.removeEventListener('keydown', h, true);
       }, [show]);
-      if (!show) return null;
+      if (!visible) return null;
       return <>
-        <div className="panel-backdrop" onClick={onClose} />
-        <div className={'side-panel' + (wide ? ' wide' : '')} ref={panelRef} role="dialog" aria-label={title}>
+        <div className={"panel-backdrop" + (closing ? " closing" : "")} onClick={onClose} />
+        <div className={'side-panel' + (wide ? ' wide' : '') + (closing ? ' closing' : '')} ref={panelRef} role="dialog" aria-label={title} onAnimationEnd={() => { if (closing) setVisible(false); }}>
           <div className="panel-head"><h3>{title}</h3><div className="panel-head-actions">{headActions}<button className="panel-close" onClick={onClose} aria-label="Close panel">&times;</button></div></div>
           <div className="panel-body">{children}</div>
           {foot && <div className="panel-foot">{foot}</div>}
@@ -1000,10 +1021,13 @@
       );
     }
 
-    function FocusView({ game, onClose, onLaunch, onFav, onEdit, onDelete, onRefreshGame, gpFocusIdx }) {
-      if (!game) return null;
-      var p = PLATFORMS[game.platform];
-      const bgImg = resolveGameImage(game, 'headerUrl') || resolveGameImage(game, 'coverUrl');
+    function FocusView({ game: gameProp, onClose, onLaunch, onFav, onEdit, onDelete, onRefreshGame, gpFocusIdx }) {
+      const [closing, setClosing] = useState(false);
+      const [renderedGame, setRenderedGame] = useState(gameProp);
+      useEffect(() => {
+        if (gameProp) { setRenderedGame(gameProp); setClosing(false); }
+        else if (renderedGame) setClosing(true);
+      }, [gameProp]);
       const [refreshing, setRefreshing] = useState(false);
       const [zoomSrc, setZoomSrc] = useState(null);
       useEffect(() => {
@@ -1013,17 +1037,21 @@
         return () => window.removeEventListener('keydown', h, true);
       }, [zoomSrc]);
       useEffect(() => {
-        if (!game) return;
+        if (!renderedGame) return;
         var h = e => {
           if (zoomSrc) return; // zoom modal takes priority
-          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onLaunch(game); }
-          else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); if (window.confirm('Remove "' + game.name + '" from library?')) onDelete(game.id); }
-          else if (e.key === 'e' || e.key === 'E') { e.preventDefault(); onEdit(game); }
-          else if (e.key === 'f' || e.key === 'F') { e.preventDefault(); onFav(game.id); }
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onLaunch(renderedGame); }
+          else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); if (window.confirm('Remove "' + renderedGame.name + '" from library?')) onDelete(renderedGame.id); }
+          else if (e.key === 'e' || e.key === 'E') { e.preventDefault(); onEdit(renderedGame); }
+          else if (e.key === 'f' || e.key === 'F') { e.preventDefault(); onFav(renderedGame.id); }
         };
         window.addEventListener('keydown', h);
         return () => window.removeEventListener('keydown', h);
-      }, [game, zoomSrc]);
+      }, [renderedGame, zoomSrc]);
+      if (!renderedGame) return null;
+      const game = renderedGame;
+      var p = PLATFORMS[game.platform];
+      const bgImg = resolveGameImage(game, 'headerUrl') || resolveGameImage(game, 'coverUrl');
       const doRefresh = async () => {
         if (!window.api?.applyMetadata) return;
         setRefreshing(true);
@@ -1035,7 +1063,7 @@
       };
       var mcColor = !game.metacritic ? null : game.metacritic >= 75 ? '#6dc849' : game.metacritic >= 50 ? '#fdca52' : '#fc4b37';
       return (
-        <div className="focus-overlay" onClick={onClose}>
+        <div className={"focus-overlay" + (closing ? " closing" : "")} onClick={onClose} onAnimationEnd={() => { if (closing) setRenderedGame(null); }}>
           {bgImg && <div className="focus-bg" style={{backgroundImage:'url('+bgImg+')'}} />}
           <div className="focus-dim" />
           <button className="focus-close" onClick={onClose} aria-label="Close">&times;</button>
@@ -2473,6 +2501,17 @@
       );
     }
 
+    function ContinueBanner({ game, onPlay, onDismiss }) {
+      const [closing, setClosing] = useState(false);
+      return (
+        <div className={"continue-banner" + (closing ? " closing" : "")} onAnimationEnd={() => { if (closing) onDismiss(); }}>
+          <div className="continue-banner-info"><div className="continue-banner-label">Continue</div><div className="continue-banner-name">{game.name}</div></div>
+          <button className="continue-play-btn" onClick={() => { setClosing(true); onPlay(); }}><span style={{display:'flex',width:10,height:10}}>{I.play}</span> Play</button>
+          <button className="continue-dismiss" onClick={() => setClosing(true)} title="Dismiss">&times;</button>
+        </div>
+      );
+    }
+
     /* ===== APP ===== */
     function App() {
       const [importProgress, setImportProgress] = useState(null);
@@ -2982,11 +3021,13 @@
           <div className="modal-overlay">
             <div className="modal-card" style={{width:640}}>
               {stepDots}
-              {step === 1 && renderStep1()}
-              {step === 2 && renderStepPerf()}
-              {step === 3 && renderStep2()}
-              {step === 4 && renderStep3()}
-              {step === 5 && renderStep4()}
+              <div key={step} style={{animation:'stepIn 0.2s cubic-bezier(0.16,1,0.3,1)'}}>
+                {step === 1 && renderStep1()}
+                {step === 2 && renderStepPerf()}
+                {step === 3 && renderStep2()}
+                {step === 4 && renderStep3()}
+                {step === 5 && renderStep4()}
+              </div>
               {step > 1 && step < 5 && (
                 <div className="wizard-nav">
                   <button className="btn-flat" onClick={() => setStep(s => s - 1)}>Back</button>
@@ -3566,14 +3607,14 @@
               <button className={viewMode==='orbit'?'active':''} onClick={()=>switchView('orbit')} title="Orbit view" aria-label="Orbit view">{I.orbit}</button>
               <button className={viewMode==='cards'?'active':''} onClick={()=>switchView('cards')} title="Card view" aria-label="Card view">{I.grid}</button>
             </div>
-            <div className="nav-sep"/>{(()=>{var activeTheme=THEMES[settings.theme||'midnight']||THEMES.midnight;var chevron=<svg viewBox="0 0 8 8" width="8" height="8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M1 2l3 3 3-3"/></svg>;var popoverStyle=isVertical?{}:(tbPos==='bottom'?{bottom:'calc(100% + 6px)',left:0}:{top:'calc(100% + 6px)',left:0});var dots=<div className="theme-picker-popover" style={popoverStyle} onClick={e=>e.stopPropagation()}>{Object.entries(THEMES).map(([key,t])=>(<button key={key} className={'theme-dot'+((settings.theme||'midnight')===key?' active':'')} style={{background:t.accent}} title={t.label} onClick={async()=>{const saved=await window.api?.saveSettings({theme:key});onSettingsChange(saved||{theme:key});applyTheme(key);setShowThemePicker(false);}}/>))}</div>;return(<div className="theme-picker-wrap"><button className="theme-picker-btn" onClick={()=>setShowThemePicker(s=>!s)} title="Theme"><span className="theme-picker-dot" style={{background:activeTheme.accent}}/>{chevron}</button>{showThemePicker&&(isVertical?ReactDOM.createPortal(<div style={{position:'fixed',zIndex:400,[tbPos==='left'?'left':'right']:76,top:'50%',transform:'translateY(-50%)'}} onClick={()=>setShowThemePicker(false)}><div onClick={e=>e.stopPropagation()} style={{background:'var(--surface)',border:'1px solid var(--glass-border)',borderRadius:12,padding:8,boxShadow:'0 8px 32px rgba(0,0,0,0.6)',display:'flex',gap:5,flexWrap:'wrap',width:128}}>{Object.entries(THEMES).map(([key,t])=>(<button key={key} className={'theme-dot'+((settings.theme||'midnight')===key?' active':'')} style={{background:t.accent}} title={t.label} onClick={async()=>{const saved=await window.api?.saveSettings({theme:key});onSettingsChange(saved||{theme:key});applyTheme(key);setShowThemePicker(false);}}/>))}</div></div>,document.body):dots)}</div>);})()}<div className="nav-sep"/><div className="nav-pill-quick"><select className="nav-select" value={settings.toolbarPosition||'top'} title="Toolbar position" onChange={async e=>{const v=e.target.value;const saved=await window.api?.saveSettings({toolbarPosition:v});onSettingsChange(saved||{toolbarPosition:v});setShowThemePicker(false);}}><option value="top">Top</option><option value="bottom">Bottom</option><option value="left">Left</option><option value="right">Right</option></select></div><div className="nav-sep"/><div className="nav-actions">
+            <div className="nav-sep"/>{(()=>{var activeTheme=THEMES[settings.theme||'midnight']||THEMES.midnight;var chevron=<svg viewBox="0 0 8 8" width="8" height="8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M1 2l3 3 3-3"/></svg>;var popoverStyle=isVertical?{}:(tbPos==='bottom'?{bottom:'calc(100% + 6px)',left:0}:{top:'calc(100% + 6px)',left:0});var dots=<div className="theme-picker-popover" style={popoverStyle} onClick={e=>e.stopPropagation()}>{Object.entries(THEMES).map(([key,t])=>(<button key={key} className={'theme-dot'+((settings.theme||'midnight')===key?' active':'')} style={{background:t.accent}} title={t.label} onClick={async()=>{const saved=await window.api?.saveSettings({theme:key});onSettingsChange(saved||{theme:key});applyTheme(key);setShowThemePicker(false);}}/>))}</div>;return(<div className="theme-picker-wrap"><button className="theme-picker-btn" onClick={()=>setShowThemePicker(s=>!s)} title="Theme"><span className="theme-picker-dot" style={{background:activeTheme.accent}}/>{chevron}</button>{showThemePicker&&(isVertical?ReactDOM.createPortal(<div style={{position:'fixed',zIndex:400,[tbPos==='left'?'left':'right']:76,top:'50%',transform:'translateY(-50%)'}} onClick={()=>setShowThemePicker(false)}><div onClick={e=>e.stopPropagation()} style={{background:'var(--surface)',border:'1px solid var(--glass-border)',borderRadius:12,padding:8,boxShadow:'0 8px 32px rgba(0,0,0,0.6)',display:'flex',gap:5,flexWrap:'wrap',width:128,animation:'popoverIn 0.15s cubic-bezier(0.16,1,0.3,1)'}}>{Object.entries(THEMES).map(([key,t])=>(<button key={key} className={'theme-dot'+((settings.theme||'midnight')===key?' active':'')} style={{background:t.accent}} title={t.label} onClick={async()=>{const saved=await window.api?.saveSettings({theme:key});onSettingsChange(saved||{theme:key});applyTheme(key);setShowThemePicker(false);}}/>))}</div></div>,document.body):dots)}</div>);})()}<div className="nav-sep"/><div className="nav-pill-quick"><select className="nav-select" value={settings.toolbarPosition||'top'} title="Toolbar position" onChange={async e=>{const v=e.target.value;const saved=await window.api?.saveSettings({toolbarPosition:v});onSettingsChange(saved||{toolbarPosition:v});setShowThemePicker(false);}}><option value="top">Top</option><option value="bottom">Bottom</option><option value="left">Left</option><option value="right">Right</option></select></div><div className="nav-sep"/><div className="nav-actions">
               <button className="nav-btn" title="Add game" aria-label="Add game" onClick={()=>{setEditGame(null);setShowAdd(true);}}>{I.plus}</button>
               <button className="nav-btn" title="Settings (Ctrl+,)" aria-label="Settings" onClick={()=>setShowSettings(true)}>{I.gear}</button>
             </div>
           </div>
           {games.length===0&&viewMode==='orbit'&&<div style={{position:'fixed',inset:0,zIndex:2,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',pointerEvents:'none'}}><div style={{width:36,height:36,border:'2px solid rgba(255,255,255,0.05)',borderTopColor:'var(--accent)',borderRadius:'50%',animation:'spin 0.8s linear infinite',marginBottom:16}}/><div style={{fontSize:11,color:'var(--text-4)',letterSpacing:1}}>Loading galaxy...</div></div>}
           {games.length===0&&<div className="empty-state"><div className="empty-icon">:/</div><div className="empty-title">No games yet</div><div className="empty-text">Add games manually or detect from installed platforms.</div><div style={{display:'flex',gap:'8px'}}><button className="btn-play" onClick={()=>{setEditGame(null);setShowAdd(true);}}>Add Game</button><button className="btn-ghost" onClick={()=>setShowDetect(true)}>Detect</button></div></div>}
-          {mostRecentGame&&!continueBannerDismissed&&!focusGame&&!anyPanelOpen&&<div className="continue-banner"><div className="continue-banner-info"><div className="continue-banner-label">Continue</div><div className="continue-banner-name">{mostRecentGame.name}</div></div><button className="continue-play-btn" onClick={()=>{doLaunch(mostRecentGame);setContinueBannerDismissed(true);}}><span style={{display:'flex',width:10,height:10}}>{I.play}</span> Play</button><button className="continue-dismiss" onClick={()=>setContinueBannerDismissed(true)} title="Dismiss">&times;</button></div>}
+          {mostRecentGame&&!continueBannerDismissed&&!focusGame&&!anyPanelOpen&&<ContinueBanner game={mostRecentGame} onPlay={()=>doLaunch(mostRecentGame)} onDismiss={()=>setContinueBannerDismissed(true)}/>}
           <FocusView game={liveFocus} onClose={()=>setFocusGame(null)} onLaunch={doLaunch} onFav={doFav} onEdit={doEditFromFocus} onDelete={doDelete} onRefreshGame={g=>{ _updateGameInState(g); setFocusGame(g); flash('Metadata updated'); }} gpFocusIdx={gpActive&&gpArea==='focus'?gpIdx:-1} />
           {Object.entries(chiakiSessions).filter(([,s])=>s.state==='gui').map(([gid,sess])=>{var g=games.find(x=>x.id===gid);if(!g)return null;return(<div key={gid} className="stream-float" onClick={()=>setShowChiaki(true)}><div className="stream-float-dot connecting"/><div className="stream-float-info"><div className="stream-float-name">{g.name}</div><div className="stream-float-meta">chiaki-ng GUI open</div></div><button className="stream-float-stop" onClick={async e=>{e.stopPropagation();if(window.api)await window.api.chiakiStopStream(gid);setChiakiSessions(p=>{var n={...p};delete n[gid];return n;});flash('Stream stopped');}}>Stop</button></div>);})}
           <StreamOverlay sessions={chiakiSessions} games={games} onStop={async gid=>{var s=chiakiSessions[gid];if(window.api){if(s&&s.platform==='xbox')await window.api.xcloudStop(gid);else await window.api.chiakiStopStream(gid);}setChiakiSessions(p=>{var n={...p};delete n[gid];return n;});flash('Stream stopped');}} />
