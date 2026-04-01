@@ -1323,6 +1323,21 @@ ipcMain.handle('window:close', () => mainWindow.close());
 ipcMain.handle('window:fullscreen', () => { mainWindow.setFullScreen(!mainWindow.isFullScreen()); return mainWindow.isFullScreen(); });
 ipcMain.handle('window:isFullscreen', () => mainWindow.isFullScreen());
 ipcMain.handle('shell:openExternal', (event, url) => { const { shell } = require('electron'); return shell.openExternal(url); });
+ipcMain.handle('system:getSpecs', async () => {
+  const os = require('os');
+  const ramGb = Math.round(os.totalmem() / (1024 * 1024 * 1024));
+  const cpus = os.cpus();
+  const cpuCount = cpus.length;
+  const cpuModel = cpus[0]?.model?.trim() || '';
+  let gpuName = '';
+  try {
+    const { app: _app } = require('electron');
+    const gpuInfo = await _app.getGPUInfo('basic');
+    const gpu = gpuInfo?.gpuDevice?.[0];
+    if (gpu?.description) gpuName = gpu.description;
+  } catch (e) {}
+  return { ramGb, cpuCount, cpuModel, gpuName };
+});
 
 // ─── Stream embed bounds tracking ─────────────────────────────────────────────
 let _embedResizeTimer = null;

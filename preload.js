@@ -135,4 +135,6 @@ contextBridge.exposeInMainWorld('api', {
 
   // Signal to main process that the renderer has finished loading all data
   signalReady: () => ipcRenderer.send('window:ready'),
+  // System specs
+  getSystemSpecs: () => ipcRenderer.invoke('system:getSpecs'),
 });
