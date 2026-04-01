@@ -14,13 +14,18 @@
       "msvs_settings": {
         "VCCLCompilerTool": {
           "ExceptionHandling": 1,
-          "AdditionalUsingDirectories": [
-            "$(WindowsSDKDir)UnionMetadata\\$(PlatformTarget);",
-            "$(WindowsSDKDir)References\\Windows.Foundation.FoundationContract\\2.0.0.0;",
-            "$(WindowsSDKDir)References\\Windows.Foundation.UniversalApiContract\\3.0.0.0"
+          "RuntimeLibrary": 2
+        },
+        "VCLinkerTool": {
+          "AdditionalDependencies": [
+            "WindowsApp.lib",
+            "runtimeobject.lib"
           ]
         }
-      }
+      },
+      "defines": [
+        "_CRT_SECURE_NO_WARNINGS"
+      ]
     }
   ]
 }

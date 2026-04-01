@@ -1,6 +1,6 @@
-const smtc = require('./build/Release/smtc.node');
+const path = require('path');
 
-module.exports = {
-  getMediaInfo: () => smtc.getMediaInfo(),
-  sendMediaKey: (action) => smtc.sendMediaKey(action)
-};
+// Load the native SMTC addon
+const addon = require(path.join(__dirname, 'build', 'Release', 'smtc.node'));
+
+module.exports = addon;

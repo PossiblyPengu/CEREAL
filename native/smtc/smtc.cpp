@@ -1,13 +1,14 @@
 #include <napi.h>
 #include <windows.h>
 #include <winrt/Windows.Foundation.h>
+#include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Media.Control.h>
 #include <winrt/Windows.Storage.Streams.h>
-#include <chrono>
 
 using namespace winrt;
 using namespace Windows::Foundation;
 using namespace Windows::Media::Control;
+using namespace Windows::Storage::Streams;
 
 // Convert hstring to std::string
 std::string toString(const winrt::hstring& hs) {
@@ -23,14 +24,35 @@ Napi::Object GetMediaInfo(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
     Napi::Object result = Napi::Object::New(env);
 
+    // Declare these outside try so catch can access them
+    bool needsWinrtInit = false;
+    bool needsUninit = false;
+
     try {
-        // Initialize WinRT
-        winrt::init_apartment();
+        // Try to initialize WinRT - may already be initialized by Electron
+        HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+        
+        // If already initialized with different mode, that's okay - we can still use COM
+        if (FAILED(hr) && hr != RPC_E_CHANGED_MODE) {
+            result.Set("playing", Napi::Boolean::New(env, false));
+            return result;
+        }
+        
+        // Only init winrt apartment if we successfully initialized COM fresh
+        // If RPC_E_CHANGED_MODE, COM is already initialized so we skip winrt::init_apartment
+        needsWinrtInit = (hr == S_OK);
+        needsUninit = SUCCEEDED(hr);
+
+        if (needsWinrtInit) {
+            winrt::init_apartment();
+        }
 
         // Get session manager
         auto manager = GlobalSystemMediaTransportControlsSessionManager::RequestAsync().get();
         if (!manager) {
             result.Set("playing", Napi::Boolean::New(env, false));
+            if (needsWinrtInit) winrt::uninit_apartment();
+            if (needsUninit) CoUninitialize();
             return result;
         }
 
@@ -41,6 +63,8 @@ Napi::Object GetMediaInfo(const Napi::CallbackInfo& info) {
             auto sessions = manager.GetSessions();
             if (sessions.Size() == 0) {
                 result.Set("playing", Napi::Boolean::New(env, false));
+                if (needsWinrtInit) winrt::uninit_apartment();
+                if (needsUninit) CoUninitialize();
                 return result;
             }
             session = sessions.GetAt(0);
@@ -57,17 +81,36 @@ Napi::Object GetMediaInfo(const Napi::CallbackInfo& info) {
         result.Set("album", Napi::String::New(env, toString(props.AlbumTitle())));
         result.Set("playing", Napi::Boolean::New(env, playback.PlaybackStatus() == GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing));
         
+        // Get source app name
+        auto source = session.SourceAppUserModelId();
+        result.Set("source", Napi::String::New(env, toString(source)));
+        
+        // Album art disabled - WinRT thumbnail stream causes crashes
+        result.Set("thumbnail", Napi::String::New(env, ""));
+        
         auto pos = timeline.Position();
         auto dur = timeline.EndTime();
         result.Set("position", Napi::Number::New(env, static_cast<double>(pos.count()) / 10000000.0)); // Convert to seconds
         result.Set("duration", Napi::Number::New(env, static_cast<double>(dur.count()) / 10000000.0));
 
+        // Cleanup
+        if (needsWinrtInit) {
+            winrt::uninit_apartment();
+        }
+        if (needsUninit) {
+            CoUninitialize();
+        }
+
     } catch (const winrt::hresult_error& e) {
         result.Set("error", Napi::String::New(env, toString(e.message())));
         result.Set("playing", Napi::Boolean::New(env, false));
+        if (needsWinrtInit) winrt::uninit_apartment();
+        if (needsUninit) CoUninitialize();
     } catch (...) {
         result.Set("error", Napi::String::New(env, "Unknown exception"));
         result.Set("playing", Napi::Boolean::New(env, false));
+        if (needsWinrtInit) winrt::uninit_apartment();
+        if (needsUninit) CoUninitialize();
     }
 
     return result;

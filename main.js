@@ -709,12 +709,73 @@ function stopXcloudSession(gameId) {
   const sess = xcloudSessions.get(gameId);
   if (!sess) return false;
 
-  try { mainWindow.contentView.removeChildView(sess.view); } catch (e) { /* ok */ }
-  try { sess.view.webContents.close(); } catch (e) { /* ok */ }
+  // Mark as stopping to prevent re-entry
+  if (sess._stopping) return false;
+  sess._stopping = true;
 
-  xcloudSessions.delete(gameId);
-  sendStreamEvent(gameId, 'disconnected', { reason: 'stopped', platform: 'xbox' });
-  return true;
+  try {
+    // 1. Navigate to Xbox home to gracefully end any active game session
+    // This signals to Xbox servers that the user is leaving
+    if (sess.view?.webContents && !sess.view.webContents.isDestroyed()) {
+      try {
+        sess.view.webContents.loadURL('https://www.xbox.com/play');
+      } catch (e) { /* ignore */ }
+    }
+
+    // 2. Give the navigation a moment to complete (500ms) before removing view
+    setTimeout(() => {
+      // 3. Remove from parent view first
+      try {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.contentView.removeChildView(sess.view);
+        }
+      } catch (e) { /* ok - may already be removed */ }
+
+      // 4. Clear session storage and cookies for clean state next time
+      if (sess.view?.webContents?.session && !sess.view.webContents.isDestroyed()) {
+        try {
+          const webSession = sess.view.webContents.session;
+          // Clear cookies for xbox.com to force fresh auth next time if needed
+          webSession.clearStorageData({
+            origin: 'https://www.xbox.com',
+            storages: ['cookies', 'localstorage', 'sessionstorage', 'cachestorage']
+          }).catch(() => {});
+        } catch (e) { /* ignore */ }
+      }
+
+      // 5. Close the webContents
+      try {
+        if (!sess.view.webContents.isDestroyed()) {
+          sess.view.webContents.close();
+        }
+      } catch (e) { /* ok */ }
+
+      // 6. Clean up the view reference
+      try {
+        if (sess.view && !sess.view.isDestroyed()) {
+          sess.view = null;
+        }
+      } catch (e) { /* ok */ }
+
+      // 7. Remove from sessions map
+      xcloudSessions.delete(gameId);
+
+      // 8. Notify renderer
+      sendStreamEvent(gameId, 'disconnected', { reason: 'stopped', platform: 'xbox' });
+
+      console.log(`[xcloud] Session ${gameId} stopped gracefully`);
+    }, 500);
+
+    return true;
+  } catch (e) {
+    console.error('[xcloud] Error stopping session:', e);
+    // Force cleanup on error
+    try { mainWindow?.contentView?.removeChildView(sess.view); } catch (_) {}
+    try { sess.view?.webContents?.close(); } catch (_) {}
+    xcloudSessions.delete(gameId);
+    sendStreamEvent(gameId, 'disconnected', { reason: 'error', platform: 'xbox', error: e.message });
+    return false;
+  }
 }
 
 function getActiveXcloudSessions() {
@@ -1059,6 +1120,7 @@ function createWindow() {
     minWidth: 900,
     minHeight: 600,
     frame: false,
+    show: false, // Don't show immediately - wait for ready
     backgroundColor: '#0a0a0f',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -1083,10 +1145,20 @@ function createWindow() {
   }
 
   mainWindow.loadFile('src/index.html');
+  
+  // Show window once content is fully loaded (with minimum delay)
   mainWindow.webContents.once('did-finish-load', () => {
-    if (process.env.CEREAL_DEVTOOLS === '1') {
-      try { toggleDevTools(); } catch (e) { console.error('Auto DevTools failed:', e.message); }
-    }
+    // Minimum startup delay to ensure everything is ready (1.5 seconds)
+    setTimeout(() => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.show();
+        mainWindow.focus();
+        
+        if (process.env.CEREAL_DEVTOOLS === '1') {
+          try { toggleDevTools(); } catch (e) { console.error('Auto DevTools failed:', e.message); }
+        }
+      }
+    }, 1500);
   });
   mainWindow.webContents.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return;
@@ -1220,6 +1292,14 @@ app.on('before-quit', () => {
 
 app.on('will-quit', () => {
   try { globalShortcut.unregisterAll(); } catch (e) { /* ignore */ }
+  // Cleanup any active xcloud sessions
+  try {
+    for (const [gameId, sess] of xcloudSessions) {
+      try { mainWindow?.contentView?.removeChildView(sess.view); } catch (_) {}
+      try { sess.view?.webContents?.close(); } catch (_) {}
+    }
+    xcloudSessions.clear();
+  } catch (_) {}
 });
 
 // ─── Window Controls ──────────────────────────────────────────────────────────
@@ -3636,7 +3716,7 @@ ipcMain.handle('media:getInfo', async () => {
   if (!smtc) return {};
   
   try {
-    const info = smtc.getMediaInfo();
+    const info = await smtc.getMediaInfo();
     console.log('[media] native result:', info);
     
     if (info.error) {
@@ -3658,12 +3738,12 @@ ipcMain.handle('media:getInfo', async () => {
   }
 });
 
-ipcMain.handle('media:control', (event, action) => {
+ipcMain.handle('media:control', async (event, action) => {
   const smtc = getSmtcNative();
   if (!smtc) return false;
   
   try {
-    smtc.sendMediaKey(action);
+    await smtc.sendMediaKey(action);
     return true;
   } catch (e) {
     console.log('[media] control error:', e.message);
