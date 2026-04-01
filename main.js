@@ -406,8 +406,7 @@ async function processCoverQueue() {
 
 // ─── Chiaki Session Manager ──────────────────────────────────────────────────
 // Manages chiaki-ng as a child process with JSON status event streaming.
-// When chiaki supports --json-status or --cereal-mode, we parse structured
-// events. Otherwise we fall back to log scraping.
+// Events are parsed from chiaki-ng's --json-status output; falls back to log scraping.
 
 const chiakiSessions = new Map(); // gameId -> session object
 
@@ -1145,20 +1144,31 @@ function createWindow() {
   }
 
   mainWindow.loadFile('src/index.html');
-  
-  // Show window once content is fully loaded (with minimum delay)
-  mainWindow.webContents.once('did-finish-load', () => {
-    // Minimum startup delay to ensure everything is ready (1.5 seconds)
-    setTimeout(() => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.show();
-        mainWindow.focus();
-        
-        if (process.env.CEREAL_DEVTOOLS === '1') {
-          try { toggleDevTools(); } catch (e) { console.error('Auto DevTools failed:', e.message); }
-        }
+
+  // Show window once the renderer signals all data is loaded.
+  // Falls back to a hard timeout in case the signal is never sent.
+  let _windowShown = false;
+  const _showMainWindow = () => {
+    if (_windowShown) return;
+    _windowShown = true;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show();
+      mainWindow.focus();
+      if (process.env.CEREAL_DEVTOOLS === '1') {
+        try { toggleDevTools(); } catch (e) { console.error('Auto DevTools failed:', e.message); }
       }
-    }, 1500);
+    }
+  };
+
+  // Primary path: renderer calls window.api.signalReady() after games/settings load
+  ipcMain.once('window:ready', () => {
+    // Small delay so the first paint completes before the window appears
+    setTimeout(_showMainWindow, 150);
+  });
+
+  // Fallback: show after 8s if the renderer never signals (e.g. slow DB or cold start)
+  mainWindow.webContents.once('did-finish-load', () => {
+    setTimeout(_showMainWindow, 8000);
   });
   mainWindow.webContents.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return;
@@ -2492,7 +2502,7 @@ ipcMain.handle('games:launch', async (event, id) => {
       setDiscordPresence(game.name, game.platform);
     }
 
-    return { success: true };
+    return { success: true, lastPlayed: game.lastPlayed };
   } catch (err) {
     return { success: false, error: err.message };
   }
@@ -3604,9 +3614,11 @@ ipcMain.handle('chiaki:getConfig', () => {
 });
 
 ipcMain.handle('chiaki:saveConfig', (event, config) => {
-  db.chiakiConfig = config;
+  // Drop any legacy cerealMode field before persisting
+  const { cerealMode: _dropped, ...clean } = config || {};
+  db.chiakiConfig = clean;
   saveDB(db);
-  return config;
+  return clean;
 });
 
 ipcMain.handle('games:setChiakiStream', (event, gameId, streamConfig) => {
@@ -3728,6 +3740,7 @@ ipcMain.handle('media:getInfo', async () => {
       title: info.title || '',
       artist: info.artist || '',
       album: info.album || '',
+      thumbnail: info.thumbnail || '',
       playing: info.playing,
       position: Math.floor(info.position || 0),
       duration: Math.floor(info.duration || 0)

@@ -132,4 +132,7 @@ contextBridge.exposeInMainWorld('api', {
   deleteApiKey: (provider) => ipcRenderer.invoke('keys:delete', { service: `cereal-${provider}`, account: 'default' }),
   validateApiKey: (provider, apiKey) => ipcRenderer.invoke('keys:validate', { provider, apiKey }),
   validateStoredApiKey: (provider) => ipcRenderer.invoke('keys:validateStored', { provider, service: `cereal-${provider}`, account: 'default' }),
+
+  // Signal to main process that the renderer has finished loading all data
+  signalReady: () => ipcRenderer.send('window:ready'),
 });

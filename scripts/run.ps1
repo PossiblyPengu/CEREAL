@@ -5,17 +5,18 @@
 #   .\scripts\run.ps1              # auto-build chiaki if missing, then launch
 #   .\scripts\run.ps1 -SkipChiaki  # skip chiaki build even if missing
 #   .\scripts\run.ps1 -RebuildChiaki # force re-download chiaki-ng
-#   .\scripts\run.ps1 -Verbose      # show extra output
+#   .\scripts\run.ps1 -ShowVerbose  # show extra output
 
 param(
     [switch]$SkipChiaki,
     [switch]$RebuildChiaki,
-    [switch]$Verbose
+    [switch]$ShowVerbose
 )
 
 $ErrorActionPreference = "Stop"
-$ProjectRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
-Set-Location $ProjectRoot
+$PSExe = (Get-Process -Id $PID).MainModule.FileName
+$ProjectRoot = Split-Path -Parent $PSScriptRoot
+Push-Location $ProjectRoot
 
 function Log($msg, $color = 'White') { Write-Host $msg -ForegroundColor $color }
 function LogStep($msg) { Write-Host "" ; Write-Host "> $msg" -ForegroundColor Cyan }
@@ -73,19 +74,19 @@ if (-not (Test-Path $NpmCmd)) {
 }
 
 Log "  Node: $NodeExe" Green
-if ($Verbose) {
-    $nodeVer = & cmd /c "`"$NodeExe`" -v" 2>&1
-    $npmVer  = & cmd /c "`"$NpmCmd`" -v" 2>&1
+if ($ShowVerbose) {
+    $nodeVer = & $NodeExe -v 2>&1
+    $npmVer  = & $NpmCmd -v 2>&1
     Log "  Node $nodeVer  npm $npmVer" Gray
 }
 
 # --- 2. Install node_modules if needed ----------------------------------------
 if (-not (Test-Path "node_modules")) {
     LogStep "Installing npm dependencies..."
-    & cmd /c "`"$NpmCmd`" install"
+    & $NpmCmd install
     if ($LASTEXITCODE -ne 0) { Log "npm install failed" Red; exit 1 }
     Log "  [OK] Dependencies installed" Green
-} elseif ($Verbose) {
+} elseif ($ShowVerbose) {
     Log "  [OK] node_modules present" Green
 }
 
@@ -95,7 +96,7 @@ $ChiakiReady = Test-Path $ChiakiExe
 
 if ($RebuildChiaki) {
     LogStep "Re-downloading chiaki-ng..."
-    & powershell -ExecutionPolicy Bypass -File "$ProjectRoot\scripts\setup-chiaki.ps1" -Force
+    & $PSExe -ExecutionPolicy Bypass -File "$PSScriptRoot\setup-chiaki.ps1" -Force
     if ($LASTEXITCODE -ne 0) {
         Log "  [FAIL] chiaki-ng download failed (exit $LASTEXITCODE)" Red
         Log "    Continuing without chiaki-ng..." Yellow
@@ -104,7 +105,7 @@ if ($RebuildChiaki) {
     }
 } elseif (-not $ChiakiReady -and -not $SkipChiaki) {
     LogStep "chiaki-ng not found -- downloading..."
-    & powershell -ExecutionPolicy Bypass -File "$ProjectRoot\scripts\setup-chiaki.ps1"
+    & $PSExe -ExecutionPolicy Bypass -File "$PSScriptRoot\setup-chiaki.ps1"
     if ($LASTEXITCODE -ne 0) {
         Log "  [WARN] chiaki-ng download failed, continuing without it" Yellow
         Log "    PlayStation Remote Play will be unavailable." Gray
@@ -113,7 +114,7 @@ if ($RebuildChiaki) {
     }
 } else {
     if ($ChiakiReady) {
-        if ($Verbose) { Log "  [OK] chiaki-ng found at resources/chiaki-ng/" Green }
+        if ($ShowVerbose) { Log "  [OK] chiaki-ng found at resources/chiaki-ng/" Green }
     } else {
         Log "  [WARN] chiaki-ng not present (skipped)" Yellow
     }
@@ -125,7 +126,7 @@ Log ""
 
 $env:ELECTRON_DISABLE_SECURITY_WARNINGS = "true"
 
-if ($Verbose) {
+if ($ShowVerbose) {
     $env:ELECTRON_ENABLE_LOGGING = "true"
 }
 
@@ -134,13 +135,18 @@ $ElectronCmd = Join-Path $ProjectRoot "node_modules\.bin\electron.cmd"
 if (-not (Test-Path $ElectronCmd)) {
     Log "  ERROR: electron not found in node_modules" Red
     Log "    Run this script again to install dependencies, or run:" Gray
-    Log "    cmd /c `"$NpmCmd`" install" Gray
+    Log "    & `$NpmCmd install" Gray
     exit 1
 }
 
-& cmd /c "`"$ElectronCmd`" ."
+& $ElectronCmd .
+$exitCode = $LASTEXITCODE
 
-if ($LASTEXITCODE -ne 0) {
+Remove-Item Env:\ELECTRON_DISABLE_SECURITY_WARNINGS -ErrorAction SilentlyContinue
+Remove-Item Env:\ELECTRON_ENABLE_LOGGING -ErrorAction SilentlyContinue
+Pop-Location
+
+if ($exitCode -ne 0) {
     Log ""
-    Log "  App exited with code $LASTEXITCODE" Yellow
+    Log "  App exited with code $exitCode" Yellow
 }

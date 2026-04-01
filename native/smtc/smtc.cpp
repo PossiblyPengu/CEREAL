@@ -85,8 +85,49 @@ Napi::Object GetMediaInfo(const Napi::CallbackInfo& info) {
         auto source = session.SourceAppUserModelId();
         result.Set("source", Napi::String::New(env, toString(source)));
         
-        // Album art disabled - WinRT thumbnail stream causes crashes
-        result.Set("thumbnail", Napi::String::New(env, ""));
+        // Read album art thumbnail as a base64 data URL
+        std::string thumbDataUrl;
+        try {
+            auto thumbRef = props.Thumbnail();
+            if (thumbRef) {
+                auto stream = thumbRef.OpenReadAsync().get();
+                if (stream) {
+                    auto size = static_cast<uint32_t>(stream.Size());
+                    if (size > 0 && size <= 2 * 1024 * 1024) { // cap at 2 MB
+                        Buffer buf(size);
+                        auto filled = stream.ReadAsync(buf, size, InputStreamOptions::None).get();
+                        auto reader = DataReader::FromBuffer(filled);
+                        auto byteCount = reader.UnconsumedBufferLength();
+                        if (byteCount > 0) {
+                            std::vector<uint8_t> bytes(byteCount);
+                            reader.ReadBytes(bytes);
+
+                            // Base64 encode
+                            static const char b64[] =
+                                "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+                            std::string encoded;
+                            encoded.reserve(((byteCount + 2) / 3) * 4);
+                            for (uint32_t i = 0; i < byteCount; i += 3) {
+                                uint32_t b = bytes[i] << 16;
+                                if (i + 1 < byteCount) b |= bytes[i + 1] << 8;
+                                if (i + 2 < byteCount) b |= bytes[i + 2];
+                                encoded += b64[(b >> 18) & 0x3F];
+                                encoded += b64[(b >> 12) & 0x3F];
+                                encoded += (i + 1 < byteCount) ? b64[(b >> 6) & 0x3F] : '=';
+                                encoded += (i + 2 < byteCount) ? b64[b & 0x3F] : '=';
+                            }
+
+                            std::string ct = toString(stream.ContentType());
+                            if (ct.empty()) ct = "image/jpeg";
+                            thumbDataUrl = "data:" + ct + ";base64," + encoded;
+                        }
+                    }
+                }
+            }
+        } catch (...) {
+            // Thumbnail failure is non-fatal — leave thumbDataUrl empty
+        }
+        result.Set("thumbnail", Napi::String::New(env, thumbDataUrl));
         
         auto pos = timeline.Position();
         auto dur = timeline.EndTime();

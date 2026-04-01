@@ -64,24 +64,47 @@
     .win-ctrls button:hover{background:rgba(255,255,255,0.06)}
     .win-ctrls button:last-child:hover{background:#e81123;color:white}
 
-    .nav-pill{position:fixed;z-index:50;display:flex;align-items:center;gap:2px;padding:4px 10px;border-radius:22px;background:rgba(13,13,22,0.6);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.04);-webkit-app-region:no-drag;box-shadow:0 4px 24px rgba(0,0,0,0.3),0 0 32px 12px var(--glow),0 0 8px 2px var(--accent);scale:var(--tb-scale,1)}
-    .nav-pill.pos-top{top:6px;left:50%;transform:translateX(-50%);flex-direction:row}
-    .nav-pill.pos-bottom{bottom:6px;left:50%;transform:translateX(-50%);flex-direction:row}
-    .nav-pill.pos-left{left:6px;top:50%;transform:translateY(-50%);flex-direction:column;align-items:stretch;padding:10px 6px;width:54px;max-height:calc(100vh - 40px);overflow-y:auto;overflow-x:hidden;scrollbar-width:none;border-radius:16px}
+    .nav-pill{position:fixed;z-index:50;display:flex;align-items:center;gap:2px;padding:4px 10px;border-radius:22px;background:rgba(13,13,22,0.82);backdrop-filter:blur(24px);border:1px solid rgba(255,255,255,0.09);-webkit-app-region:no-drag;box-shadow:0 2px 0 rgba(255,255,255,0.05) inset,0 8px 32px rgba(0,0,0,0.7),0 2px 8px rgba(0,0,0,0.5);scale:var(--tb-scale,1)}
+    .nav-pill.pos-top{top:6px;left:50%;transform:translateX(-50%);flex-direction:row;max-width:calc(100vw - 12px);overflow-x:auto;overflow-y:visible;scrollbar-width:none}
+    .nav-pill.pos-top::-webkit-scrollbar{height:0}
+    .nav-pill.pos-bottom{bottom:6px;left:50%;transform:translateX(-50%);flex-direction:row;max-width:calc(100vw - 12px);overflow-x:auto;overflow-y:visible;scrollbar-width:none}
+    .nav-pill.pos-bottom::-webkit-scrollbar{height:0}
+    .nav-pill.pos-left{left:6px;top:50%;transform:translateY(-50%);flex-direction:column;align-items:stretch;padding:10px 6px;width:68px;max-height:calc(100vh - 40px);overflow-y:auto;overflow-x:hidden;scrollbar-width:none;border-radius:16px}
     .nav-pill.pos-left::-webkit-scrollbar{width:0}
-    .nav-pill.pos-right{right:6px;top:50%;transform:translateY(-50%);flex-direction:column;align-items:stretch;padding:10px 6px;width:54px;max-height:calc(100vh - 40px);overflow-y:auto;overflow-x:hidden;scrollbar-width:none;border-radius:16px}
+    .nav-pill.pos-right{right:6px;top:50%;transform:translateY(-50%);flex-direction:column;align-items:stretch;padding:10px 6px;width:68px;max-height:calc(100vh - 40px);overflow-y:auto;overflow-x:hidden;scrollbar-width:none;border-radius:16px}
     .nav-pill.pos-right::-webkit-scrollbar{width:0}
-    .nav-pill.pos-left .nav-brand,.nav-pill.pos-right .nav-brand{margin-right:0;margin-bottom:2px;text-align:center;padding:4px 0;letter-spacing:0;font-size:calc(var(--font-size) - 4px);writing-mode:vertical-lr;text-orientation:upright;align-self:center}
+    .nav-pill.pos-left .nav-brand,.nav-pill.pos-right .nav-brand{margin-right:0;margin-bottom:4px;text-align:center;padding:4px 0;letter-spacing:0;font-size:calc(var(--font-size) - 1px);writing-mode:vertical-lr;text-orientation:upright;align-self:center}
     .nav-pill.pos-left .nav-sep,.nav-pill.pos-right .nav-sep{width:80%;height:1px;margin:4px auto;align-self:center}
-    .nav-pill.pos-left .chip,.nav-pill.pos-right .chip{width:100%;text-align:center;padding:6px 4px;font-size:calc(var(--font-size) - 4px);display:flex;align-items:center;justify-content:center}
+    .nav-pill.pos-left .chip,.nav-pill.pos-right .chip{width:100%;text-align:center;padding:7px 4px;font-size:calc(var(--font-size) - 1px);display:flex;align-items:center;justify-content:center}
     .nav-pill.pos-left .chip .chip-label,.nav-pill.pos-right .chip .chip-label{display:none}
-    .nav-pill.pos-left .chip .chip-icon,.nav-pill.pos-right .chip .chip-icon{margin-right:0}
-    .nav-pill.pos-left .view-toggle,.nav-pill.pos-right .view-toggle{margin:0;align-self:center}
+    .nav-pill.pos-left .chip .chip-icon,.nav-pill.pos-right .chip .chip-icon{margin-right:0;width:18px;height:18px}
+    .nav-pill.pos-left .chip .chip-icon svg,.nav-pill.pos-right .chip .chip-icon svg{width:18px;height:18px}
+    .nav-pill.pos-left .view-toggle,.nav-pill.pos-right .view-toggle{margin:0;align-self:stretch;width:100%}
+    .nav-pill.pos-left .view-toggle button,.nav-pill.pos-right .view-toggle button{flex:1;height:34px}
+    .nav-pill.pos-left .view-toggle button svg,.nav-pill.pos-right .view-toggle button svg{width:18px;height:18px}
     .nav-pill.pos-left .nav-actions,.nav-pill.pos-right .nav-actions{margin-left:0;flex-direction:column;align-items:center;gap:2px;width:100%}
-    .nav-pill.pos-left .nav-actions .nav-btn,.nav-pill.pos-right .nav-actions .nav-btn{width:100%}
+    .nav-pill.pos-left .nav-actions .nav-btn,.nav-pill.pos-right .nav-actions .nav-btn{width:100%;height:36px}
+    .nav-pill.pos-left .nav-btn svg,.nav-pill.pos-right .nav-btn svg{width:18px;height:18px}
     .nav-pill.pos-left .nav-filter-wrap,.nav-pill.pos-right .nav-filter-wrap{flex-direction:column !important;margin-left:0 !important;gap:4px;width:100%}
-    .nav-pill.pos-left .nav-filter-wrap input,.nav-pill.pos-right .nav-filter-wrap input{width:100% !important;padding:6px 4px !important;font-size:calc(var(--font-size) - 4px) !important}
-    .nav-pill.pos-left .nav-filter-wrap .btn-sm,.nav-pill.pos-right .nav-filter-wrap .btn-sm{width:100%;text-align:center;font-size:calc(var(--font-size) - 4px);padding:4px !important}
+    .nav-pill.pos-left .nav-filter-wrap input,.nav-pill.pos-right .nav-filter-wrap input{width:100% !important;padding:6px 4px !important;font-size:calc(var(--font-size) - 2px) !important}
+    .nav-pill.pos-left .nav-filter-wrap .btn-sm,.nav-pill.pos-right .nav-filter-wrap .btn-sm{width:100%;text-align:center;font-size:calc(var(--font-size) - 2px);padding:4px !important}
+    .nav-pill-quick{display:flex;align-items:center;gap:4px;flex-shrink:0}
+    .nav-select{appearance:none;-webkit-appearance:none;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);border-radius:8px;color:var(--text-2);font-size:calc(var(--font-size) - 3px);font-family:inherit;font-weight:500;padding:3px 20px 3px 8px;min-width:58px;cursor:pointer;outline:none;transition:background 0.15s,border-color 0.15s,color 0.15s;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 8 8'%3E%3Cpath d='M1 2l3 3 3-3' stroke='%23706b63' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 5px center;background-size:8px}
+    .nav-select:hover{background-color:rgba(255,255,255,0.07);border-color:rgba(255,255,255,0.1);color:var(--text)}
+    .nav-select option{background:var(--surface);color:var(--text-2)}
+    .theme-picker-wrap{position:relative;flex-shrink:0}
+    .theme-picker-btn{display:flex;align-items:center;gap:5px;padding:5px 9px;min-height:26px;border-radius:8px;border:1px solid rgba(255,255,255,0.06);background:rgba(255,255,255,0.04);cursor:pointer;transition:background 0.15s,border-color 0.15s}
+    .theme-picker-btn:hover{background:rgba(255,255,255,0.07);border-color:rgba(255,255,255,0.1)}
+    .theme-picker-dot{width:14px;height:14px;border-radius:50%;flex-shrink:0}
+    .theme-picker-chevron{width:8px;height:8px;opacity:0.4}
+    .theme-picker-popover{position:absolute;z-index:400;background:var(--surface);border:1px solid var(--glass-border);border-radius:12px;padding:8px;box-shadow:0 8px 32px rgba(0,0,0,0.6);display:flex;gap:5px;flex-wrap:wrap;width:128px}
+    .theme-dot{width:16px;height:16px;border-radius:50%;border:2px solid transparent;padding:0;cursor:pointer;transition:border-color 0.15s,transform 0.15s;flex-shrink:0;outline:none}
+    .theme-dot:hover{transform:scale(1.2)}
+    .theme-dot.active{border-color:rgba(255,255,255,0.75);box-shadow:0 0 6px var(--accent)}
+    .nav-pill.pos-left .nav-pill-quick,.nav-pill.pos-right .nav-pill-quick{width:100%}
+    .nav-pill.pos-left .nav-select,.nav-pill.pos-right .nav-select{width:100%;box-sizing:border-box}
+    .nav-pill.pos-left .theme-picker-popover{left:calc(100% + 8px);top:0}
+    .nav-pill.pos-right .theme-picker-popover{right:calc(100% + 8px);top:0}
     .nav-brand{font-size:calc(var(--font-size, 13px) - 2px);font-weight:300;letter-spacing:4px;text-transform:uppercase;background:linear-gradient(135deg,var(--accent),var(--text-2));background-clip:text;-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-right:10px;flex-shrink:0;padding:0 6px}
     .nav-sep{width:1px;height:16px;background:rgba(255,255,255,0.06);margin:0 4px;flex-shrink:0}
     .chip{padding:4px 12px;border-radius:14px;border:1px solid transparent;background:none;color:var(--text-3);font-size:calc(var(--font-size) - 3px);font-weight:500;font-family:inherit;white-space:nowrap;cursor:pointer;transition:all var(--speed-normal);display:inline-flex;align-items:center}
@@ -89,6 +112,34 @@
     .chip:hover{color:var(--text-2);background:var(--glass)}
     .chip.active{background:var(--accent-soft);border-color:var(--accent-border);color:var(--accent)}
     .chip.filter-active{background:linear-gradient(135deg,rgba(212,168,83,0.06),rgba(255,255,255,0.02));border-color:rgba(212,168,83,0.18);color:var(--accent)}
+    .chip-count{font-size:9px;font-weight:500;opacity:0.4;margin-left:4px;transition:opacity var(--speed-fast)}
+    .chip:hover .chip-count,.chip.active .chip-count{opacity:0.75}
+    .nav-pill.pos-left .chip-count,.nav-pill.pos-right .chip-count{display:none}
+    .sort-bar{display:flex;align-items:center;gap:4px;padding:10px 0 4px;flex-shrink:0}
+    .sort-bar-label{font-size:10px;color:var(--text-4);font-weight:600;letter-spacing:0.5px;text-transform:uppercase;margin-right:4px;flex-shrink:0}
+    .sort-btn{padding:3px 10px;border-radius:8px;border:1px solid transparent;background:none;color:var(--text-4);font-size:10px;font-weight:600;font-family:inherit;cursor:pointer;transition:all var(--speed-fast)}
+    .sort-btn:hover{background:var(--glass);color:var(--text-2)}
+    .sort-btn.active{background:var(--accent-soft);border-color:var(--accent-border);color:var(--accent)}
+    .continue-banner{position:fixed;bottom:60px;left:50%;transform:translateX(-50%);z-index:5;background:var(--surface);border:1px solid var(--glass-border);border-radius:12px;padding:8px 12px 8px 16px;display:flex;align-items:center;gap:10px;box-shadow:0 8px 32px rgba(0,0,0,0.6);animation:slideUp 0.3s ease;white-space:nowrap}
+    .pos-bottom-layout .continue-banner{bottom:80px}
+    .pos-bottom-layout .zoom-hud{bottom:64px;left:auto;right:18px}
+    .pos-left-layout .zoom-hud{left:6px;right:auto;bottom:60px;border-radius:0 22px 22px 0;transform-origin:bottom left}
+    .pos-right-layout .zoom-hud{left:auto;right:6px;bottom:60px;border-radius:22px 0 0 22px;transform-origin:bottom right}
+    .pos-bottom-layout .stream-pill{bottom:64px}
+    .pos-right-layout .stream-pill{right:6px;bottom:60px;border-radius:22px 0 0 22px;transform-origin:bottom right}
+    .continue-banner-info{display:flex;flex-direction:column;gap:1px}
+    .continue-banner-label{font-size:9px;color:var(--text-4);font-weight:600;text-transform:uppercase;letter-spacing:0.5px}
+    .continue-banner-name{font-size:12px;color:var(--text-2);font-weight:600;max-width:180px;overflow:hidden;text-overflow:ellipsis}
+    .continue-play-btn{padding:4px 12px;border-radius:8px;border:1px solid var(--accent-border);background:var(--accent-soft);color:var(--accent);font-size:11px;font-weight:600;font-family:inherit;cursor:pointer;display:flex;align-items:center;gap:5px;flex-shrink:0}
+    .continue-play-btn:hover{background:var(--accent);color:#07070d}
+    .continue-dismiss{background:none;border:none;color:var(--text-4);cursor:pointer;font-size:16px;padding:2px 6px;line-height:1;border-radius:6px;flex-shrink:0}
+    .continue-dismiss:hover{color:var(--text);background:var(--glass)}
+    .focus-notes{font-size:12px;color:var(--text-3);line-height:1.6;white-space:pre-wrap;background:var(--glass);border:1px solid var(--glass-border);border-radius:8px;padding:10px 12px;margin-top:10px}
+    .focus-notes-label{font-size:10px;color:var(--text-4);font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px}
+    .search-plat-chips{display:flex;gap:5px;flex-wrap:wrap;padding:4px 0 8px;border-bottom:1px solid var(--glass-border);margin-bottom:4px}
+    .search-plat-chip{padding:2px 8px;border-radius:8px;border:1px solid transparent;background:none;color:var(--text-4);font-size:10px;font-weight:600;font-family:inherit;cursor:pointer;transition:all var(--speed-fast)}
+    .search-plat-chip:hover{background:var(--glass);color:var(--text-2)}
+    .search-plat-chip.active{background:var(--accent-soft);border-color:var(--accent-border);color:var(--accent)}
     .nav-actions{display:flex;gap:1px;margin-left:6px;flex-shrink:0}
     .nav-btn{width:30px;height:30px;border:none;background:none;border-radius:8px;color:var(--text-3);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all var(--speed-fast)}
     .nav-btn:hover{background:var(--glass);color:var(--text)}
@@ -367,9 +418,7 @@
     .chiaki-bar.missing .chiaki-bar-dot{background:var(--red)}
     .chiaki-bar-text{flex:1;font-size:12px;color:var(--text-2)}
     .chiaki-bar-ver{font-size:10px;color:var(--text-3);font-weight:600}
-    .chiaki-mode-row{display:flex;align-items:center;gap:10px;margin-bottom:14px;padding:10px 14px;border-radius:8px;background:var(--glass)}
-    .chiaki-mode-icon{display:flex;width:14px;height:14px;color:var(--text-3);flex-shrink:0}
-    .chiaki-mode-label{flex:1;font-size:11px;color:var(--text-2)}
+
     .chiaki-missing-hint{padding:12px 14px;border-radius:8px;background:var(--glass);margin-bottom:14px;font-size:11px;color:var(--text-3);line-height:1.6}
     .chiaki-missing-hint strong{color:var(--accent);font-weight:600}
     .chiaki-section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
@@ -484,19 +533,19 @@
     @keyframes stationRotate{0%{transform:translate(-50%,-50%) rotate(0deg)}100%{transform:translate(-50%,-50%) rotate(360deg)}}
     @keyframes stationFloat{0%,100%{transform:translate(-50%,-50%) translateY(0)}50%{transform:translate(-50%,-50%) translateY(-8px)}}
     @keyframes dockBlink{0%,100%{opacity:0.3}50%{opacity:1}}
-    .zoom-hud{position:fixed;bottom:20px;left:20px;z-index:50;display:flex;align-items:center;gap:4px}
-    .zoom-btn{width:30px;height:30px;border:none;border-radius:8px;background:rgba(13,13,22,0.6);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.04);color:var(--text-3);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all var(--speed-fast);box-shadow:0 0 24px 8px var(--glow),0 0 6px 1px var(--accent)}
+    .zoom-hud{position:fixed;bottom:18px;right:18px;left:auto;z-index:50;display:flex;align-items:center;gap:2px;padding:4px 8px;border-radius:22px;background:rgba(13,13,22,0.82);backdrop-filter:blur(24px);border:1px solid rgba(255,255,255,0.09);box-shadow:0 2px 0 rgba(255,255,255,0.05) inset,0 8px 32px rgba(0,0,0,0.7),0 2px 8px rgba(0,0,0,0.5);scale:var(--tb-scale,1)}
+    .zoom-btn{width:30px;height:30px;border:none;border-radius:8px;background:none;color:var(--text-3);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all var(--speed-fast)}
     .zoom-btn:hover{background:rgba(255,255,255,0.06);color:var(--text)}
     .zoom-btn svg{width:14px;height:14px}
-    .zoom-pct{font-size:10px;color:var(--text-4);font-weight:600;min-width:36px;text-align:center}
-    .stream-pill{position:fixed;bottom:16px;right:16px;z-index:50;display:flex;gap:6px;padding:6px;border-radius:14px;background:rgba(13,13,22,0.75);backdrop-filter:blur(16px);border:1px solid var(--glass-border);box-shadow:0 8px 32px rgba(0,0,0,0.4)}
-    .stream-pill-btn{display:flex;align-items:center;gap:8px;padding:8px 14px;border-radius:10px;border:none;background:none;color:var(--text-3);cursor:pointer;font-family:inherit;font-size:11px;font-weight:600;transition:all var(--speed-fast);white-space:nowrap}
+    .zoom-pct{font-size:10px;color:var(--text-4);font-weight:600;min-width:30px;text-align:center}
+    .stream-pill{position:fixed;bottom:16px;right:16px;z-index:50;display:flex;gap:2px;padding:4px 6px;border-radius:22px;background:rgba(13,13,22,0.82);backdrop-filter:blur(24px);border:1px solid rgba(255,255,255,0.09);box-shadow:0 2px 0 rgba(255,255,255,0.05) inset,0 8px 32px rgba(0,0,0,0.7),0 2px 8px rgba(0,0,0,0.5);scale:var(--tb-scale,1)}
+    .stream-pill-btn{display:flex;align-items:center;gap:8px;padding:6px 12px;border-radius:14px;border:none;background:none;color:var(--text-3);cursor:pointer;font-family:inherit;font-size:11px;font-weight:600;transition:all var(--speed-fast);white-space:nowrap}
     .stream-pill-btn:hover{background:rgba(255,255,255,0.06);color:var(--text)}
-    .stream-pill-btn .sp-icon{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-    .stream-pill-btn .sp-icon svg,.stream-pill-btn .sp-icon img{width:16px;height:16px}
+    .stream-pill-btn .sp-icon{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+    .stream-pill-btn .sp-icon svg,.stream-pill-btn .sp-icon img{width:14px;height:14px}
     .plat-logo{display:block;width:100%;height:100%;object-fit:contain}
 
-    .media-player{position:fixed;bottom:18px;left:18px;z-index:49;display:flex;align-items:center;gap:0;border-radius:16px;background:rgba(13,13,22,0.82);backdrop-filter:blur(22px);border:1px solid rgba(255,255,255,0.06);box-shadow:0 8px 32px rgba(0,0,0,0.5),0 0 0 1px rgba(255,255,255,0.03);overflow:hidden;transition:width var(--speed-normal),opacity var(--speed-normal);min-width:42px;max-width:320px;-webkit-app-region:no-drag}
+    .media-player{position:fixed;bottom:18px;left:18px;z-index:49;display:flex;align-items:center;gap:0;border-radius:22px;background:rgba(13,13,22,0.82);backdrop-filter:blur(24px);border:1px solid rgba(255,255,255,0.09);box-shadow:0 2px 0 rgba(255,255,255,0.05) inset,0 8px 32px rgba(0,0,0,0.7),0 2px 8px rgba(0,0,0,0.5);overflow:hidden;transition:width var(--speed-normal),opacity var(--speed-normal);min-width:38px;max-width:320px;-webkit-app-region:no-drag;scale:var(--tb-scale,1)}
     .media-player.collapsed{max-width:42px}
     .media-player-art{width:42px;height:42px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.04);color:var(--text-4);cursor:pointer;position:relative;overflow:hidden}
     .media-player-art img{width:100%;height:100%;object-fit:cover;position:absolute;inset:0}
@@ -534,8 +583,8 @@
     .card-grid-wrap::-webkit-scrollbar{width:4px}
     .card-grid-wrap::-webkit-scrollbar-thumb{background:var(--text-4);border-radius:2px}
     .pos-bottom-layout .card-grid-wrap{padding:32px 32px 52px}
-    .pos-left-layout .card-grid-wrap{padding:32px 32px 32px 72px}
-    .pos-right-layout .card-grid-wrap{padding:32px 72px 32px 32px}
+    .pos-left-layout .card-grid-wrap{padding:32px 32px 32px 86px}
+    .pos-right-layout .card-grid-wrap{padding:32px 86px 32px 32px}
     .card-platform-section{margin-bottom:28px}
     .card-platform-header{display:flex;align-items:center;gap:10px;margin-bottom:14px;padding-left:2px}
     .card-platform-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
@@ -631,7 +680,19 @@
   </style>
 </head>
 <body>
-  <div id="root"><div style="position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center"><div style="width:32px;height:32px;border:2px solid rgba(255,255,255,0.06);border-top-color:#d4a853;border-radius:50%;animation:spin 0.8s linear infinite"></div><div style="margin-top:14px;font-size:10px;letter-spacing:2px;color:rgba(255,255,255,0.15);text-transform:uppercase">Cereal</div></div></div>
+  <script>
+    // Apply saved theme accent synchronously so the boot spinner matches the user's theme
+    (function() {
+      try {
+        var accent = localStorage.getItem('cereal-boot-accent') || '#d4a853';
+        var bg     = localStorage.getItem('cereal-boot-bg')     || '#07070d';
+        document.documentElement.style.setProperty('--accent', accent);
+        document.documentElement.style.setProperty('--glass-border', 'rgba(255,255,255,0.06)');
+        document.body.style.background = bg;
+      } catch(e) {}
+    })();
+  </script>
+  <div id="root"><div style="position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center"><div style="width:32px;height:32px;border:2px solid var(--glass-border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite"></div><div style="margin-top:14px;font-size:10px;letter-spacing:2px;color:rgba(255,255,255,0.15);text-transform:uppercase">Cereal</div></div></div>
   <script type="text/babel">
     const { useState, useEffect, useMemo, useRef, useCallback } = React;
 
@@ -690,6 +751,8 @@
       r.style.setProperty('--text-4', t.text4);
       document.body.style.background = t.bodyBg;
       document.body.style.color = t.text;
+      // Persist for the boot spinner (read before React/Babel initialise)
+      try { localStorage.setItem('cereal-boot-accent', t.accent); localStorage.setItem('cereal-boot-bg', t.bodyBg); } catch(e) {}
     }
 
     const PLATFORMS = {
@@ -898,17 +961,21 @@
       </>;
     }
 
-    function SearchOverlay({ show, onClose, games, onSelect }) {
+    function SearchOverlay({ show, onClose, games, onSelect, onLaunch }) {
       const [q, setQ] = useState('');
       const [sel, setSel] = useState(-1);
+      const [searchPlat, setSearchPlat] = useState(null);
       const inputRef = useRef(null);
-      useEffect(() => { if (show) { setQ(''); setSel(-1); setTimeout(() => inputRef.current?.focus(), 100); } }, [show]);
+      useEffect(() => { if (show) { setQ(''); setSel(-1); setSearchPlat(null); setTimeout(() => inputRef.current?.focus(), 100); } }, [show]);
       useEffect(() => { if (!show) return; var h = e => { if (e.key === 'Escape') onClose(); }; window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h); }, [show]);
       if (!show) return null;
-      var hits = q.length > 0 ? games.filter(g => g.name.toLowerCase().includes(q.toLowerCase())).slice(0, 12) : [];
+      var allHits = q.length > 0 ? games.filter(g => g.name.toLowerCase().includes(q.toLowerCase())) : [];
+      var hits = (searchPlat ? allHits.filter(g => g.platform === searchPlat) : allHits).slice(0, 12);
+      var activePlats = q.length > 0 ? [...new Set(allHits.map(g => g.platform))].filter(p => PLATFORMS[p]) : [];
       var onKey = e => {
         if (e.key==='ArrowDown') { e.preventDefault(); setSel(s=>Math.min(s+1,hits.length-1)); }
         else if (e.key==='ArrowUp') { e.preventDefault(); setSel(s=>Math.max(s-1,-1)); }
+        else if (e.key==='Enter'&&e.ctrlKey) { var target=hits[sel>=0?sel:0]; if(target&&onLaunch){onLaunch(target);onClose();} }
         else if (e.key==='Enter'&&sel>=0&&hits[sel]) { onSelect(hits[sel]); onClose(); }
       };
       return (
@@ -916,10 +983,15 @@
           <button className="search-esc">ESC</button>
           <input ref={inputRef} value={q} onChange={e=>{setQ(e.target.value);setSel(-1);}} onKeyDown={onKey} placeholder="Search games..." onClick={e => e.stopPropagation()} />
           <div className="search-results" onClick={e => e.stopPropagation()} role="listbox">
+            {activePlats.length > 1 && <div className="search-plat-chips">
+              <button className={'search-plat-chip'+(searchPlat===null?' active':'')} onClick={()=>setSearchPlat(null)}>All</button>
+              {activePlats.map(p=><button key={p} className={'search-plat-chip'+(searchPlat===p?' active':'')} onClick={()=>setSearchPlat(p===searchPlat?null:p)} style={{color:searchPlat===p?undefined:PLATFORMS[p].color}}>{PLATFORMS[p].label}</button>)}
+            </div>}
             {hits.map((g,i) => (
               <div key={g.id} className={'search-hit'+(i===sel?' selected':'')} onClick={() => { onSelect(g); onClose(); }} role="option" aria-selected={i===sel}>
                 <div className="search-hit-cover">{(() => { const src = resolveGameImage(g, 'coverUrl'); return src ? <img key={src} src={src} alt={g.name} /> : g.name.charAt(0); })()}</div>
                 <div><div className="search-hit-name">{g.name}</div><div className="search-hit-meta">{platformLabel(g.platform)} &middot; {fmtTime(g.playtimeMinutes)}</div></div>
+                {onLaunch && <button className="card-hover-btn play" style={{marginLeft:'auto',padding:'3px 10px',fontSize:10,flexShrink:0}} onClick={e=>{e.stopPropagation();onLaunch(g);onClose();}} title="Launch (Ctrl+Enter)">▶</button>}
               </div>
             ))}
             {q && hits.length === 0 && <div style={{textAlign:'center',padding:'20px',color:'var(--text-4)',fontSize:'13px'}}>No matches</div>}
@@ -940,6 +1012,18 @@
         window.addEventListener('keydown', h, true);
         return () => window.removeEventListener('keydown', h, true);
       }, [zoomSrc]);
+      useEffect(() => {
+        if (!game) return;
+        var h = e => {
+          if (zoomSrc) return; // zoom modal takes priority
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onLaunch(game); }
+          else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); if (window.confirm('Remove "' + game.name + '" from library?')) onDelete(game.id); }
+          else if (e.key === 'e' || e.key === 'E') { e.preventDefault(); onEdit(game); }
+          else if (e.key === 'f' || e.key === 'F') { e.preventDefault(); onFav(game.id); }
+        };
+        window.addEventListener('keydown', h);
+        return () => window.removeEventListener('keydown', h);
+      }, [game, zoomSrc]);
       const doRefresh = async () => {
         if (!window.api?.applyMetadata) return;
         setRefreshing(true);
@@ -985,6 +1069,7 @@
               )}
               {game.categories?.length > 0 && <div className="focus-cats">{game.categories.map(c => <span key={c} className="focus-cat">{c}</span>)}</div>}
               {game.description && <div className="focus-desc">{game.description}</div>}
+              {game.notes && <div style={{marginTop:8}}><div className="focus-notes-label">Notes</div><div className="focus-notes">{game.notes}</div></div>}
               {game.screenshots?.length > 0 && <div className="focus-screenshots">{game.screenshots.slice(0,6).map((s,i) => <img key={i} src={s} alt="" onClick={e=>{e.stopPropagation();setZoomSrc(s);}} />)}</div>}
               <div className="focus-actions">
                 <button className={'btn-play'+(gpFocusIdx===0?' gp-focus':'')} onClick={() => onLaunch(game)}><span style={{display:'flex',width:14,height:14}}>{I.play}</span> Play</button>
@@ -1063,7 +1148,7 @@
     }
 
     function AddPanel({ show, onClose, onSave, categories, editGame, flash, onOpenArtPicker, onUpdated }) {
-      const emptyForm = { name:'', platform:'custom', executablePath:'', coverUrl:'', categories:[], platformId:'', description:'', developer:'', publisher:'', releaseDate:'', headerUrl:'', metacritic:'', website:'' };
+      const emptyForm = { name:'', platform:'custom', executablePath:'', coverUrl:'', categories:[], platformId:'', description:'', developer:'', publisher:'', releaseDate:'', headerUrl:'', metacritic:'', website:'', notes:'' };
       const [f, setF] = useState(emptyForm);
       const [showMeta, setShowMeta] = useState(false);
       const [fetching, setFetching] = useState(false);
@@ -1105,6 +1190,7 @@
           {f.platform === 'custom' && <div className="field"><label>Executable</label><div style={{display:'flex',gap:'8px'}}><input value={f.executablePath||''} onChange={e=>setF(p=>({...p,executablePath:e.target.value}))} placeholder="Path to .exe" style={{flex:1}} /><button className="btn-flat" onClick={browse}>Browse</button></div></div>}
           <div className="field"><label>Cover Image</label><div style={{display:'flex',gap:'8px'}}><input value={f.coverUrl||''} onChange={e=>setF(p=>({...p,coverUrl:e.target.value}))} placeholder="URL or file path" style={{flex:1}} /><button className="btn-flat" onClick={()=>browseImg('coverUrl')}>File</button><button className="btn-flat" style={{color:'var(--accent)'}} onClick={async ()=>{ if(!f.name.trim()) return; try { const url = await onOpenArtPicker({ gameName: f.name, platform: f.platform, field: 'coverUrl', autoSave: !!editGame }); if (url) { if (editGame) { const out = { ...f, coverUrl: url, metacritic: f.metacritic ? Number(f.metacritic) : null }; if (!out.metacritic && out.metacritic !== 0) delete out.metacritic; try { const res = await onSave(out); if (typeof onUpdated === 'function') onUpdated(res || out); } catch(e) { if (flash) flash('Save failed: ' + (e?.message || e)); } } else { setF(p=>({...p,coverUrl:url})); } } } catch(e) { if (flash) flash('Art search failed: ' + (e?.message || e)); } }} disabled={!f.name.trim()}>Search</button></div>{f.coverUrl && <img className="cover-preview" src={f.coverUrl} alt="" onError={e=>e.target.style.display='none'} onLoad={e=>e.target.style.display='block'} />}</div>
           <div className="field"><label>Categories</label><div className="tag-row">{(categories||[]).map(c=><button key={c} className={'tag'+(f.categories.includes(c)?' sel':'')} onClick={()=>toggle(c)}>{c}</button>)}</div></div>
+          <div className="field"><label>Notes</label><textarea value={f.notes||''} onChange={e=>setF(p=>({...p,notes:e.target.value}))} placeholder="Personal notes about this game..." rows={2} /></div>
           <button className={'meta-toggle'+(showMeta?' open':'')} onClick={()=>setShowMeta(!showMeta)}>{chevron} Metadata {editGame && <span style={{marginLeft:'auto',fontSize:9,fontWeight:400,color:'var(--text-4)',textTransform:'none',letterSpacing:0}}>{fetching?'Fetching...':'Auto-fill from web'}</span>}{editGame && <span className="btn-flat" style={{padding:'3px 10px',fontSize:10,marginLeft:8}} onClick={e=>{e.stopPropagation();doFetch();}}>{I.download}</span>}</button>
           {showMeta && <div className="meta-section">
             <div className="field"><label>Description</label><textarea value={f.description||''} onChange={e=>setF(p=>({...p,description:e.target.value}))} placeholder="Game description" rows={3} /></div>
@@ -1367,8 +1453,12 @@
 
       const pos = tbPos || 'top';
       const isOrbit = viewMode === 'orbit';
-      const bottom = pos === 'bottom' ? 60 : isOrbit ? 56 : 18;
-      const left   = pos === 'left'   ? 72 : 18;
+      const isVertical = pos === 'left' || pos === 'right';
+      const bottom = pos === 'bottom' ? 64 : (isVertical ? 8 : 18);
+      const hPos = pos === 'right' ? {right: 6, left: 'auto'} : {left: pos === 'left' ? 6 : 18};
+      const cornerStyle = pos === 'left' ? {borderRadius:'0 22px 22px 0', transformOrigin:'bottom left'}
+                        : pos === 'right' ? {borderRadius:'22px 0 0 22px', transformOrigin:'bottom right'}
+                        : {};
 
       const hasMedia = !!(media.title || media.artist);
       const progress = (media.duration > 0) ? Math.min(100, media.position / media.duration * 100) : 0;
@@ -1381,12 +1471,14 @@
       const iRefresh= <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.76L13 11h7V4l-2.35 2.35z"/></svg>;
 
       const content = collapsed ? (
-        <div className="media-player collapsed" style={{bottom, left}}>
+        <div className="media-player collapsed" style={{bottom, ...hPos, ...cornerStyle}}>
           <button className="media-collapsed-btn" onClick={() => setCollapsed(false)} title="Media controls">{iMusic}</button>
         </div>
       ) : (
-        <div className={'media-player' + (hasMedia ? '' : ' no-media')} style={{bottom, left}}>
-          <div className="media-player-art" onClick={() => setCollapsed(true)} title="Collapse">{iMusic}</div>
+        <div className={'media-player' + (hasMedia ? '' : ' no-media')} style={{bottom, ...hPos, ...cornerStyle}}>
+          <div className="media-player-art" onClick={() => setCollapsed(true)} title="Collapse">
+            {media.thumbnail ? <img src={media.thumbnail} alt="" /> : iMusic}
+          </div>
           <div className="media-player-info">
             <div className="media-player-title">{hasMedia ? (media.title || '—') : <span style={{color:'var(--text-4)',fontWeight:400}}>Nothing playing</span>}</div>
             {hasMedia && <div className="media-player-artist">{media.artist || media.album || ''}</div>}
@@ -1470,7 +1562,7 @@
 
     function ChiakiPanel({ show, onClose, flash, games, setGames, chiakiSessions }) {
       const [chiakiStatus, setChiakiStatus] = useState(null);
-      const [chiakiConfig, setChiakiConfig] = useState({ executablePath:'', consoles:[], cerealMode:true });
+      const [chiakiConfig, setChiakiConfig] = useState({ executablePath:'', consoles:[] });
       const [newConsole, setNewConsole] = useState({ nickname:'', host:'', profile:'' });
       const [showAddConsole, setShowAddConsole] = useState(false);
       const [activeTab, setActiveTab] = useState('consoles');
@@ -1487,7 +1579,7 @@
             const st = await window.api.getChiakiStatus();
             const cfg = await window.api.getChiakiConfig();
             setChiakiStatus(st);
-            setChiakiConfig(cfg || { executablePath:'', consoles:[], cerealMode:true });
+            setChiakiConfig(cfg || { executablePath:'', consoles:[] });
           }
         })();
       }, [show]);
@@ -1558,12 +1650,6 @@
           const r = await window.api.chiakiOpenGui();
           flash(r.success ? 'chiaki-ng GUI opened' : 'Error: ' + r.error);
         }
-      };
-
-      const toggleCerealMode = async () => {
-        const updated = { ...chiakiConfig, cerealMode: !chiakiConfig.cerealMode };
-        if (window.api) await window.api.saveChiakiConfig(updated);
-        setChiakiConfig(updated);
       };
 
       const statusClass = chiakiStatus?.status || 'missing';
@@ -1695,14 +1781,6 @@
               chiaki-ng is required for Remote Play. Run <strong>scripts/setup-chiaki.ps1</strong> to download it automatically.
             </div>
           )}
-
-          <div className="chiaki-mode-row">
-            <span className="chiaki-mode-icon">{I.gear}</span>
-            <span className="chiaki-mode-label">Cereal integration mode</span>
-            <button className={'btn-sm' + (chiakiConfig.cerealMode ? ' primary' : '')} onClick={toggleCerealMode} style={{fontSize:10,padding:'3px 10px'}}>
-              {chiakiConfig.cerealMode ? 'ON' : 'OFF'}
-            </button>
-          </div>
 
           <div className="sub-tabs">
             {['consoles','discover','register'].map(t => (
@@ -1874,7 +1952,7 @@
       );
     }
 
-    function SettingsPanel({ show, onClose, flash, settings, onSettingsChange, setGames, setCats, onOpenPlatforms, onOpenDetect, onSync, onFetchMetadata, onRunWizard }) {
+    function SettingsPanel({ show, onClose, flash, settings, onSettingsChange, setGames, setCats, onOpenPlatforms, onOpenDetect, onSync, onFetchMetadata, onRunWizard, onRescanAll }) {
       const [local, setLocal] = useState({});
       const [dataPath, setDataPath] = useState('');
       const [appVersion, setAppVersion] = useState('1.0.0');
@@ -2318,6 +2396,10 @@
 
               <Section id="library" title="Library Data" sectionRef={el => setSectionRef('library', el)}>
                 <div className="settings-row">
+                  <div className="settings-row-info"><div className="settings-row-label">Re-scan All Platforms</div><div className="settings-row-desc">Detect Steam, Epic, GOG, and Xbox games and add any new ones to your library</div></div>
+                  <button className="btn-sm primary" onClick={async()=>{if(onRescanAll)await onRescanAll();}}>Scan Now</button>
+                </div>
+                <div className="settings-row">
                   <div className="settings-row-info"><div className="settings-row-label">Export Library</div><div className="settings-row-desc">Save games, categories, and settings to a JSON file</div></div>
                   <button className="btn-sm primary" onClick={doExport}>Export</button>
                 </div>
@@ -2343,6 +2425,12 @@
                   <kbd className="settings-kbd">Escape</kbd><span>Close panel / overlay</span>
                   <kbd className="settings-kbd">&uarr; &darr;</kbd><span>Navigate search results</span>
                   <kbd className="settings-kbd">Enter</kbd><span>Select / confirm</span>
+                  <kbd className="settings-kbd">Ctrl+Enter</kbd><span>Launch game from search</span>
+                  <kbd className="settings-kbd">Double-click</kbd><span>Launch game directly (orbit &amp; cards)</span>
+                  <kbd className="settings-kbd">Enter / Space</kbd><span>Launch game in focus view</span>
+                  <kbd className="settings-kbd">F</kbd><span>Toggle favorite (focus view)</span>
+                  <kbd className="settings-kbd">E</kbd><span>Edit game (focus view)</span>
+                  <kbd className="settings-kbd">Delete</kbd><span>Remove game (focus view)</span>
                   <kbd className="settings-kbd">F12</kbd><span>Toggle developer tools</span>
                 </div>
               </Section>
@@ -2396,6 +2484,7 @@
       const [selectedPlatforms, setSelectedPlatforms] = useState([]);
       const [selectedCategories, setSelectedCategories] = useState([]);
       const [showFilters, setShowFilters] = useState('');
+      const [showThemePicker, setShowThemePicker] = useState(false);
       const [hideSteamSoftware, setHideSteamSoftware] = useState(false);
       const [focusGame, setFocusGame] = useState(null);
       const [showSearch, setShowSearch] = useState(false);
@@ -2414,6 +2503,8 @@
       const [viewMode, setViewMode] = useState('orbit');
       const [viewTransition, setViewTransition] = useState(null);
       const [galaxyEntering, setGalaxyEntering] = useState(false);
+      const [sortBy, setSortBy] = useState('default');
+      const [continueBannerDismissed, setContinueBannerDismissed] = useState(false);
       const [cam, setCam] = useState({zoom:0.4, x:0, y:0});
       const [animating, setAnimating] = useState(false);
       const viewportRef = useRef(null);
@@ -2512,6 +2603,8 @@
                 if (s.firstRun === false) setShowWizard(false); else setShowWizard(true);
               }
             }
+            // All data loaded — signal main process to reveal the window
+            window.api.signalReady?.();
           } else {
             setCats(['Action','Adventure','RPG','Strategy','Puzzle','Simulation','Sports','FPS','Indie','Multiplayer']);
             setGames([
@@ -2965,7 +3058,7 @@
           }));
       };
 
-      const doLaunch=async game=>{if(window.api){var r=await window.api.launchGame(game.id);flash(r.success?'Launching '+game.name:'Error: '+r.error);}else flash('Launching '+game.name+'...');};
+      const doLaunch=async game=>{if(window.api){var r=await window.api.launchGame(game.id);if(r.success){flash('Launching '+game.name);if(r.lastPlayed)_updateGameInState({...game,lastPlayed:r.lastPlayed});}else flash('Error: '+r.error);}else flash('Launching '+game.name+'...');};
       const doFav=async id=>{if(window.api){var u=await window.api.toggleFavorite(id);setGames(g=>g.map(x=>x.id===id?u:x));}else setGames(g=>g.map(x=>x.id===id?{...x,favorite:!x.favorite}:x));};
       const doAdd=async f=>{
         let created = null;
@@ -3023,6 +3116,15 @@
         flash('Import: '+(parts.length?parts.join(', '):'no changes'));
       };
       const doSync=async()=>{if(!window.api||!window.api.syncPlaytime){flash('Sync not available');return;}flash('Syncing playtime...');var r=await window.api.syncPlaytime();if(r.games)setGames(r.games);if(r.updated&&r.updated.length>0)flash('Updated playtime for '+r.updated.length+' games');else flash('Playtime is up to date');};
+      const doRescanAll=async()=>{
+        if(!window.api){flash('Rescan not available');return;}
+        flash('Scanning all platforms...');
+        var all=[];
+        var scanners=[window.api.detectSteam,window.api.detectEpic,window.api.detectGOG,window.api.detectXbox];
+        for(var fn of scanners){try{var res=await fn();if(res?.games)all.push(...res.games);}catch(e){}}
+        if(all.length===0){flash('No new games found');return;}
+        await doImport(all);
+      };
       const doFetchAllMetadata=async()=>{
         if(!window.api?.fetchAllMetadata){flash('Metadata fetch not available');return;}
         flash('Fetching metadata (0/'+games.length+')...');
@@ -3096,6 +3198,8 @@
       },[filteredGames]);
 
       const activePlatforms=useMemo(()=>{var s=new Set(filteredGames.map(g=>g.platform));return Object.keys(PLATFORMS).filter(k=>s.has(k)&&!STREAMING_PLATFORMS.includes(k));},[filteredGames]);
+      const platformCounts=useMemo(()=>{var m={};games.forEach(g=>{if(!STREAMING_PLATFORMS.includes(g.platform))m[g.platform]=(m[g.platform]||0)+1;});return m;},[games]);
+      const mostRecentGame=useMemo(()=>{return games.filter(g=>g.lastPlayed&&!STREAMING_PLATFORMS.includes(g.platform)).sort((a,b)=>new Date(b.lastPlayed)-new Date(a.lastPlayed))[0]||null;},[games]);
       const activeStations=STREAMING_PLATFORMS;
 
       const orbData=useMemo(()=>{
@@ -3329,7 +3433,7 @@
               </React.Fragment>;})}
               {orbData.map((o,oi)=>{var p=PLATFORMS[o.game.platform];var dimmed=isDimmed(o.game);var anim=settings.showAnimations!==false;var orbFocused=gpActive&&gpArea==='orbit'&&gpIdx===oi;return(
                 <div key={o.game.id} className="orb" style={{left:o.x,top:o.y,'--drift-x':anim?o.driftX+'px':'0px','--drift-y':anim?o.driftY+'px':'0px','--drift-dur':o.driftDur+'s','--drift-delay':o.driftDelay+'s',animationPlayState:anim?'running':'paused'}}>
-                  <div className={'orb-body'+(entered?' entered':'')+(dimmed?' dimmed':'')+(orbFocused?' gp-focus':'')} style={{'--orb-size':o.size+'px','--orb-color':p?.color||'#555','--enter-delay':(!ready?o.enterDelay+'s':'0s')}} onClick={()=>{if(!dragInfo.current.moved)setFocusGame(o.game);}}>
+                  <div className={'orb-body'+(entered?' entered':'')+(dimmed?' dimmed':'')+(orbFocused?' gp-focus':'')} style={{'--orb-size':o.size+'px','--orb-color':p?.color||'#555','--enter-delay':(!ready?o.enterDelay+'s':'0s')}} onClick={()=>{if(!dragInfo.current.moved)setFocusGame(o.game);}} onDoubleClick={e=>{e.stopPropagation();doLaunch(o.game);}}>
                     <div className="orb-visual">
                       {(() => { const src = resolveGameImage(o.game, 'coverUrl'); return src ? <img key={src} src={src} alt="" onError={e=>{e.target.style.display='none';e.target.nextSibling.style.display='flex';}}/> : null; })()}
                       <div className="orb-fallback" style={resolveGameImage(o.game,'coverUrl')?{display:'none'}:{}}><span style={{fontSize:o.size*0.38+'px'}}>{o.game.name.charAt(0)}</span></div>
@@ -3342,13 +3446,13 @@
             </div>
           </div>}
           {(viewMode==='cards'||viewTransition==='cards-exit')&&<div className={"card-grid-wrap"+(viewTransition==='cards-exit'?' cards-exiting':'')}>
-
-            {(()=>{var _ci=0;return groupedByPlatform.map(({platform:plat,games:gms})=>{var p=PLATFORMS[plat];return(
+            <div className="sort-bar"><span className="sort-bar-label">Sort</span>{[['default','Default'],['name','Name'],['played','Most Played'],['recent','Recent']].map(([v,l])=><button key={v} className={'sort-btn'+(sortBy===v?' active':'')} onClick={()=>setSortBy(v)}>{l}</button>)}</div>
+            {(()=>{var _ci=0;return groupedByPlatform.map(({platform:plat,games:gms})=>{var p=PLATFORMS[plat];var sortedGms=sortBy==='name'?[...gms].sort((a,b)=>a.name.localeCompare(b.name)):sortBy==='played'?[...gms].sort((a,b)=>(b.playtimeMinutes||0)-(a.playtimeMinutes||0)):sortBy==='recent'?[...gms].sort((a,b)=>new Date(b.lastPlayed||0)-new Date(a.lastPlayed||0)):gms;return(
               <div key={plat} className="card-platform-section">
                 <div className="card-platform-header"><div className="card-platform-dot" style={{background:p.color}}/><span className="card-platform-name">{p.label}</span><span className="card-platform-count">{gms.length}</span></div>
                 <div className="card-grid">
-                  {gms.map((g,gi)=>{var dim=isDimmed(g);var cardIdx=_ci++;var isFocused=gpActive&&gpArea==='cards'&&gpIdx===cardIdx;return(
-                    <div key={g.id} className={'game-card'+(dim?' dimmed':'')+(isFocused?' gp-focus':'')} style={{animationDelay:gi*0.04+'s'}} onClick={()=>setFocusGame(g)}>
+                  {sortedGms.map((g,gi)=>{var dim=isDimmed(g);var cardIdx=_ci++;var isFocused=gpActive&&gpArea==='cards'&&gpIdx===cardIdx;return(
+                    <div key={g.id} className={'game-card'+(dim?' dimmed':'')+(isFocused?' gp-focus':'')} style={{animationDelay:gi*0.04+'s'}} onClick={()=>setFocusGame(g)} onDoubleClick={e=>{e.preventDefault();e.stopPropagation();doLaunch(g);}}>
                       <div className="card-cover">
                         {(() => { const src = resolveGameImage(g, 'coverUrl'); return src ? <img key={src} src={src} alt="" onError={e=>{e.target.style.display='none';e.target.nextSibling.style.display='flex';}}/> : null; })()}
                         <div className="card-cover-fallback" style={g.coverUrl?{display:'none'}:{}}>{g.name.charAt(0)}</div>
@@ -3382,7 +3486,7 @@
             <button className={'chip'+(tab==='all'?' active':'')} onClick={()=>{setTab('all');if(viewMode==='orbit')fitAll();}}>All</button>
             <button className={'chip'+(tab==='favorites'?' active':'')} onClick={()=>setTab('favorites')}>Fav</button>
             <button className={'chip'+(tab==='recent'?' active':'')} onClick={()=>setTab('recent')}>Recent</button>
-            {activePlatforms.map(p=>(<button key={p} className={'chip'+(tab===p?' active':'') + (selectedPlatforms.includes(p)?' filter-active':'')} onClick={()=>{var nt=tab===p?'all':p;setTab(nt);if(viewMode==='orbit'){if(nt==='all')fitAll();else{var c=CLUSTER_CENTERS[p];if(c)flyTo(c.x,c.y,1.6);}}}} title={PLATFORMS[p].label}><span className="chip-icon" style={{width:14,height:14,flexShrink:0,color:PLATFORMS[p].color,display:'inline-flex',alignItems:'center',justifyContent:'center'}}>{PLATFORMS[p].icon}</span><span className="chip-label" style={{marginLeft:5}}>{PLATFORMS[p].label}</span></button>))}
+            {activePlatforms.map(p=>(<button key={p} className={'chip'+(tab===p?' active':'') + (selectedPlatforms.includes(p)?' filter-active':'')} onClick={()=>{var nt=tab===p?'all':p;setTab(nt);if(viewMode==='orbit'){if(nt==='all')fitAll();else{var c=CLUSTER_CENTERS[p];if(c)flyTo(c.x,c.y,1.6);}}}} title={PLATFORMS[p].label}><span className="chip-icon" style={{width:14,height:14,flexShrink:0,color:PLATFORMS[p].color,display:'inline-flex',alignItems:'center',justifyContent:'center'}}>{PLATFORMS[p].icon}</span><span className="chip-label" style={{marginLeft:5}}>{PLATFORMS[p].label}</span>{platformCounts[p]>0&&<span className="chip-count">{platformCounts[p]}</span>}</button>))}
             <div className="nav-sep"/>
             {(()=>{var filterCount=selectedPlatforms.length+selectedCategories.length+(hideSteamSoftware?1:0)+(gameFilter?1:0);return<div className="nav-filter-wrap" style={{position:'relative'}}>
               <button className="nav-btn" onClick={()=>setShowFilters(s=>s?'':'open')} title="Filter games" style={{position:'relative'}}>{I.search}{filterCount>0&&<span style={{position:'absolute',top:-4,right:-4,minWidth:16,height:16,display:'inline-flex',alignItems:'center',justifyContent:'center',borderRadius:16,background:'var(--accent)',color:'#07070d',fontSize:9,fontWeight:700,padding:'0 4px',boxShadow:'0 4px 12px rgba(0,0,0,0.45)'}}>{filterCount}</span>}</button>
@@ -3415,23 +3519,24 @@
               <button className={viewMode==='orbit'?'active':''} onClick={()=>switchView('orbit')} title="Orbit view" aria-label="Orbit view">{I.orbit}</button>
               <button className={viewMode==='cards'?'active':''} onClick={()=>switchView('cards')} title="Card view" aria-label="Card view">{I.grid}</button>
             </div>
-            <div className="nav-sep"/><div className="nav-actions">
+            <div className="nav-sep"/>{(()=>{var activeTheme=THEMES[settings.theme||'midnight']||THEMES.midnight;var chevron=<svg viewBox="0 0 8 8" width="8" height="8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M1 2l3 3 3-3"/></svg>;var popoverStyle=isVertical?{}:(tbPos==='bottom'?{bottom:'calc(100% + 6px)',left:0}:{top:'calc(100% + 6px)',left:0});var dots=<div className="theme-picker-popover" style={popoverStyle} onClick={e=>e.stopPropagation()}>{Object.entries(THEMES).map(([key,t])=>(<button key={key} className={'theme-dot'+((settings.theme||'midnight')===key?' active':'')} style={{background:t.accent}} title={t.label} onClick={async()=>{const saved=await window.api?.saveSettings({theme:key});onSettingsChange(saved||{theme:key});applyTheme(key);setShowThemePicker(false);}}/>))}</div>;return(<div className="theme-picker-wrap"><button className="theme-picker-btn" onClick={()=>setShowThemePicker(s=>!s)} title="Theme"><span className="theme-picker-dot" style={{background:activeTheme.accent}}/>{chevron}</button>{showThemePicker&&(isVertical?ReactDOM.createPortal(<div style={{position:'fixed',zIndex:400,[tbPos==='left'?'left':'right']:76,top:'50%',transform:'translateY(-50%)'}} onClick={()=>setShowThemePicker(false)}><div onClick={e=>e.stopPropagation()} style={{background:'var(--surface)',border:'1px solid var(--glass-border)',borderRadius:12,padding:8,boxShadow:'0 8px 32px rgba(0,0,0,0.6)',display:'flex',gap:5,flexWrap:'wrap',width:128}}>{Object.entries(THEMES).map(([key,t])=>(<button key={key} className={'theme-dot'+((settings.theme||'midnight')===key?' active':'')} style={{background:t.accent}} title={t.label} onClick={async()=>{const saved=await window.api?.saveSettings({theme:key});onSettingsChange(saved||{theme:key});applyTheme(key);setShowThemePicker(false);}}/>))}</div></div>,document.body):dots)}</div>);})()}<div className="nav-sep"/><div className="nav-pill-quick"><select className="nav-select" value={settings.toolbarPosition||'top'} title="Toolbar position" onChange={async e=>{const v=e.target.value;const saved=await window.api?.saveSettings({toolbarPosition:v});onSettingsChange(saved||{toolbarPosition:v});setShowThemePicker(false);}}><option value="top">Top</option><option value="bottom">Bottom</option><option value="left">Left</option><option value="right">Right</option></select></div><div className="nav-sep"/><div className="nav-actions">
               <button className="nav-btn" title="Add game" aria-label="Add game" onClick={()=>{setEditGame(null);setShowAdd(true);}}>{I.plus}</button>
               <button className="nav-btn" title="Settings (Ctrl+,)" aria-label="Settings" onClick={()=>setShowSettings(true)}>{I.gear}</button>
             </div>
           </div>
           {games.length===0&&viewMode==='orbit'&&<div style={{position:'fixed',inset:0,zIndex:2,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',pointerEvents:'none'}}><div style={{width:36,height:36,border:'2px solid rgba(255,255,255,0.05)',borderTopColor:'var(--accent)',borderRadius:'50%',animation:'spin 0.8s linear infinite',marginBottom:16}}/><div style={{fontSize:11,color:'var(--text-4)',letterSpacing:1}}>Loading galaxy...</div></div>}
           {games.length===0&&<div className="empty-state"><div className="empty-icon">:/</div><div className="empty-title">No games yet</div><div className="empty-text">Add games manually or detect from installed platforms.</div><div style={{display:'flex',gap:'8px'}}><button className="btn-play" onClick={()=>{setEditGame(null);setShowAdd(true);}}>Add Game</button><button className="btn-ghost" onClick={()=>setShowDetect(true)}>Detect</button></div></div>}
+          {mostRecentGame&&!continueBannerDismissed&&!focusGame&&!anyPanelOpen&&<div className="continue-banner"><div className="continue-banner-info"><div className="continue-banner-label">Continue</div><div className="continue-banner-name">{mostRecentGame.name}</div></div><button className="continue-play-btn" onClick={()=>{doLaunch(mostRecentGame);setContinueBannerDismissed(true);}}><span style={{display:'flex',width:10,height:10}}>{I.play}</span> Play</button><button className="continue-dismiss" onClick={()=>setContinueBannerDismissed(true)} title="Dismiss">&times;</button></div>}
           <FocusView game={liveFocus} onClose={()=>setFocusGame(null)} onLaunch={doLaunch} onFav={doFav} onEdit={doEditFromFocus} onDelete={doDelete} onRefreshGame={g=>{ _updateGameInState(g); setFocusGame(g); flash('Metadata updated'); }} gpFocusIdx={gpActive&&gpArea==='focus'?gpIdx:-1} />
           {Object.entries(chiakiSessions).filter(([,s])=>s.state==='gui').map(([gid,sess])=>{var g=games.find(x=>x.id===gid);if(!g)return null;return(<div key={gid} className="stream-float" onClick={()=>setShowChiaki(true)}><div className="stream-float-dot connecting"/><div className="stream-float-info"><div className="stream-float-name">{g.name}</div><div className="stream-float-meta">chiaki-ng GUI open</div></div><button className="stream-float-stop" onClick={async e=>{e.stopPropagation();if(window.api)await window.api.chiakiStopStream(gid);setChiakiSessions(p=>{var n={...p};delete n[gid];return n;});flash('Stream stopped');}}>Stop</button></div>);})}
           <StreamOverlay sessions={chiakiSessions} games={games} onStop={async gid=>{var s=chiakiSessions[gid];if(window.api){if(s&&s.platform==='xbox')await window.api.xcloudStop(gid);else await window.api.chiakiStopStream(gid);}setChiakiSessions(p=>{var n={...p};delete n[gid];return n;});flash('Stream stopped');}} />
-          <SearchOverlay show={showSearch} onClose={()=>setShowSearch(false)} games={games} onSelect={g=>setFocusGame(g)}/>
+          <SearchOverlay show={showSearch} onClose={()=>setShowSearch(false)} games={games} onSelect={g=>setFocusGame(g)} onLaunch={doLaunch}/>
           <AddPanel show={showAdd} onClose={()=>{setShowAdd(false);setEditGame(null);}} onSave={editGame?doEdit:doAdd} onUpdated={g=>{ _updateGameInState(g); setShowAdd(false); setEditGame(null); }} categories={cats} editGame={editGame} flash={flash} onOpenArtPicker={openArtPicker} />
           <DetectPanel show={showDetect} onClose={()=>setShowDetect(false)} onImport={doImport}/>
           <PlatformsPanel show={showPlatforms} onClose={()=>setShowPlatforms(false)} flash={flash} setGames={setGames} onOpenChiaki={()=>setShowChiaki(true)} onOpenXcloud={()=>setShowXcloud(true)}/>
           <ChiakiPanel show={showChiaki} onClose={()=>setShowChiaki(false)} flash={flash} games={games} setGames={setGames} chiakiSessions={chiakiSessions}/>
           <XcloudPanel show={showXcloud} onClose={()=>setShowXcloud(false)} flash={flash}/>
-          <SettingsPanel show={showSettings} onClose={()=>setShowSettings(false)} flash={flash} settings={settings} onSettingsChange={onSettingsChange} setGames={setGames} setCats={setCats} onOpenPlatforms={()=>{setShowSettings(false);setTimeout(()=>setShowPlatforms(true),150);}} onOpenDetect={()=>{setShowSettings(false);setTimeout(()=>setShowDetect(true),150);}} onSync={doSync} onFetchMetadata={doFetchAllMetadata} onRunWizard={()=>setShowWizard(true)} />
+          <SettingsPanel show={showSettings} onClose={()=>setShowSettings(false)} flash={flash} settings={settings} onSettingsChange={onSettingsChange} setGames={setGames} setCats={setCats} onOpenPlatforms={()=>{setShowSettings(false);setTimeout(()=>setShowPlatforms(true),150);}} onOpenDetect={()=>{setShowSettings(false);setTimeout(()=>setShowDetect(true),150);}} onSync={doSync} onFetchMetadata={doFetchAllMetadata} onRunWizard={()=>setShowWizard(true)} onRescanAll={doRescanAll} />
           <StartupWizard show={showWizard} onClose={()=>setShowWizard(false)} />
           {globalArtPicker && (
             <div className="modal-overlay">
