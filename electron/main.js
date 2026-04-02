@@ -1186,9 +1186,14 @@ function createWindow() {
     setTimeout(_showMainWindow, 150);
   });
 
-  // Fallback: show after 8s if the renderer never signals (e.g. slow DB or cold start)
+  // Safety net: show after dom-ready + 1s if the renderer hasn't signalled yet
+  mainWindow.webContents.once('dom-ready', () => {
+    setTimeout(_showMainWindow, 1000);
+  });
+
+  // Hard fallback: show after 2.5s regardless (covers slow DB or cold start)
   mainWindow.webContents.once('did-finish-load', () => {
-    setTimeout(_showMainWindow, 8000);
+    setTimeout(_showMainWindow, 2500);
   });
   mainWindow.webContents.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return;

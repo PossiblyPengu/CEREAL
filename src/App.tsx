@@ -231,13 +231,14 @@ export default function App() {
   useEffect(() => {
     (async () => {
       if (window.api) {
-        const g = await window.api.getGames();
-        const c = await window.api.getCategories();
+        const [g, c, s] = await Promise.all([
+          window.api.getGames(),
+          window.api.getCategories(),
+          (window.api as any).getSettings?.(),
+        ]);
         setGames(g || []);
         setCats(c || []);
-        if ((window.api as any).getSettings) {
-          const s = await (window.api as any).getSettings();
-          if (s) {
+        if (s) {
             setSettings(s);
             if (s.defaultView) setViewMode(s.defaultView);
             if (s.defaultTab) setTab(s.defaultTab);
@@ -253,7 +254,6 @@ export default function App() {
             if (s.filterHideSteamSoftware) setHideSteamSoftware(!!s.filterHideSteamSoftware);
             setShowWizard(s.firstRun !== false);
           }
-        }
         setGamesLoaded(true);
       } else {
         setCats(['Action', 'Adventure', 'RPG', 'Strategy', 'Puzzle', 'Simulation', 'Sports', 'FPS', 'Indie', 'Multiplayer']);
