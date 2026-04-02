@@ -1134,7 +1134,7 @@ function createWindow() {
     minWidth: 900,
     minHeight: 600,
     frame: false,
-    show: false, // Don't show immediately - wait for ready
+    show: true,
     backgroundColor: '#0a0a0f',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -1165,36 +1165,14 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
 
-  // Show window once the renderer signals all data is loaded.
-  // Falls back to a hard timeout in case the signal is never sent.
-  let _windowShown = false;
-  const _showMainWindow = () => {
-    if (_windowShown) return;
-    _windowShown = true;
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.show();
-      mainWindow.focus();
-      if (process.env.CEREAL_DEVTOOLS === '1') {
-        try { toggleDevTools(); } catch (e) { console.error('Auto DevTools failed:', e.message); }
-      }
-    }
-  };
+  if (process.env.CEREAL_DEVTOOLS === '1') {
+    mainWindow.webContents.once('did-finish-load', () => {
+      try { toggleDevTools(); } catch (e) { console.error('Auto DevTools failed:', e.message); }
+    });
+  }
 
-  // Primary path: renderer calls window.api.signalReady() after games/settings load
-  ipcMain.once('window:ready', () => {
-    // Small delay so the first paint completes before the window appears
-    setTimeout(_showMainWindow, 150);
-  });
-
-  // Safety net: show after dom-ready + 1s if the renderer hasn't signalled yet
-  mainWindow.webContents.once('dom-ready', () => {
-    setTimeout(_showMainWindow, 1000);
-  });
-
-  // Hard fallback: show after 2.5s regardless (covers slow DB or cold start)
-  mainWindow.webContents.once('did-finish-load', () => {
-    setTimeout(_showMainWindow, 2500);
-  });
+  // signalReady is kept for future use but window is already visible
+  ipcMain.on('window:ready', () => {});
   mainWindow.webContents.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return;
     const toggleDevtools = (input.control && input.shift && input.code === 'KeyI') || input.code === 'F12';

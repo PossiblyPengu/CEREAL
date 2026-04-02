@@ -26,7 +26,7 @@ function copyElectronProviders() {
 }
 
 function copyMediaInfoExe() {
-  const src = path.resolve(__dirname, 'electron/native/MediaInfoTool/bin/Release/net48/MediaInfoTool.exe')
+  const src = path.resolve(__dirname, 'electron/native/MediaInfoTool/publish/MediaInfoTool.exe')
   const dest = path.resolve(__dirname, 'dist-electron/native/MediaInfoTool.exe')
   if (fs.existsSync(src)) {
     fs.mkdirSync(path.dirname(dest), { recursive: true })

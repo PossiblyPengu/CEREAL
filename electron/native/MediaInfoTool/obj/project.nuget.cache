@@ -1,15 +1,14 @@
 {
   "version": 2,
-  "dgSpecHash": "OhYCNOmC7pw=",
+  "dgSpecHash": "XI0AFZKzKYY=",
   "success": true,
-  "projectFilePath": "E:\\CODE\\cereal-launcher-vite\\electron\\native\\MediaInfoTool\\MediaInfoTool.csproj",
+  "projectFilePath": "D:\\CODE\\cereal-launcher-vite\\electron\\native\\MediaInfoTool\\MediaInfoTool.csproj",
   "expectedPackageFiles": [
-    "C:\\Users\\andre\\.nuget\\packages\\microsoft.netframework.referenceassemblies\\1.0.3\\microsoft.netframework.referenceassemblies.1.0.3.nupkg.sha512",
-    "C:\\Users\\andre\\.nuget\\packages\\microsoft.netframework.referenceassemblies.net48\\1.0.3\\microsoft.netframework.referenceassemblies.net48.1.0.3.nupkg.sha512",
-    "C:\\Users\\andre\\.nuget\\packages\\microsoft.windows.sdk.contracts\\10.0.22000.194\\microsoft.windows.sdk.contracts.10.0.22000.194.nupkg.sha512",
-    "C:\\Users\\andre\\.nuget\\packages\\system.runtime.interopservices.windowsruntime\\4.3.0\\system.runtime.interopservices.windowsruntime.4.3.0.nupkg.sha512",
-    "C:\\Users\\andre\\.nuget\\packages\\system.runtime.windowsruntime\\4.6.0\\system.runtime.windowsruntime.4.6.0.nupkg.sha512",
-    "C:\\Users\\andre\\.nuget\\packages\\system.runtime.windowsruntime.ui.xaml\\4.6.0\\system.runtime.windowsruntime.ui.xaml.4.6.0.nupkg.sha512"
+    "C:\\Users\\acalabrese\\.nuget\\packages\\microsoft.net.illink.tasks\\8.0.11\\microsoft.net.illink.tasks.8.0.11.nupkg.sha512",
+    "C:\\Users\\acalabrese\\.nuget\\packages\\microsoft.netcore.app.runtime.win-x64\\8.0.11\\microsoft.netcore.app.runtime.win-x64.8.0.11.nupkg.sha512",
+    "C:\\Users\\acalabrese\\.nuget\\packages\\microsoft.windowsdesktop.app.runtime.win-x64\\8.0.11\\microsoft.windowsdesktop.app.runtime.win-x64.8.0.11.nupkg.sha512",
+    "C:\\Users\\acalabrese\\.nuget\\packages\\microsoft.aspnetcore.app.runtime.win-x64\\8.0.11\\microsoft.aspnetcore.app.runtime.win-x64.8.0.11.nupkg.sha512",
+    "C:\\Users\\acalabrese\\.nuget\\packages\\microsoft.windows.sdk.net.ref\\10.0.18362.53\\microsoft.windows.sdk.net.ref.10.0.18362.53.nupkg.sha512"
   ],
   "logs": []
 }

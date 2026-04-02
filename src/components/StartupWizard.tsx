@@ -53,10 +53,10 @@ export function StartupWizard({ show, onClose, flash, setGames }: StartupWizardP
   }, [show]);
 
   useEffect(() => {
-    if (step === 4 && chiakiReady && consoles.length === 0 && !discovering) {
+    if (step === 4 && chiakiStatus && chiakiStatus.status !== 'missing' && consoles.length === 0 && !discovering) {
       discoverConsoles();
     }
-  }, [step, chiakiReady]);
+  }, [step, chiakiStatus]);
 
   const getRecommendation = (sp: any) => {
     const ramGb = sp.ramGb || 0;

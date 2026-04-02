@@ -578,7 +578,7 @@ function stopChiakiSession(gameId) {
 	if (!session) return false;
 	if (session._reconnectTimer) clearTimeout(session._reconnectTimer);
 	stopEmbedHelper(session);
-	if (session.process && !session.process.killed) try {
+	if (session.process && !session.process.killed && session.process.exitCode === null) try {
 		if (process.platform === "win32") spawn("taskkill", [
 			"/pid",
 			String(session.process.pid),
@@ -1021,7 +1021,7 @@ function createWindow() {
 		minWidth: 900,
 		minHeight: 600,
 		frame: false,
-		show: false,
+		show: true,
 		backgroundColor: "#0a0a0f",
 		webPreferences: {
 			preload: path.join(__dirname, "preload.js"),
@@ -1046,26 +1046,19 @@ function createWindow() {
 	} catch (e) {}
 	if (process.env.VITE_DEV_SERVER_URL) mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
 	else mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
-	let _windowShown = false;
-	const _showMainWindow = () => {
-		if (_windowShown) return;
-		_windowShown = true;
-		if (mainWindow && !mainWindow.isDestroyed()) {
-			mainWindow.show();
-			mainWindow.focus();
-			if (process.env.CEREAL_DEVTOOLS === "1") try {
-				toggleDevTools();
-			} catch (e) {
-				console.error("Auto DevTools failed:", e.message);
-			}
+	if (process.env.CEREAL_DEVTOOLS === "1") mainWindow.webContents.once("did-finish-load", () => {
+		try {
+			toggleDevTools();
+		} catch (e) {
+			console.error("Auto DevTools failed:", e.message);
 		}
-	};
-	ipcMain.once("window:ready", () => {
-		setTimeout(_showMainWindow, 150);
 	});
-	mainWindow.webContents.once("did-finish-load", () => {
-		setTimeout(_showMainWindow, 8e3);
+	if (process.env.VITE_DEV_SERVER_URL) mainWindow.webContents.once("did-finish-load", () => {
+		try {
+			mainWindow.webContents.openDevTools({ mode: "detach" });
+		} catch (_) {}
 	});
+	ipcMain.on("window:ready", () => {});
 	mainWindow.webContents.on("before-input-event", (event, input) => {
 		if (input.type !== "keyDown") return;
 		if (!(input.control && input.shift && input.code === "KeyI" || input.code === "F12")) return;
