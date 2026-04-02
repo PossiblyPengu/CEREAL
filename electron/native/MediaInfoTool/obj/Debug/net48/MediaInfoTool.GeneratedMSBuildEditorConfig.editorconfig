@@ -1,0 +1,8 @@
+is_global = true
+build_property.RootNamespace = MediaInfoTool
+build_property.ProjectDir = e:\CODE\cereal-launcher-vite\electron\native\MediaInfoTool\
+build_property.EnableComHosting = 
+build_property.EnableGeneratedComInterfaceComImportInterop = 
+build_property.CsWinRTUseWindowsUIXamlProjections = false
+build_property.EffectiveAnalysisLevelStyle = 
+build_property.EnableCodeStyleSeverity = 

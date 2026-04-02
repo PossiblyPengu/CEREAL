@@ -1,0 +1,10 @@
+E:\CODE\cereal-launcher-vite\electron\native\MediaInfoTool\bin\Release\net48\MediaInfoTool.exe.config
+E:\CODE\cereal-launcher-vite\electron\native\MediaInfoTool\bin\Release\net48\MediaInfoTool.exe
+E:\CODE\cereal-launcher-vite\electron\native\MediaInfoTool\bin\Release\net48\MediaInfoTool.pdb
+E:\CODE\cereal-launcher-vite\electron\native\MediaInfoTool\obj\Release\net48\MediaInfoTool.csproj.AssemblyReference.cache
+E:\CODE\cereal-launcher-vite\electron\native\MediaInfoTool\obj\Release\net48\MediaInfoTool.GeneratedMSBuildEditorConfig.editorconfig
+E:\CODE\cereal-launcher-vite\electron\native\MediaInfoTool\obj\Release\net48\MediaInfoTool.AssemblyInfoInputs.cache
+E:\CODE\cereal-launcher-vite\electron\native\MediaInfoTool\obj\Release\net48\MediaInfoTool.AssemblyInfo.cs
+E:\CODE\cereal-launcher-vite\electron\native\MediaInfoTool\obj\Release\net48\MediaInfoTool.csproj.CoreCompileInputs.cache
+E:\CODE\cereal-launcher-vite\electron\native\MediaInfoTool\obj\Release\net48\MediaInfoTool.exe
+E:\CODE\cereal-launcher-vite\electron\native\MediaInfoTool\obj\Release\net48\MediaInfoTool.pdb
