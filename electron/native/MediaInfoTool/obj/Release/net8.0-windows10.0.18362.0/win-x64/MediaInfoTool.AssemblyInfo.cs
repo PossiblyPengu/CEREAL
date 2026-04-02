@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("MediaInfoTool")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+acf7e97051cacd750209320faf14d36f30f133b2")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+d90f7ebb982d3a423e7e665ce387d7be53584afc")]
 [assembly: System.Reflection.AssemblyProductAttribute("MediaInfoTool")]
 [assembly: System.Reflection.AssemblyTitleAttribute("MediaInfoTool")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

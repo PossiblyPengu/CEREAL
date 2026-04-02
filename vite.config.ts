@@ -13,14 +13,12 @@ function copyElectronProviders() {
       const dest = path.resolve(__dirname, 'dist-electron/providers')
       fs.cpSync(src, dest, { recursive: true })
       copyMediaInfoExe()
-      copyPublicResources()
     },
     buildStart() {
       const src = path.resolve(__dirname, 'electron/providers')
       const dest = path.resolve(__dirname, 'dist-electron/providers')
       if (fs.existsSync(src)) fs.cpSync(src, dest, { recursive: true })
       copyMediaInfoExe()
-      copyPublicResources()
     },
   }
 }
@@ -39,12 +37,6 @@ function copyMediaInfoExe() {
     fs.mkdirSync(path.dirname(smtcDest), { recursive: true })
     fs.copyFileSync(smtcSrc, smtcDest)
   }
-}
-
-function copyPublicResources() {
-  const src = path.resolve(__dirname, 'public/resources')
-  const dest = path.resolve(__dirname, 'dist-electron/resources')
-  if (fs.existsSync(src)) fs.cpSync(src, dest, { recursive: true })
 }
 
 // https://vite.dev/config/
@@ -89,5 +81,16 @@ export default defineConfig({
   ],
   resolve: {
     alias: { '@': path.resolve(__dirname, './src') },
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules/react') || id.includes('node_modules/react-dom')) {
+            return 'vendor-react';
+          }
+        },
+      },
+    },
   },
 })

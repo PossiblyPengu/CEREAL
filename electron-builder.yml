@@ -1,0 +1,44 @@
+appId: com.possiblypengu.cereal
+productName: Cereal
+copyright: Copyright © 2026 PossiblyPengu
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - dist/**
+  - dist-electron/**
+  - "!dist-electron/resources/chiaki-ng/**"   # excluded from asar; added as extraResources
+  - node_modules/**
+  - package.json
+
+extraResources:
+  - from: dist-electron/resources/chiaki-ng
+    to: chiaki-ng
+    filter:
+      - "**/*"
+
+asar: true
+npmRebuild: false
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  artifactName: Cereal-Setup-${version}.exe
+  icon: build/icon.ico
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  installerHeaderIcon: build/icon.ico
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Cereal
+
+publish:
+  provider: github
+  owner: PossiblyPengu
+  repo: CEREAL
+  releaseType: release

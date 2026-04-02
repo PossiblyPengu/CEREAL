@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+﻿import React, { useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense } from 'react';
 import ReactDOM from 'react-dom';
 import type { Game, Settings, ChiakiSession } from './types';
 import { PLATFORMS, STREAMING_PLATFORMS, CLUSTER_CENTERS, GALAXY_W, GALAXY_H, THEMES, I } from './constants';
@@ -8,15 +8,16 @@ import { SearchOverlay } from './components/SearchOverlay';
 import { FocusView } from './components/FocusView';
 import { AddPanel } from './components/AddPanel';
 import { DetectPanel } from './components/DetectPanel';
-import { PlatformsPanel } from './components/PlatformsPanel';
-import { ChiakiPanel } from './components/ChiakiPanel';
-import { XcloudPanel } from './components/XcloudPanel';
-import { SettingsPanel } from './components/SettingsPanel';
 import { ContinueBanner } from './components/ContinueBanner';
 import { StartupWizard } from './components/StartupWizard';
-import { ArtPicker } from './components/ArtPicker';
 import { StreamOverlay } from './components/StreamOverlay';
 import { MediaPlayer } from './components/MediaPlayer';
+
+const PlatformsPanel = lazy(() => import('./components/PlatformsPanel').then(m => ({ default: m.PlatformsPanel })));
+const ChiakiPanel    = lazy(() => import('./components/ChiakiPanel').then(m => ({ default: m.ChiakiPanel })));
+const XcloudPanel    = lazy(() => import('./components/XcloudPanel').then(m => ({ default: m.XcloudPanel })));
+const SettingsPanel  = lazy(() => import('./components/SettingsPanel').then(m => ({ default: m.SettingsPanel })));
+const ArtPicker      = lazy(() => import('./components/ArtPicker').then(m => ({ default: m.ArtPicker })));
 
 export default function App() {
   const [importProgress, setImportProgress] = useState<any>(null);
@@ -1197,22 +1198,24 @@ export default function App() {
         onUpdated={(g: Game) => { _updateGameInState(g); setShowAdd(false); setEditGame(null); }}
         categories={cats} editGame={editGame} flash={flash} onOpenArtPicker={openArtPicker} />
       <DetectPanel show={showDetect} onClose={() => setShowDetect(false)} onImport={doImport} />
-      <PlatformsPanel show={showPlatforms} onClose={() => setShowPlatforms(false)} flash={flash} setGames={setGames} onOpenChiaki={() => setShowChiaki(true)} onOpenXcloud={() => setShowXcloud(true)} />
-      <ChiakiPanel show={showChiaki} onClose={() => setShowChiaki(false)} flash={flash} games={games} setGames={setGames} chiakiSessions={chiakiSessions} />
-      <XcloudPanel show={showXcloud} onClose={() => setShowXcloud(false)} flash={flash} />
-      <SettingsPanel show={showSettings} onClose={() => setShowSettings(false)} flash={flash} settings={settings} onSettingsChange={onSettingsChange as any}
-        setGames={setGames} setCats={setCats}
-        onOpenPlatforms={() => { setShowSettings(false); setTimeout(() => setShowPlatforms(true), 150); }}
-        onOpenDetect={() => { setShowSettings(false); setTimeout(() => setShowDetect(true), 150); }}
-        onSync={doSync} onFetchMetadata={doFetchAllMetadata} onRunWizard={() => setShowWizard(true)} onRescanAll={doRescanAll} />
+      {showPlatforms && <Suspense fallback={null}><PlatformsPanel show={showPlatforms} onClose={() => setShowPlatforms(false)} flash={flash} setGames={setGames} onOpenChiaki={() => setShowChiaki(true)} onOpenXcloud={() => setShowXcloud(true)} /></Suspense>}
+      {showChiaki && <Suspense fallback={null}><ChiakiPanel show={showChiaki} onClose={() => setShowChiaki(false)} flash={flash} games={games} setGames={setGames} chiakiSessions={chiakiSessions} /></Suspense>}
+      {showXcloud && <Suspense fallback={null}><XcloudPanel show={showXcloud} onClose={() => setShowXcloud(false)} flash={flash} /></Suspense>}
+      {showSettings && <Suspense fallback={null}><SettingsPanel show={showSettings} onClose={() => setShowSettings(false)} flash={flash} settings={settings} onSettingsChange={onSettingsChange as any}
+          setGames={setGames} setCats={setCats}
+          onOpenPlatforms={() => { setShowSettings(false); setTimeout(() => setShowPlatforms(true), 150); }}
+          onOpenDetect={() => { setShowSettings(false); setTimeout(() => setShowDetect(true), 150); }}
+          onSync={doSync} onFetchMetadata={doFetchAllMetadata} onRunWizard={() => setShowWizard(true)} onRescanAll={doRescanAll} /></Suspense>}
       <StartupWizard show={showWizard} onClose={() => setShowWizard(false)} flash={flash} setGames={setGames} />
 
       {globalArtPicker && (
         <div className="modal-overlay">
           <div className="modal-card" style={{ width: 820 }}>
-            <ArtPicker gameName={globalArtPicker.gameName} platform={globalArtPicker.platform} field={globalArtPicker.field}
-              onPick={url => { if (artResolve.current) artResolve.current(url); setGlobalArtPicker(null); }}
-              onClose={() => { if (artResolve.current) artResolve.current(null); setGlobalArtPicker(null); }} />
+            <Suspense fallback={null}>
+              <ArtPicker gameName={globalArtPicker.gameName} platform={globalArtPicker.platform} field={globalArtPicker.field}
+                onPick={url => { if (artResolve.current) artResolve.current(url); setGlobalArtPicker(null); }}
+                onClose={() => { if (artResolve.current) artResolve.current(null); setGlobalArtPicker(null); }} />
+            </Suspense>
           </div>
         </div>
       )}

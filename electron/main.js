@@ -313,10 +313,6 @@ function getChiakiDir() {
   const dev = path.join(__dirname, 'resources', 'chiaki-ng');
   if (fs.existsSync(dev)) return dev;
 
-  // Fallback: project root public/resources/chiaki-ng (before first build)
-  const src = path.join(__dirname, '..', 'public', 'resources', 'chiaki-ng');
-  if (fs.existsSync(src)) return src;
-
   return null;
 }
 
