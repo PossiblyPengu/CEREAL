@@ -46,5 +46,5 @@ git push origin HEAD
 git push origin "v$newVersion"
 
 Write-Host ""
-Write-Host "Tagged v$newVersion and pushed � GitHub Actions will build and publish the release." -ForegroundColor Green
+Write-Host "Tagged v$newVersion and pushed - GitHub Actions will build and publish the release." -ForegroundColor Green
 Write-Host "https://github.com/PossiblyPengu/CEREAL/actions"
