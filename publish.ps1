@@ -32,14 +32,7 @@ Set-Content $pkgPath $pkgRaw -NoNewline
 Write-Host "Updated package.json"
 
 # -- Commit, tag, push � CI does the rest -------------------------------------
-# Stage all tracked changes first, then add the version bump
-$staged = git status --porcelain 2>$null
-if ($staged) {
-    Write-Host "Staging pending changes..."
-    git add -A
-    git commit -m "chore: pre-release changes"
-}
-git add package.json
+git add -A
 git commit -m "chore: release v$newVersion"
 git tag "v$newVersion"
 git push origin HEAD
