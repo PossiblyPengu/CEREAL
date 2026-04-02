@@ -52,6 +52,12 @@ export function StartupWizard({ show, onClose, flash, setGames }: StartupWizardP
     }
   }, [show]);
 
+  useEffect(() => {
+    if (step === 4 && chiakiReady && consoles.length === 0 && !discovering) {
+      discoverConsoles();
+    }
+  }, [step, chiakiReady]);
+
   const getRecommendation = (sp: any) => {
     const ramGb = sp.ramGb || 0;
     const cpuCount = sp.cpuCount || 0;

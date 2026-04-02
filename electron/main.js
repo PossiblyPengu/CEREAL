@@ -637,7 +637,7 @@ function stopChiakiSession(gameId) {
   // Stop the Win32 embed helper first
   stopEmbedHelper(session);
 
-  if (session.process && !session.process.killed) {
+  if (session.process && !session.process.killed && session.process.exitCode === null) {
     try {
       if (process.platform === 'win32') {
         // SIGTERM doesn't work for Qt GUI apps on Windows; use taskkill
