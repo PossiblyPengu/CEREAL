@@ -42,3 +42,6 @@ publish:
   owner: PossiblyPengu
   repo: CEREAL
   releaseType: release
+
+releaseInfo:
+  releaseNotesFile: build/release-notes.md
