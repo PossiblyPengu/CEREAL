@@ -53,7 +53,7 @@ export function StartupWizard({ show, onClose, flash, setGames }: StartupWizardP
   }, [show]);
 
   useEffect(() => {
-    if (step === 4 && chiakiStatus && chiakiStatus.status !== 'missing' && consoles.length === 0 && !discovering) {
+    if (step === 5 && chiakiStatus && chiakiStatus.status !== 'missing' && consoles.length === 0 && !discovering) {
       discoverConsoles();
     }
   }, [step, chiakiStatus]);
@@ -144,7 +144,7 @@ export function StartupWizard({ show, onClose, flash, setGames }: StartupWizardP
 
   const stepDots = (
     <div className="wizard-steps">
-      {[1, 2, 3, 4, 5].map(s => (
+      {[1, 2, 3, 4, 5, 6, 7].map(s => (
         <div key={s} className={'wizard-dot' + (s === step ? ' active' : s < step ? ' done' : '')} />
       ))}
     </div>
@@ -152,10 +152,51 @@ export function StartupWizard({ show, onClose, flash, setGames }: StartupWizardP
 
   const renderStep1 = () => (
     <div style={{ textAlign: 'center', padding: '20px 0' }}>
-      <div style={{ fontSize: 48, marginBottom: 12 }}>🎓</div>
+      <div style={{ fontSize: 48, marginBottom: 12 }}>🥣</div>
       <h2 style={{ margin: '0 0 8px', fontSize: 22 }}>Welcome to Cereal</h2>
-      <p style={{ color: 'var(--text-2)', margin: '0 0 24px', fontSize: 13 }}>Your unified game launcher. Let's get you set up in a few quick steps.</p>
+      <p style={{ color: 'var(--text-2)', margin: '0 0 20px', fontSize: 13 }}>Your unified game launcher. Let's get you set up in a few quick steps.</p>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 24, textAlign: 'left' }}>
+        {([
+          ['🌌', 'Orbit View', 'Fly through your games like a solar system'],
+          ['🎮', 'All Platforms', 'Steam, Epic, GOG & Xbox in one place'],
+          ['📺', 'Remote Play', 'Stream PS4/PS5 via chiaki-ng'],
+          ['🖼️', 'Cover Art', 'Auto-fetch artwork from SteamGridDB'],
+          ['🎯', 'Smart Filters', 'Filter by platform, category or playtime'],
+          ['🟣', 'Discord Status', "Show what you're playing to friends"],
+        ] as [string, string, string][]).map(([icon, title, desc]) => (
+          <div key={title} style={{ background: 'var(--glass)', border: '1px solid var(--glass-border)', borderRadius: 10, padding: '10px 12px' }}>
+            <div style={{ fontSize: 20, marginBottom: 6 }}>{icon}</div>
+            <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 3 }}>{title}</div>
+            <div style={{ fontSize: 11, color: 'var(--text-3)', lineHeight: 1.4 }}>{desc}</div>
+          </div>
+        ))}
+      </div>
       <button className="btn-accent" style={{ padding: '10px 32px', fontSize: 14 }} onClick={() => setStep(2)}>Get Started</button>
+    </div>
+  );
+
+  const renderStepFeatures = () => (
+    <div>
+      <h2 style={{ margin: '0 0 4px', fontSize: 18 }}>What's Included</h2>
+      <p style={{ color: 'var(--text-2)', margin: '0 0 14px', fontSize: 12 }}>A quick tour of everything Cereal can do.</p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {([
+          ['🌌', 'Three views', 'Orbit: an interactive solar system. Cards: a classic grid. Galaxy: a cosmic scatter of your whole library.'],
+          ['🔗', 'Unified library', 'Steam, Epic Games, GOG and Xbox libraries sync automatically into one launcher.'],
+          ['📺', 'PlayStation Remote Play', 'Built-in chiaki-ng integration — register your PS4/PS5 and stream over your local network.'],
+          ['🎮', 'Controller support', 'Browse, filter and launch games with a gamepad — navigates menus and the Orbit view too.'],
+          ['➕', 'Custom & detected games', 'Add any executable manually, or auto-scan to find games outside managed platforms.'],
+          ['🖼️', 'Automatic cover art', 'SteamGridDB integration fetches game artwork, heroes and icons in the background.'],
+        ] as [string, string, string][]).map(([icon, label, desc]) => (
+          <div key={label} style={{ display: 'flex', gap: 12, background: 'var(--glass)', border: '1px solid var(--glass-border)', borderRadius: 10, padding: '10px 14px', alignItems: 'flex-start' }}>
+            <div style={{ fontSize: 22, flexShrink: 0, lineHeight: 1.2 }}>{icon}</div>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 2 }}>{label}</div>
+              <div style={{ fontSize: 11, color: 'var(--text-3)', lineHeight: 1.45 }}>{desc}</div>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 
@@ -193,6 +234,9 @@ export function StartupWizard({ show, onClose, flash, setGames }: StartupWizardP
                   <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent)' }}>{scaleLabel[rec!.uiScale]}</div>
                 </div>
               </div>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-4)', marginTop: 8, marginBottom: 14, lineHeight: 1.5 }}>
+              <strong style={{ color: 'var(--text-3)' }}>Star Density</strong> controls how many animated stars float in the background. <strong style={{ color: 'var(--text-3)' }}>UI Scale</strong> adjusts text and element sizes across the whole app. Both can be changed later in <strong style={{ color: 'var(--text-3)' }}>Settings → Appearance</strong>.
             </div>
             {!specApplied
               ? <button className="btn-accent" onClick={async () => {
@@ -271,13 +315,20 @@ export function StartupWizard({ show, onClose, flash, setGames }: StartupWizardP
           </div>
         </div>
       </div>
+      <div style={{ marginTop: 12, padding: '8px 12px', borderRadius: 8, fontSize: 11, color: 'var(--text-4)', display: 'flex', gap: 8, alignItems: 'center', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+        <span>🔒</span>
+        <span>Your library data stays local — Cereal never uploads your account info or game list to any server.</span>
+      </div>
     </div>
   );
 
   const renderStep3 = () => (
     <div>
       <h2 style={{ margin: '0 0 4px', fontSize: 18 }}>PlayStation Remote Play</h2>
-      <p style={{ color: 'var(--text-2)', margin: '0 0 14px', fontSize: 12 }}>Optional: Set up chiaki-ng for streaming PS4/PS5 games to your PC.</p>
+      <p style={{ color: 'var(--text-2)', margin: '0 0 10px', fontSize: 12 }}>Optional: Set up chiaki-ng for streaming PS4/PS5 games to your PC.</p>
+      <div style={{ padding: '8px 12px', borderRadius: 8, fontSize: 11, color: 'var(--text-4)', marginBottom: 12, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', lineHeight: 1.5 }}>
+        💡 Your PC and PlayStation must be on the <strong style={{ color: 'var(--text-3)' }}>same local network</strong>. Find the pairing PIN on your console under <strong style={{ color: 'var(--text-3)' }}>Settings → System → Remote Play → Link Device</strong>.
+      </div>
 
       <div className="acct-card" style={{ marginBottom: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -347,6 +398,53 @@ export function StartupWizard({ show, onClose, flash, setGames }: StartupWizardP
     </div>
   );
 
+  const renderStepTips = () => (
+    <div>
+      <h2 style={{ margin: '0 0 4px', fontSize: 18 }}>Tips & Shortcuts</h2>
+      <p style={{ color: 'var(--text-2)', margin: '0 0 14px', fontSize: 12 }}>A few things worth knowing before you dive in.</p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
+        {([
+          [['Ctrl', 'K'], 'Quick Search', 'Jump to any game instantly'],
+          [['Ctrl', ','], 'Settings', 'Open app preferences'],
+          [['Esc'], 'Close / Back', 'Dismiss any panel or overlay'],
+          [['Scroll'], 'Zoom', 'Zoom in or out in Orbit view'],
+          [['Drag'], 'Pan', 'Click and drag to pan Orbit view'],
+          [['Dbl-click'], 'Game details', 'Open the focus view for a game'],
+        ] as [string[], string, string][]).map(([keys, action, desc]) => (
+          <div key={action} style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--glass)', border: '1px solid var(--glass-border)', borderRadius: 8, padding: '8px 12px' }}>
+            <div style={{ display: 'flex', gap: 4, flexShrink: 0, minWidth: 110 }}>
+              {keys.map(k => (
+                <kbd key={k} style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.16)', borderBottom: '2px solid rgba(255,255,255,0.22)', borderRadius: 5, padding: '2px 7px', fontSize: 10, fontFamily: 'monospace', fontWeight: 700, color: 'var(--text-2)' }}>{k}</kbd>
+              ))}
+            </div>
+            <div style={{ flex: 1 }}>
+              <span style={{ fontWeight: 600, fontSize: 12 }}>{action}</span>
+              <span style={{ color: 'var(--text-3)', fontSize: 11 }}> — {desc}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{ background: 'var(--glass)', border: '1px solid var(--glass-border)', borderRadius: 10, padding: '10px 14px' }}>
+        <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 8 }}>🎮 Gamepad controls</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 24px' }}>
+          {([
+            ['Left stick / D-pad', 'Navigate cards'],
+            ['Right stick', 'Pan Orbit view'],
+            ['A / Cross', 'Select / Launch'],
+            ['B / Circle', 'Back / Close'],
+            ['LB / RB', 'Switch tabs'],
+            ['Start', 'Open Settings'],
+          ] as [string, string][]).map(([k, v]) => (
+            <div key={k} style={{ display: 'flex', gap: 6, fontSize: 11, padding: '2px 0' }}>
+              <span style={{ color: 'var(--text-2)', fontWeight: 600, flexShrink: 0 }}>{k}</span>
+              <span style={{ color: 'var(--text-3)' }}>— {v}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+
   const renderStep4 = () => (
     <div style={{ textAlign: 'center', padding: '10px 0' }}>
       <div style={{ fontSize: 40, marginBottom: 10 }}>✨</div>
@@ -363,7 +461,11 @@ export function StartupWizard({ show, onClose, flash, setGames }: StartupWizardP
           <div className={'wizard-summary-icon ' + (connectedCount > 0 ? 'ok' : 'skip')}>{connectedCount > 0 ? '✓' : '—'}</div>
           <div style={{ flex: 1 }}>
             <div style={{ fontWeight: 600, fontSize: 13 }}>{connectedCount} account{connectedCount !== 1 ? 's' : ''} connected</div>
-            {totalImported > 0 && <div style={{ fontSize: 11, color: 'var(--text-3)' }}>{totalImported} games imported</div>}
+            {(['steam', 'gog', 'epic', 'xbox'] as const).filter(p => accounts[p]?.connected).map(p => (
+              <div key={p} style={{ fontSize: 11, color: 'var(--text-3)' }}>
+                {p === 'epic' ? 'Epic' : p === 'gog' ? 'GOG' : p === 'xbox' ? 'Xbox' : 'Steam'} — {importCounts[p] != null ? importCounts[p] + '\u00a0games' : 'connected'}
+              </div>
+            ))}
           </div>
         </div>
         <div className="wizard-summary-item">
@@ -373,7 +475,10 @@ export function StartupWizard({ show, onClose, flash, setGames }: StartupWizardP
           </div>
         </div>
       </div>
-      <button className="btn-accent" style={{ marginTop: 20, padding: '10px 32px', fontSize: 14 }} onClick={finish}>Launch Cereal</button>
+      <p style={{ color: 'var(--text-4)', fontSize: 11, margin: '14px 0 0' }}>
+        Press <kbd style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.16)', borderRadius: 4, padding: '1px 5px', fontSize: 10, fontFamily: 'monospace', color: 'var(--text-2)' }}>Ctrl+K</kbd> anytime to search your library.
+      </p>
+      <button className="btn-accent" style={{ marginTop: 12, padding: '10px 32px', fontSize: 14 }} onClick={finish}>Launch Cereal</button>
     </div>
   );
 
@@ -383,12 +488,14 @@ export function StartupWizard({ show, onClose, flash, setGames }: StartupWizardP
         {stepDots}
         <div key={step} style={{ animation: 'stepIn 0.2s cubic-bezier(0.16,1,0.3,1)' }}>
           {step === 1 && renderStep1()}
-          {step === 2 && renderStepPerf()}
-          {step === 3 && renderStep2()}
-          {step === 4 && renderStep3()}
-          {step === 5 && renderStep4()}
+          {step === 2 && renderStepFeatures()}
+          {step === 3 && renderStepPerf()}
+          {step === 4 && renderStep2()}
+          {step === 5 && renderStep3()}
+          {step === 6 && renderStepTips()}
+          {step === 7 && renderStep4()}
         </div>
-        {step > 1 && step < 5 && (
+        {step > 1 && step < 7 && (
           <div className="wizard-nav">
             <button className="btn-flat" onClick={() => setStep(s => s - 1)}>Back</button>
             <div className="wizard-nav-right">
