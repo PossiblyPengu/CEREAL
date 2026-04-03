@@ -39,6 +39,7 @@ export function PlatformsPanel({ show, onClose, flash, setGames, onOpenChiaki, o
   });
   const [loading, setLoading] = useState<Record<string, boolean>>({});
   const [importing, setImporting] = useState('');
+  const [importProgress, setImportProgress] = useState<{ provider: string; status: string; processed: number; imported: number; updated: number; message?: string; total?: number } | null>(null);
   const [apiKeys, setApiKeys] = useState<Record<string, ApiKeyState>>({});
   const [platFilter, setPlatFilter] = useState('');
 
@@ -67,6 +68,17 @@ export function PlatformsPanel({ show, onClose, flash, setGames, onOpenChiaki, o
         setApiKeys(keys);
       }
     })();
+  }, [show]);
+
+  useEffect(() => {
+    if (!show) return;
+    const unsub = (window.api as any)?.onImportProgress?.((data: any) => {
+      setImportProgress(data);
+      if (data.status === 'done' || data.status === 'error') {
+        setTimeout(() => setImportProgress(null), 2500);
+      }
+    });
+    return () => { unsub?.(); };
   }, [show]);
 
   const refreshAccounts = async () => { if (window.api?.getAccounts) { const a = await (window.api as any).getAccounts(); setAccounts(a || {}); } };
@@ -198,6 +210,21 @@ export function PlatformsPanel({ show, onClose, flash, setGames, onOpenChiaki, o
                 <button className="btn-accent" onClick={() => doImport(id)} disabled={isImporting} style={{ flex: 1 }}>{isImporting ? <><span className="spinner" style={{ marginRight: 6 }} />Importing...</> : 'Import Library'}</button>
                 <button className="btn-flat danger" onClick={() => doDisconnect(id, name)}>Disconnect</button>
               </div>
+              {isImporting && importProgress && importProgress.provider === id && (
+                <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 8, background: 'var(--bg-2, rgba(255,255,255,0.04))', border: '1px solid var(--glass-border)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <span style={{ fontSize: 10, color: 'var(--text-3)' }}>{importProgress.message || 'Processing…'}</span>
+                    {importProgress.total ? <span style={{ fontSize: 10, color: 'var(--text-4)' }}>{importProgress.processed} / {importProgress.total}</span> : null}
+                  </div>
+                  <div style={{ height: 3, borderRadius: 2, background: 'var(--glass-border)', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', borderRadius: 2, background: 'var(--accent)', width: importProgress.total ? `${Math.round((importProgress.processed / importProgress.total) * 100)}%` : '100%', transition: 'width 0.3s ease', animation: importProgress.total ? 'none' : 'progress-pulse 1.5s ease-in-out infinite' }} />
+                  </div>
+                  <div style={{ display: 'flex', gap: 12, marginTop: 5 }}>
+                    <span style={{ fontSize: 10, color: 'var(--green, #4ade80)' }}>+{importProgress.imported} new</span>
+                    <span style={{ fontSize: 10, color: 'var(--accent)' }}>{importProgress.updated} updated</span>
+                  </div>
+                </div>
+              )}
               {id === 'xbox' && <div style={{ marginTop: 10 }}><div style={{ fontSize: 10, color: 'var(--text-3)', marginBottom: 6 }}>Cloud gaming requires an active Xbox Game Pass Ultimate subscription.</div><button className="btn-sm" onClick={() => { onClose(); onOpenXcloud(); }} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}><span style={{ display: 'flex', width: 14, height: 14 }}>{I.globe}</span><span>Xbox Cloud Gaming</span></button></div>}
               {p.note && <div style={{ marginTop: 8, fontSize: 10, color: 'var(--text-4)', lineHeight: 1.5 }}>{p.note}</div>}
             </div>

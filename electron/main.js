@@ -3179,6 +3179,10 @@ ipcMain.handle('accounts:remove', (event, platform) => {
     detachAccountSecrets(platform);
     delete db.accounts[platform];
   }
+  // Clear the persistent auth session so stale cookies don't carry over
+  if (platform === 'steam') {
+    try { session.fromPartition('persist:steam-auth').clearStorageData(); } catch (e) {}
+  }
   saveDB(db);
   return sanitizeAccountsForRenderer(db.accounts);
 });
@@ -3187,15 +3191,20 @@ ipcMain.handle('accounts:remove', (event, platform) => {
 const auth = require('./providers/auth');
 
 // ─── OAuth Auth Window Helper ─────────────────────────────────────────────────
-function runOAuthFlow({ partition, width, height, authUrl, redirectMatch, onRedirect, allowNavigate }) {
+function runOAuthFlow({ partition, width, height, authUrl, redirectMatch, onRedirect, allowNavigate, keepSession }) {
   return new Promise((resolve) => {
-    const authSession = session.fromPartition(partition + ':' + Date.now());
+    // keepSession: if true, use the partition as-is (persistent) and don't clear cookies after auth.
+    // Used for Steam where the cookies are needed for library import.
+    const partitionStr = keepSession ? partition : (partition + ':' + Date.now());
+    const authSession = session.fromPartition(partitionStr);
     const authWin = createAuthWindow(width || 700, height || 700, authSession);
     let resolved = false;
     let authTimeout = null;
     const cleanup = () => {
       if (authTimeout) { clearTimeout(authTimeout); authTimeout = null; }
-      try { authSession.clearStorageData(); } catch (e) {}
+      if (!keepSession) {
+        try { authSession.clearStorageData(); } catch (e) {}
+      }
     };
     const finish = (result) => {
       if (resolved) return;
@@ -3394,9 +3403,10 @@ function saveAccountAndReturn(platform, data) {
 ipcMain.handle('accounts:steam:auth', async () => {
   const c = auth.CONFIG.steam;
   return runOAuthFlow({
-    partition: 'auth:steam', ...c.windowSize,
+    partition: 'persist:steam-auth', ...c.windowSize,
     authUrl: auth.buildSteamAuthUrl(),
     redirectMatch: (url) => url.startsWith(c.returnUrl),
+    keepSession: true, // keep Steam cookies so importViaSession can use them
     onRedirect: async (url, finish) => {
       try {
         const steamId = auth.extractSteamId(url);
@@ -3413,7 +3423,7 @@ ipcMain.handle('accounts:steam:import', async () => {
   if (!providers?.steam?.importLibrary) return { error: 'Steam provider not available' };
   let apiKey = null;
   try { const r = safeStore.getPassword('cereal-steam', 'default'); if (r) apiKey = r; } catch (e) {}
-  const steamSession = session.fromPartition('auth:steam');
+  const steamSession = session.fromPartition('persist:steam-auth');
   const sessionFetch = steamSession.fetch.bind(steamSession);
   return runProviderImportWithProgress('steam', { apiKey, sessionFetch });
 });

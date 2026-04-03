@@ -1,4 +1,8 @@
-﻿## v0.0.8 - 2026-04-03
+﻿## v0.0.9 - 2026-04-03
+
+- Maintenance release
+
+## v0.0.8 - 2026-04-03
 
 - Maintenance release
 
