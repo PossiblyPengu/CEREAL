@@ -27,7 +27,7 @@ function detectInstalled() {
           let exe = '';
           try {
             const walkForExe = (d, depth) => {
-              if (depth > 2 || exe) return;
+               if (depth >= 2 || exe) return;
               const files = fs.readdirSync(d);
               for (const f of files) {
                 const fp = path.join(d, f);

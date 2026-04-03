@@ -37,7 +37,7 @@ export function StreamOverlay({ sessions, games, onStop }: StreamOverlayProps) {
       window.removeEventListener('mousemove', onMove);
       if (hideTimer.current) clearTimeout(hideTimer.current);
     };
-  }, []);
+  }, [barVisible]);
 
   const entries = Object.entries(sessions).filter(([, s]) =>
     s.state && s.state !== 'disconnected' && s.state !== 'gui'

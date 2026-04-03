@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, session, WebContentsView, Tray, Menu, nativeImage, globalShortcut } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, session, WebContentsView, Tray, Menu, nativeImage, globalShortcut, net, protocol } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -9,6 +9,12 @@ app.commandLine.appendSwitch('enable-zero-copy');
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
 app.commandLine.appendSwitch('enable-hardware-overlays', 'single-fullscreen,single-on-top,underlay');
 app.commandLine.appendSwitch('enable-features', 'VaapiVideoDecodeLinuxGL,VaapiVideoEncoder,CanvasOopRasterization,UseSkiaRenderer');
+
+// ─── Custom protocol for serving local images to the renderer ─────────────────
+// Registered before app.ready so Chromium treats it as a standard scheme.
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'local-image', privileges: { standard: false, supportFetchAPI: true, stream: true, bypassCSP: false } }
+]);
 // ─────────────────────────────────────────────────────────────────────────────
 // Secure credential store using Electron's safeStorage (replaces keytar)
 const credStorePath = () => path.join(app.getPath('userData'), 'credentials.json');
@@ -360,57 +366,139 @@ function getCoversDir() {
 }
 
 async function downloadToFile(url, destPath) {
-  return new Promise((resolve, reject) => {
-    const req = https.get(url, (res) => {
-      if (res.statusCode && res.statusCode >= 400) return reject(new Error('HTTP ' + res.statusCode));
-      const file = fs.createWriteStream(destPath);
-      res.pipe(file);
-      file.on('finish', () => file.close(() => resolve(true)));
-      file.on('error', (err) => reject(err));
-    });
-    req.on('error', reject);
-  });
+  try {
+    const resp = await net.fetch(url);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const buf = Buffer.from(await resp.arrayBuffer());
+    if (buf.length < 1024) throw new Error('File too small (' + buf.length + ' bytes)');
+    fs.writeFileSync(destPath, buf);
+    return true;
+  } catch (e) {
+    cleanupFile(destPath);
+    throw e;
+  }
 }
 
+function cleanupFile(p) { try { if (fs.existsSync(p)) fs.unlinkSync(p); } catch (e) {} }
+
 // Background fetch queue (simple FIFO)
-const coverQueue = [];
+const coverQueue = new Set();
+const coverRetries = new Map(); // gameId → retryCount
+const MAX_COVER_RETRIES = 2;
 let coverWorkerRunning = false;
+let _coversDirCache = null;
+
+function getCoversDirCached() {
+  if (_coversDirCache) return _coversDirCache;
+  _coversDirCache = getCoversDir();
+  return _coversDirCache;
+}
 
 function enqueueCoverFetch(gameId) {
   if (!gameId) return;
-  if (!coverQueue.includes(gameId)) coverQueue.push(gameId);
+  coverQueue.add(gameId);
   if (!coverWorkerRunning) processCoverQueue();
 }
 
 async function processCoverQueue() {
   coverWorkerRunning = true;
-  while (coverQueue.length > 0) {
-    const batch = coverQueue.splice(0, 3);
+  const coversDir = getCoversDirCached();
+  while (coverQueue.size > 0) {
+    const batch = [];
+    for (const id of coverQueue) { batch.push(id); if (batch.length >= 5) break; }
+    for (const id of batch) coverQueue.delete(id);
     let anyChanged = false;
     await Promise.allSettled(batch.map(async gid => {
       try {
         const game = db.games.find(g => g.id === gid);
         if (!game) return;
-        if (game.localCoverPath && fs.existsSync(game.localCoverPath)) return;
-        const url = game.coverUrl || game.headerUrl || (game.screenshots && game.screenshots[0]);
-        if (!url) return;
-        const ext = path.extname(new URL(url).pathname).split('?')[0] || '.jpg';
-        const fname = 'cover_' + gid + ext;
-        const dest = path.join(getCoversDir(), fname);
-        await downloadToFile(url, dest);
-        game.localCoverPath = dest;
-        game._imgStamp = Date.now();
-        anyChanged = true;
-        console.log('[CoverFetcher] saved', dest);
+        // Download cover — try each URL source in order until one works
+        const hasValidCover = game.localCoverPath && fs.existsSync(game.localCoverPath) && (() => { try { return fs.statSync(game.localCoverPath).size >= 1024; } catch(e) { return false; } })();
+        if (!hasValidCover) {
+          if (game.localCoverPath) { cleanupFile(game.localCoverPath); game.localCoverPath = null; }
+          let candidates = [game.coverUrl, game.headerUrl, ...(game.screenshots || [])].filter(Boolean);
+          let downloaded = false;
+          for (const coverUrl of candidates) {
+            try {
+              const ext = path.extname(new URL(coverUrl).pathname).split('?')[0] || '.jpg';
+              const dest = path.join(coversDir, 'cover_' + gid + ext);
+              await downloadToFile(coverUrl, dest);
+              game.localCoverPath = dest;
+              game._imgStamp = Date.now();
+              anyChanged = true;
+              coverRetries.delete(gid);
+              downloaded = true;
+              break;
+            } catch (e) { /* try next candidate */ }
+          }
+          // If all candidates failed and we only had a coverUrl, try fetching metadata
+          // to get headerUrl / screenshots, then retry with the new URLs
+          if (!downloaded && !game.headerUrl) {
+            try {
+              const meta = await fetchGameMetadata(game);
+              if (meta) {
+                applyMetadataToGame(game, meta);
+                anyChanged = true;
+                const newCandidates = [game.coverUrl, game.headerUrl, ...(game.screenshots || [])].filter(Boolean);
+                // Only try URLs we haven't already tried
+                const tried = new Set(candidates);
+                for (const url of newCandidates) {
+                  if (tried.has(url)) continue;
+                  try {
+                    const ext = path.extname(new URL(url).pathname).split('?')[0] || '.jpg';
+                    const dest = path.join(coversDir, 'cover_' + gid + ext);
+                    await downloadToFile(url, dest);
+                    game.localCoverPath = dest;
+                    game._imgStamp = Date.now();
+                    coverRetries.delete(gid);
+                    downloaded = true;
+                    break;
+                  } catch (e) { /* try next */ }
+                }
+              }
+            } catch (e) { /* metadata fetch failed */ }
+          }
+          if (!downloaded) {
+            const total = [game.coverUrl, game.headerUrl, ...(game.screenshots || [])].filter(Boolean).length;
+            if (total > 0) throw new Error('All cover URLs failed (' + total + ' candidates)');
+          }
+        }
+        // Download header
+        const hasValidHeader = game.localHeaderPath && fs.existsSync(game.localHeaderPath) && (() => { try { return fs.statSync(game.localHeaderPath).size >= 1024; } catch(e) { return false; } })();
+        if (!hasValidHeader) {
+          if (game.localHeaderPath) { cleanupFile(game.localHeaderPath); game.localHeaderPath = null; }
+          const headerUrl = game.headerUrl;
+          if (headerUrl) {
+            const ext = path.extname(new URL(headerUrl).pathname).split('?')[0] || '.jpg';
+            const dest = path.join(coversDir, 'header_' + gid + ext);
+            await downloadToFile(headerUrl, dest);
+            game.localHeaderPath = dest;
+            game._imgStamp = Date.now();
+            anyChanged = true;
+          }
+        }
       } catch (e) {
         console.log('[CoverFetcher] download failed for', gid, e && e.message);
+        const retries = (coverRetries.get(gid) || 0) + 1;
+        if (retries <= MAX_COVER_RETRIES) {
+          coverRetries.set(gid, retries);
+          coverQueue.add(gid); // Re-enqueue for retry
+        } else {
+          coverRetries.delete(gid);
+        }
       }
     }));
     if (anyChanged) {
       saveDB(db);
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('games:refresh', db.games);
     }
-    if (coverQueue.length > 0) await new Promise(r => setTimeout(r, 150));
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('cover:progress', { remaining: coverQueue.size, downloaded: anyChanged ? batch.length : 0 });
+    }
+    if (coverQueue.size > 0) await new Promise(r => setTimeout(r, 150));
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('cover:progress', { remaining: 0, done: true });
   }
   coverWorkerRunning = false;
 }
@@ -574,6 +662,7 @@ function startChiakiSession(gameId, chiakiExe, args) {
         game.playtimeMinutes = (game.playtimeMinutes || 0) + titleElapsed;
         game.lastPlayed = new Date().toISOString();
         saveDB(db);
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('games:refresh', db.games);
       }
     }
 
@@ -840,7 +929,6 @@ function startEmbedHelper(gameId, session) {
   const rl = readline.createInterface({ input: ps.stdout });
   rl.on('line', (line) => {
     const trimmed = line.trim();
-    console.log('[win32-stream]', trimmed);
     if (trimmed === 'ready') {
       session.embedded = true;
       sendChiakiEvent(gameId, 'embedded', { embedded: true });
@@ -935,6 +1023,7 @@ function handleChiakiTitleChange(originalGameId, evt) {
         prev.playtimeMinutes = (prev.playtimeMinutes || 0) + elapsed;
         prev.lastPlayed = new Date().toISOString();
         saveDB(db);
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('games:refresh', db.games);
       }
     }
   }
@@ -993,6 +1082,7 @@ function handleChiakiTitleChange(originalGameId, evt) {
   if (matchedGame && !matchedGame.platformId && titleId) {
     matchedGame.platformId = titleId;
     saveDB(db);
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('games:refresh', db.games);
   }
 
   session._currentGameId = matchedGame ? matchedGame.id : null;
@@ -1169,6 +1259,16 @@ function createWindow() {
 
   // signalReady is kept for future use but window is already visible
   ipcMain.on('window:ready', () => {});
+
+  // Security: prevent main window from navigating to external URLs
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    const devServer = process.env.VITE_DEV_SERVER_URL;
+    if (devServer && url.startsWith(devServer)) return;
+    if (url.startsWith('file://')) return;
+    event.preventDefault();
+  });
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+
   mainWindow.webContents.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return;
     const toggleDevtools = (input.control && input.shift && input.code === 'KeyI') || input.code === 'F12';
@@ -1248,6 +1348,22 @@ function createTray() {
 }
 
 app.whenReady().then(() => {
+  // Register protocol handler for serving local images to the renderer
+  // (file:// URLs are blocked when renderer loads from http:// in dev mode)
+  protocol.handle('local-image', (request) => {
+    // URL format: local-image:///C:/path/to/file.jpg
+    let filePath = decodeURIComponent(new URL(request.url).pathname);
+    // On Windows, strip leading slash from /C:/...
+    if (process.platform === 'win32' && filePath.startsWith('/')) filePath = filePath.slice(1);
+    // Security: only allow files from the covers directory
+    const coversDir = getCoversDir();
+    const resolved = path.resolve(filePath);
+    if (!resolved.startsWith(coversDir)) {
+      return new Response('Forbidden', { status: 403 });
+    }
+    return net.fetch('file:///' + resolved.replace(/\\/g, '/'));
+  });
+
   db = loadDB();
   if (db.accounts && typeof db.accounts === 'object') {
     for (const platform of Object.keys(db.accounts)) {
@@ -1255,6 +1371,90 @@ app.whenReady().then(() => {
     }
     saveDB(db);
   }
+
+  // One-time cleanup: clear references to corrupt cover files (< 1KB) from old redirect bug
+  let coversCleaned = 0;
+  for (const game of (db.games || [])) {
+    if (game.localCoverPath) {
+      try {
+        if (!fs.existsSync(game.localCoverPath) || fs.statSync(game.localCoverPath).size < 1024) {
+          cleanupFile(game.localCoverPath);
+          game.localCoverPath = null;
+          coversCleaned++;
+        }
+      } catch (e) { game.localCoverPath = null; coversCleaned++; }
+    }
+    if (game.localHeaderPath) {
+      try {
+        if (!fs.existsSync(game.localHeaderPath) || fs.statSync(game.localHeaderPath).size < 1024) {
+          cleanupFile(game.localHeaderPath);
+          game.localHeaderPath = null;
+          coversCleaned++;
+        }
+      } catch (e) { game.localHeaderPath = null; coversCleaned++; }
+    }
+  }
+  if (coversCleaned > 0) {
+    console.log('[CoverFetcher] Cleaned', coversCleaned, 'corrupt cover references');
+    saveDB(db);
+  }
+  // Purge small corrupt files from covers directory (leftover from old redirect bug)
+  try {
+    const coversDir = getCoversDir();
+    let purged = 0;
+    for (const f of fs.readdirSync(coversDir)) {
+      const fp = path.join(coversDir, f);
+      try { if (fs.statSync(fp).size < 1024) { fs.unlinkSync(fp); purged++; } } catch (e) {}
+    }
+    if (purged > 0) console.log('[CoverFetcher] Purged', purged, 'corrupt files from covers directory');
+  } catch (e) {}
+
+  // Re-enqueue cover downloads for any game that has a coverUrl/headerUrl but no local file
+  setTimeout(() => {
+    // Backfill headerUrl for Steam games that only have a capsule coverUrl (may 404 for software/tools)
+    let backfilled = 0;
+    for (const game of (db.games || [])) {
+      if (game.platform === 'steam' && game.platformId && !game.headerUrl) {
+        game.headerUrl = `https://shared.steamstatic.com/store_item_assets/steam/apps/${game.platformId}/header.jpg`;
+        backfilled++;
+      }
+    }
+    if (backfilled > 0) saveDB(db);
+
+    let requeued = 0;
+    for (const game of (db.games || [])) {
+      const needsCover = !game.localCoverPath && (game.coverUrl || game.headerUrl || (game.screenshots && game.screenshots.length));
+      const needsHeader = !game.localHeaderPath && game.headerUrl;
+      if (needsCover || needsHeader) {
+        enqueueCoverFetch(game.id);
+        requeued++;
+      }
+    }
+    if (requeued > 0) console.log('[CoverFetcher] Re-enqueued', requeued, 'games for cover download');
+  }, 3000);
+  // Security: restrict permissions requested by renderer
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    const allowed = ['clipboard-read', 'clipboard-sanitized-write', 'fullscreen'];
+    callback(allowed.includes(permission));
+  });
+
+  // Security: Content Security Policy
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [
+          "default-src 'self'",
+          "script-src 'self' 'unsafe-inline'",
+          "style-src 'self' 'unsafe-inline'",
+          "img-src 'self' data: local-image: https: http:",
+          "font-src 'self' data:",
+          "connect-src 'self' https: http: ws: wss:",
+        ].join('; '),
+      },
+    });
+  });
+
   createWindow();
   if (db.settings && db.settings.closeToTray) createTray();
 
@@ -1321,7 +1521,14 @@ ipcMain.handle('window:maximize', () => {
 ipcMain.handle('window:close', () => mainWindow.close());
 ipcMain.handle('window:fullscreen', () => { mainWindow.setFullScreen(!mainWindow.isFullScreen()); return mainWindow.isFullScreen(); });
 ipcMain.handle('window:isFullscreen', () => mainWindow.isFullScreen());
-ipcMain.handle('shell:openExternal', (event, url) => { const { shell } = require('electron'); return shell.openExternal(url); });
+ipcMain.handle('shell:openExternal', (event, url) => {
+  try {
+    const parsed = new URL(url);
+    const safeProtocols = ['http:', 'https:', 'mailto:', 'steam:', 'epicgames:', 'com.epicgames.launcher:', 'goggalaxy:', 'origin:', 'origin2:', 'uplay:', 'battlenet:', 'xbox:', 'msxbox:', 'ms-xbl-multiplayer:'];
+    if (!safeProtocols.includes(parsed.protocol)) return { error: 'Blocked protocol: ' + parsed.protocol };
+  } catch (e) { return { error: 'Invalid URL' }; }
+  return shell.openExternal(url);
+});
 ipcMain.handle('system:getSpecs', async () => {
   const os = require('os');
   const ramGb = Math.round(os.totalmem() / (1024 * 1024 * 1024));
@@ -1406,61 +1613,16 @@ function getMetadataSettings() {
   };
 }
 
-function httpGet(url) {
-  return new Promise((resolve, reject) => {
-    const mod = url.startsWith('https') ? https : http;
-    const request = mod.get(url, {
-      headers: {
-        'User-Agent': 'CerealLauncher/1.0',
-        'Accept': 'application/json, text/json, */*',
-        'Accept-Encoding': 'gzip, deflate, br',
-      }
-    }, (res) => {
-      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        const nextUrl = new URL(res.headers.location, url).toString();
-        return httpGet(nextUrl).then(resolve, reject);
-      }
-
-      const chunks = [];
-      res.on('data', (chunk) => {
-        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-      });
-      res.on('end', () => {
-        const buffer = Buffer.concat(chunks);
-        const encoding = (res.headers['content-encoding'] || '').toLowerCase();
-        let payload = buffer;
-        try {
-          if (encoding.includes('gzip')) {
-            payload = zlib.gunzipSync(buffer);
-          } else if (encoding.includes('deflate')) {
-            try {
-              payload = zlib.inflateSync(buffer);
-            } catch (err) {
-              payload = zlib.inflateRawSync(buffer);
-            }
-          } else if (encoding.includes('br')) {
-            payload = zlib.brotliDecompressSync(buffer);
-          }
-        } catch (e) {
-          return reject(new Error('Failed to decompress response from ' + url + ': ' + e.message));
-        }
-
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          try {
-            const text = payload.toString('utf8');
-            resolve(JSON.parse(text));
-          } catch (e) {
-            reject(new Error('Invalid JSON from ' + url));
-          }
-        } else {
-          reject(new Error('HTTP ' + res.statusCode + ' from ' + url));
-        }
-      });
-      res.on('error', reject);
-    });
-
-    request.on('error', reject);
+async function httpGet(url) {
+  const resp = await net.fetch(url, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      'Accept': 'application/json, text/json, */*',
+    },
   });
+  if (!resp.ok) throw new Error('HTTP ' + resp.status + ' from ' + url);
+  const text = await resp.text();
+  return JSON.parse(text);
 }
 
 async function fetchSteamMetadata(appId) {
@@ -1480,13 +1642,24 @@ async function fetchSteamMetadata(appId) {
       try { if (info.genres.some(g => (g.description || '').toLowerCase().includes('software'))) isSoftware = true; } catch(e){}
     }
 
+    // Validate library capsule exists (many software/tools/DLC don't have one)
+    let coverUrl = '';
+    const capsuleUrl = `https://shared.steamstatic.com/store_item_assets/steam/apps/${appId}/library_600x900_2x.jpg`;
+    try {
+      const probe = await net.fetch(capsuleUrl, { method: 'HEAD' });
+      if (probe.ok) coverUrl = capsuleUrl;
+    } catch (e) {}
+    // Fallback to header_image (wide banner) or screenshots
+    if (!coverUrl) coverUrl = info.header_image || '';
+    if (!coverUrl && info.screenshots?.length) coverUrl = info.screenshots[0].path_full || '';
+
     return {
       description: (info.short_description || '').slice(0, 500),
       developer: (info.developers || [])[0] || '',
       publisher: (info.publishers || [])[0] || '',
       releaseDate: info.release_date?.date || '',
       genres: (info.genres || []).map(g => g.description),
-      coverUrl: `https://shared.steamstatic.com/store_item_assets/steam/apps/${appId}/library_600x900_2x.jpg`,
+      coverUrl,
       headerUrl: info.header_image || `https://shared.steamstatic.com/store_item_assets/steam/apps/${appId}/library_hero.jpg`,
       screenshots: (info.screenshots || []).slice(0, 4).map(s => s.path_full),
       metacritic: info.metacritic?.score || null,
@@ -1596,33 +1769,21 @@ async function fetchSteamGridDBArt(gameName, apiKey) {
   if (!apiKey) return null;
   try {
     const q = encodeURIComponent(gameName);
-    const searchData = await new Promise((resolve, reject) => {
-      https.get(`https://www.steamgriddb.com/api/v2/search/autocomplete/${q}`, {
+    const sgdbFetch = async (endpoint) => {
+      const resp = await net.fetch(endpoint, {
         headers: { 'Authorization': 'Bearer ' + apiKey },
-      }, (res) => {
-        let data = '';
-        res.on('data', c => data += c);
-        res.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { reject(e); } });
-        res.on('error', reject);
-      }).on('error', reject);
-    });
+      });
+      if (!resp.ok) throw new Error('SGDB HTTP ' + resp.status);
+      return resp.json();
+    };
+
+    const searchData = await sgdbFetch(`https://www.steamgriddb.com/api/v2/search/autocomplete/${q}`);
     if (!searchData?.success || !searchData?.data?.length) return null;
     const gameId = searchData.data[0].id;
 
-    const fetchSGDB = (type, params) => new Promise((resolve, reject) => {
-      https.get(`https://www.steamgriddb.com/api/v2/${type}/game/${gameId}?${params}`, {
-        headers: { 'Authorization': 'Bearer ' + apiKey },
-      }, (res) => {
-        let data = '';
-        res.on('data', c => data += c);
-        res.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { reject(e); } });
-        res.on('error', reject);
-      }).on('error', reject);
-    });
-
     const [covers, heroes] = await Promise.allSettled([
-      fetchSGDB('grids', 'dimensions=600x900&limit=1'),
-      fetchSGDB('heroes', 'limit=1'),
+      sgdbFetch(`https://www.steamgriddb.com/api/v2/grids/game/${gameId}?dimensions=600x900&limit=1`),
+      sgdbFetch(`https://www.steamgriddb.com/api/v2/heroes/game/${gameId}?limit=1`),
     ]);
 
     const coverUrl = covers.status === 'fulfilled' && covers.value?.data?.[0]?.url || '';
@@ -1781,9 +1942,10 @@ ipcMain.handle('games:add', (event, game) => {
     // Ensure platform/platformId are preserved
     if (!merged.platform) merged.platform = prev.platform;
     if (!merged.platformId) merged.platformId = prev.platformId;
+    // Never downgrade installed status (detect sets true, import sets false — detect wins)
+    if (prev.installed === true && merged.installed === false) merged.installed = true;
     db.games[db.games.findIndex(g => g.id === prev.id)] = merged;
     saveDB(db);
-    console.log('[Main] games:update (dedupe merged)', merged.id, 'coverUrl=', merged.coverUrl, '_imgStamp=', merged._imgStamp);
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('games:refresh', db.games);
     // If cover URL changed, enqueue fetch
     try { enqueueCoverFetch(merged.id); } catch(e) {}
@@ -1800,20 +1962,21 @@ ipcMain.handle('games:add', (event, game) => {
   if (game.coverUrl) game._imgStamp = Date.now();
   db.games.push(game);
   saveDB(db);
-  console.log('[Main] games:add', game.id, 'coverUrl=', game.coverUrl, '_imgStamp=', game._imgStamp);
 
-  // Auto-fetch metadata in the background
+  // Enqueue cover fetch immediately in case the game already has a coverUrl
+  try { enqueueCoverFetch(game.id); } catch(e) {}
+
+  // Auto-fetch metadata in the background; re-enqueue cover after in case metadata sets coverUrl
   fetchGameMetadata(game).then(meta => {
     if (meta && applyMetadataToGame(game, meta)) {
       saveDB(db);
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('games:refresh', db.games);
       }
+      // Cover URL may have just been set by metadata — download it
+      try { enqueueCoverFetch(game.id); } catch(e) {}
     }
   }).catch(() => {});
-
-  // Enqueue cover fetch for newly added game
-  try { enqueueCoverFetch(game.id); } catch(e) {}
 
   return game;
 });
@@ -1831,7 +1994,6 @@ ipcMain.handle('games:update', (event, updatedGame) => {
       else merged._imgStamp = prev._imgStamp;
     } catch (e) { merged._imgStamp = prev._imgStamp; }
     db.games[idx] = merged;
-    console.log('[Main] games:update', merged.id, 'coverUrl=', merged.coverUrl, '_imgStamp=', merged._imgStamp, 'localCoverPath=', merged.localCoverPath);
     saveDB(db);
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('games:refresh', db.games);
     // If cover URL changed, enqueue fetch
@@ -1844,6 +2006,7 @@ ipcMain.handle('games:update', (event, updatedGame) => {
 ipcMain.handle('games:delete', (event, id) => {
   db.games = db.games.filter(g => g.id !== id);
   saveDB(db);
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('games:refresh', db.games);
   return true;
 });
 
@@ -1852,6 +2015,7 @@ ipcMain.handle('games:toggleFavorite', (event, id) => {
   if (game) {
     game.favorite = !game.favorite;
     saveDB(db);
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('games:refresh', db.games);
     return game;
   }
   return null;
@@ -2085,36 +2249,24 @@ ipcMain.handle('metadata:searchArt', async (event, gameName, platform) => {
     if (!ms.steamGridDbKey) return [];
     const results = [];
     const q = encodeURIComponent(gameName);
-    // Search for the game first
-    const searchData = await new Promise((resolve, reject) => {
-      https.get(`https://www.steamgriddb.com/api/v2/search/autocomplete/${q}`, {
+    const sgdbFetch = async (endpoint) => {
+      const resp = await net.fetch(endpoint, {
         headers: { 'Authorization': 'Bearer ' + ms.steamGridDbKey },
-      }, (res) => {
-        let data = '';
-        res.on('data', c => data += c);
-        res.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { reject(e); } });
-        res.on('error', reject);
-      }).on('error', reject);
-    });
+      });
+      if (!resp.ok) throw new Error('SGDB HTTP ' + resp.status);
+      return resp.json();
+    };
+    // Search for the game first
+    const searchData = await sgdbFetch(`https://www.steamgriddb.com/api/v2/search/autocomplete/${q}`);
     if (!searchData?.success || !searchData?.data?.length) return results;
     const gameId = searchData.data[0].id;
     const gamLabel = searchData.data[0].name || gameName;
     // Fetch portrait grids (covers), landscape grids (headers), heroes (banners), and logos in parallel
-    const fetchSGDB = (type, params) => new Promise((resolve, reject) => {
-      https.get(`https://www.steamgriddb.com/api/v2/${type}/game/${gameId}?${params || 'limit=6'}`, {
-        headers: { 'Authorization': 'Bearer ' + ms.steamGridDbKey },
-      }, (res) => {
-        let data = '';
-        res.on('data', c => data += c);
-        res.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { reject(e); } });
-        res.on('error', reject);
-      }).on('error', reject);
-    });
     const [portraitGrids, landscapeGrids, heroes, logos] = await Promise.allSettled([
-      fetchSGDB('grids', 'dimensions=600x900&limit=8'),
-      fetchSGDB('grids', 'dimensions=460x215,920x430&limit=4'),
-      fetchSGDB('heroes', 'limit=4'),
-      fetchSGDB('logos', 'limit=2'),
+      sgdbFetch(`https://www.steamgriddb.com/api/v2/grids/game/${gameId}?dimensions=600x900&limit=8`),
+      sgdbFetch(`https://www.steamgriddb.com/api/v2/grids/game/${gameId}?dimensions=460x215,920x430&limit=4`),
+      sgdbFetch(`https://www.steamgriddb.com/api/v2/heroes/game/${gameId}?limit=4`),
+      sgdbFetch(`https://www.steamgriddb.com/api/v2/logos/game/${gameId}?limit=2`),
     ]);
     if (portraitGrids.status === 'fulfilled' && portraitGrids.value?.data) {
       for (const g of portraitGrids.value.data.slice(0, 8)) {
@@ -2159,7 +2311,6 @@ ipcMain.handle('metadata:searchArt', async (event, gameName, platform) => {
           images.push(img);
         }
       }
-      if (images.length > 0) console.log('[ArtSearch] Using Steam fallback images');
     } catch (e) {
       console.log('[ArtSearch] Steam fallback threw:', e && e.message);
     }
@@ -2183,10 +2334,15 @@ ipcMain.handle('metadata:apply', async (event, gameId, force) => {
   const game = db.games.find(g => g.id === gameId);
   if (!game) return { error: 'Game not found' };
   try {
+    // Invalidate any cached metadata so force-apply fetches fresh data
+    const cacheKey = (game.platform || '') + ':' + (game.platformId || game.name);
+    METADATA_CACHE.delete(cacheKey);
     const meta = await fetchGameMetadata(game);
     if (!meta) return { error: 'No metadata found' };
       if (force) {
         // Force-apply: overwrite all fields (with sensible fallbacks)
+        const prevCoverUrl = game.coverUrl;
+        const prevHeaderUrl = game.headerUrl;
         game.coverUrl = meta.coverUrl || meta.headerUrl || (meta.screenshots && meta.screenshots[0]) || game.coverUrl;
         if (meta.description) game.description = meta.description;
         if (meta.developer) game.developer = meta.developer;
@@ -2197,11 +2353,20 @@ ipcMain.handle('metadata:apply', async (event, gameId, force) => {
         if (meta.screenshots?.length) game.screenshots = meta.screenshots;
         if (meta.metacritic != null) game.metacritic = meta.metacritic;
         if (meta.website) game.website = meta.website;
+        // If cover/header URL changed, clear cached local file so re-download is triggered
+        if (game.coverUrl !== prevCoverUrl) { game.localCoverPath = null; game._imgStamp = Date.now(); }
+        if (game.headerUrl !== prevHeaderUrl) { game.localHeaderPath = null; game._imgStamp = Date.now(); }
         saveDB(db);
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('games:refresh', db.games);
+        try { enqueueCoverFetch(game.id); } catch(e) {}
         return { success: true, game };
       } else {
       const changed = applyMetadataToGame(game, meta);
-      if (changed) saveDB(db);
+      if (changed) {
+        saveDB(db);
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('games:refresh', db.games);
+        try { enqueueCoverFetch(game.id); } catch(e) {}
+      }
       return { success: true, game };
     }
   } catch (e) {
@@ -2209,28 +2374,58 @@ ipcMain.handle('metadata:apply', async (event, gameId, force) => {
   }
 });
 
+ipcMain.handle('metadata:fetchForName', async (event, name, platform, platformId) => {
+  if (!name) return { error: 'No name provided' };
+  try {
+    const meta = await fetchGameMetadata({ name, platform: platform || 'custom', platformId: platformId || undefined });
+    if (!meta) return { error: 'No metadata found' };
+    return { success: true, meta };
+  } catch (e) {
+    return { error: e.message };
+  }
+});
+
 ipcMain.handle('metadata:fetchAll', async () => {
   let updated = 0, failed = 0;
-  const total = db.games.length;
+  const queue = [...db.games].sort((a, b) => {
+    const ai = a.installed === false ? 1 : 0;
+    const bi = b.installed === false ? 1 : 0;
+    return ai - bi;
+  });
+  const total = queue.length;
   const BATCH = 3;
   for (let i = 0; i < total; i += BATCH) {
-    const batch = db.games.slice(i, i + BATCH);
+    const batch = queue.slice(i, i + BATCH);
     const results = await Promise.allSettled(batch.map(async game => {
       const meta = await fetchGameMetadata(game);
       return { game, meta };
     }));
+    let batchUpdated = 0;
     for (const r of results) {
       if (r.status === 'fulfilled' && r.value.meta) {
-        if (applyMetadataToGame(r.value.game, r.value.meta)) updated++;
+        if (applyMetadataToGame(r.value.game, r.value.meta)) {
+          updated++; batchUpdated++;
+          // Enqueue cover download now that coverUrl may have been set
+          try { enqueueCoverFetch(r.value.game.id); } catch(e) {}
+        }
       } else { failed++; }
+    }
+    // Save and push live updates to renderer after each batch
+    if (batchUpdated > 0) {
+      saveDB(db);
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('games:refresh', db.games);
     }
     const done = Math.min(i + BATCH, total);
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('metadata:progress', { current: done, total, updated, failed, name: batch[batch.length - 1].name });
+      mainWindow.webContents.send('metadata:progress', { current: done, total, updated, failed, name: batch[batch.length - 1].name, phase: 'metadata' });
     }
     if (i + BATCH < total) await new Promise(r => setTimeout(r, 200));
   }
-  if (updated > 0) saveDB(db);
+  // Final save + refresh in case the last batch had changes
+  if (updated > 0) {
+    saveDB(db);
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('games:refresh', db.games);
+  }
   return { updated, failed, total };
 });
 
@@ -2643,7 +2838,8 @@ ipcMain.handle('detect:steam', async () => {
               coverUrl: `https://shared.steamstatic.com/store_item_assets/steam/apps/${appid[1]}/library_600x900_2x.jpg`,
               heroUrl: `https://shared.steamstatic.com/store_item_assets/steam/apps/${appid[1]}/library_hero.jpg`,
               categories: [],
-              source: 'auto-detected'
+              source: 'auto-detected',
+              installed: true,
             });
           }
         } catch (e) { /* skip bad manifest */ }
@@ -2657,19 +2853,15 @@ ipcMain.handle('detect:steam', async () => {
 });
 
 // ─── Epic Games Detection ─────────────────────────────────────────────────────
-ipcMain.handle('detect:epic', async () => {
+function scanEpicInstalled() {
   const games = [];
-
   try {
     const manifestDir = path.join(
       process.env.PROGRAMDATA || 'C:\\ProgramData',
       'Epic', 'EpicGamesLauncher', 'Data', 'Manifests'
     );
-
-    if (!fs.existsSync(manifestDir)) return { games: [], error: 'Epic Games not found' };
-
+    if (!fs.existsSync(manifestDir)) return games;
     const files = fs.readdirSync(manifestDir).filter(f => f.endsWith('.item'));
-
     for (const file of files) {
       try {
         const content = JSON.parse(fs.readFileSync(path.join(manifestDir, file), 'utf-8'));
@@ -2683,41 +2875,33 @@ ipcMain.handle('detect:epic', async () => {
               ? path.join(content.InstallLocation, content.LaunchExecutable) : '',
             coverUrl: '',
             categories: [],
-            source: 'auto-detected'
+            source: 'auto-detected',
+            installed: true,
           });
         }
       } catch (e) { /* skip bad manifest */ }
     }
-  } catch (err) {
-    return { games: [], error: err.message };
-  }
+  } catch (e) { /* Epic not installed */ }
+  return games;
+}
 
-  return { games };
+ipcMain.handle('detect:epic', async () => {
+  const games = scanEpicInstalled();
+  return games.length ? { games } : { games: [], error: 'Epic Games not found' };
 });
 
 // ─── GOG Detection ────────────────────────────────────────────────────────────
-ipcMain.handle('detect:gog', async () => {
+function scanGogInstalled() {
   const games = [];
-
   try {
-    // GOG Galaxy stores game info in its database
-    const gogDbPath = path.join(
-      process.env.PROGRAMDATA || 'C:\\ProgramData',
-      'GOG.com', 'Galaxy', 'storage', 'galaxy-2.0.db'
-    );
-
-    // Fallback: scan registry-like paths or common install dirs
     const gogGamesDir = 'C:\\GOG Games';
     const gogProgramFiles = path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'GOG Galaxy', 'Games');
-
-    const dirsToScan = [gogGamesDir, gogProgramFiles].filter(fs.existsSync);
-
+    const dirsToScan = [gogGamesDir, gogProgramFiles].filter(d => { try { return fs.existsSync(d); } catch { return false; } });
     for (const dir of dirsToScan) {
       const entries = fs.readdirSync(dir, { withFileTypes: true });
       for (const entry of entries) {
         if (entry.isDirectory()) {
           const gameDir = path.join(dir, entry.name);
-          // Look for goggame-*.info files
           const infoFiles = fs.readdirSync(gameDir).filter(f => f.startsWith('goggame-') && f.endsWith('.info'));
           for (const infoFile of infoFiles) {
             try {
@@ -2732,7 +2916,8 @@ ipcMain.handle('detect:gog', async () => {
                     ? path.join(gameDir, info.playTasks[0].path) : '',
                   coverUrl: '',
                   categories: [],
-                  source: 'auto-detected'
+                  source: 'auto-detected',
+                  installed: true,
                 });
               }
             } catch (e) { /* skip */ }
@@ -2740,11 +2925,13 @@ ipcMain.handle('detect:gog', async () => {
         }
       }
     }
-  } catch (err) {
-    return { games: [], error: err.message };
-  }
+  } catch (e) { /* GOG not installed */ }
+  return games;
+}
 
-  return { games };
+ipcMain.handle('detect:gog', async () => {
+  const games = scanGogInstalled();
+  return games.length ? { games } : { games: [], error: 'GOG not found' };
 });
 
 // ─── chiaki-ng Detection (PlayStation Remote Play) ────────────────────────────
@@ -2787,7 +2974,7 @@ ipcMain.handle('detect:psremote', async () => {
     // 3. Try to list registered consoles
     if (result.executablePath) {
       try {
-        const listOutput = execSync(`"${result.executablePath}" list`, {
+        const listOutput = require('child_process').execFileSync(result.executablePath, ['list'], {
           timeout: 5000,
           env: { ...process.env, PATH: `${path.dirname(result.executablePath)};${process.env.PATH}` },
         }).toString();
@@ -3002,7 +3189,10 @@ ipcMain.handle('playtime:sync', async () => {
     // ── Epic Games — no local playtime file available ──
     // Epic doesn't store local playtime data in an accessible format
 
-    if (updated.length > 0) saveDB(db);
+    if (updated.length > 0) {
+      saveDB(db);
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('games:refresh', db.games);
+    }
   } catch (err) {
     return { updated: [], error: err.message };
   }
@@ -3451,7 +3641,24 @@ ipcMain.handle('accounts:gog:auth', async () => {
 
 ipcMain.handle('accounts:gog:import', async () => {
   if (!providers?.gog?.importLibrary) return { error: 'GOG provider not available' };
-  return importWithTokenRefresh('gog');
+  const res = await importWithTokenRefresh('gog');
+  if (!res?.error) {
+    // Cross-reference installed games from local GOG paths
+    const installed = scanGogInstalled();
+    if (installed.length > 0) {
+      const installedIds = new Set(installed.map(g => g.platformId).filter(Boolean));
+      let changed = false;
+      for (const g of db.games) {
+        if (g.platform === 'gog') {
+          const isInstalled = !!(g.platformId && installedIds.has(g.platformId));
+          if (isInstalled && !g.installed) { g.installed = true; changed = true; }
+          else if (!isInstalled && g.installed === undefined) { g.installed = false; changed = true; }
+        }
+      }
+      if (changed) saveDB(db);
+    }
+  }
+  return res;
 });
 
 // ── Epic Games OAuth ──
@@ -3481,7 +3688,24 @@ ipcMain.handle('accounts:epic:auth', async () => {
 
 ipcMain.handle('accounts:epic:import', async () => {
   if (!providers?.epic?.importLibrary) return { error: 'Epic provider not available' };
-  return importWithTokenRefresh('epic');
+  const res = await importWithTokenRefresh('epic');
+  if (!res?.error) {
+    // Cross-reference installed games from local Epic manifests
+    const installed = scanEpicInstalled();
+    if (installed.length > 0) {
+      const installedIds = new Set(installed.map(g => g.platformId).filter(Boolean));
+      let changed = false;
+      for (const g of db.games) {
+        if (g.platform === 'epic') {
+          const isInstalled = !!(g.platformId && installedIds.has(g.platformId));
+          if (isInstalled && !g.installed) { g.installed = true; changed = true; }
+          else if (!isInstalled && g.installed === undefined) { g.installed = false; changed = true; }
+        }
+      }
+      if (changed) saveDB(db);
+    }
+  }
+  return res;
 });
 
 // ── Xbox / Microsoft OAuth ──

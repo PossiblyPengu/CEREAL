@@ -57,6 +57,7 @@ export default defineConfig({
                 'node-gyp-build', 'better-sqlite3',
                 /^node:/,
                 /^\.\/providers/,
+                /^\.\/native/,
               ],
             },
           },

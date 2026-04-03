@@ -19,8 +19,146 @@ const XcloudPanel    = lazy(() => import('./components/XcloudPanel').then(m => (
 const SettingsPanel  = lazy(() => import('./components/SettingsPanel').then(m => ({ default: m.SettingsPanel })));
 const ArtPicker      = lazy(() => import('./components/ArtPicker').then(m => ({ default: m.ArtPicker })));
 
+// ─── Progressive Card Grid ─────────────────────────────────────────────────
+// Renders cards in chunks to avoid 1500+ DOM nodes on initial paint.
+const INITIAL_CARDS = 60;
+const CARDS_PER_BATCH = 40;
+
+interface PlatformCardSectionProps {
+  plat: string;
+  games: Game[];
+  cardIdxStart: number;
+  gpActive: boolean;
+  gpArea: string;
+  gpIdx: number;
+  isDimmed: (g: Game) => boolean;
+  onOpen: (g: Game) => void;
+  onLaunch: (g: Game) => void;
+  onFav: (id: string) => void;
+}
+
+const PlatformCardSection = React.memo(function PlatformCardSection({ plat, games: sortedGms, cardIdxStart, gpActive, gpArea, gpIdx, isDimmed, onOpen, onLaunch, onFav }: PlatformCardSectionProps) {
+  const p = PLATFORMS[plat];
+  const [visibleCount, setVisibleCount] = useState(Math.min(sortedGms.length, INITIAL_CARDS));
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const prevGamesLen = useRef(sortedGms.length);
+
+  // Reset visible count when game list changes significantly (filter/sort)
+  useEffect(() => {
+    if (sortedGms.length !== prevGamesLen.current) {
+      setVisibleCount(Math.min(sortedGms.length, INITIAL_CARDS));
+      prevGamesLen.current = sortedGms.length;
+    }
+  }, [sortedGms.length]);
+
+  // IntersectionObserver to load more cards as user scrolls
+  useEffect(() => {
+    if (visibleCount >= sortedGms.length) return;
+    const el = sentinelRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        setVisibleCount(v => Math.min(v + CARDS_PER_BATCH, sortedGms.length));
+      }
+    }, { rootMargin: '400px' });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [visibleCount, sortedGms.length]);
+
+  return (
+    <div className="card-platform-section">
+      <div className="card-platform-header">
+        <div className="card-platform-dot" style={{ background: p.color }} />
+        <span className="card-platform-name">{p.label}</span>
+        <span className="card-platform-count">{sortedGms.length}</span>
+      </div>
+      <div className="card-grid">
+        {sortedGms.slice(0, visibleCount).map((g: Game, gi: number) => {
+          const dim = isDimmed(g);
+          const cardIdx = cardIdxStart + gi;
+          const isFocused = gpActive && gpArea === 'cards' && gpIdx === cardIdx;
+          return (
+            <GameCard key={g.id}
+              game={g}
+              dim={dim}
+              isFocused={isFocused}
+              platColor={p.color}
+              platLetter={(p as any).letter}
+              animDelay={Math.min(gi, 15) * 0.04 + 's'}
+              noAnim={gi >= INITIAL_CARDS}
+              onOpen={onOpen}
+              onLaunch={onLaunch}
+              onFav={onFav}
+            />
+          );
+        })}
+      </div>
+      {visibleCount < sortedGms.length && (
+        <div ref={sentinelRef} style={{ height: 1 }} />
+      )}
+    </div>
+  );
+});
+
+interface GameCardProps {
+  game: Game;
+  dim: boolean;
+  isFocused: boolean;
+  platColor: string;
+  platLetter: string;
+  animDelay: string;
+  noAnim?: boolean;
+  onOpen: (g: Game) => void;
+  onLaunch: (g: Game) => void;
+  onFav: (id: string) => void;
+}
+const GameCard = React.memo(function GameCard({ game: g, dim, isFocused, platColor, platLetter, animDelay, noAnim, onOpen, onLaunch, onFav }: GameCardProps) {
+  const covSrc = resolveGameImage(g, 'coverUrl');
+  return (
+    <div
+      className={'game-card' + (noAnim ? ' no-anim' : '') + (dim ? ' dimmed' : '') + (isFocused ? ' gp-focus' : '') + (g.installed === false ? ' not-installed' : '')}
+      style={noAnim ? undefined : { animationDelay: animDelay }}
+      role="button"
+      tabIndex={dim ? -1 : 0}
+      aria-label={g.name}
+      onClick={() => onOpen(g)}
+      onDoubleClick={e => { e.preventDefault(); e.stopPropagation(); onLaunch(g); }}
+      onKeyDown={e => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(g); return; }
+        if (e.key === 'ArrowRight' || e.key === 'ArrowLeft' || e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          e.preventDefault();
+          const cards = Array.from(document.querySelectorAll<HTMLElement>('.game-card[tabindex="0"]'));
+          const idx = cards.indexOf(e.currentTarget as HTMLElement);
+          if (e.key === 'ArrowRight' && idx < cards.length - 1) { cards[idx + 1].focus(); return; }
+          if (e.key === 'ArrowLeft' && idx > 0) { cards[idx - 1].focus(); return; }
+          const el = e.currentTarget as HTMLElement;
+          const cols = Math.max(1, Math.round((el.parentElement?.offsetWidth ?? el.offsetWidth) / el.offsetWidth));
+          if (e.key === 'ArrowDown' && idx + cols < cards.length) cards[idx + cols].focus();
+          else if (e.key === 'ArrowUp' && idx - cols >= 0) cards[idx - cols].focus();
+        }
+      }}>
+      <div className="card-cover">
+        {covSrc && <img src={covSrc} alt="" loading="lazy" decoding="async" onLoad={e => { (e.target as HTMLImageElement).style.display = ''; const sib = (e.target as HTMLImageElement).nextSibling as HTMLElement; if (sib) sib.style.display = 'none'; }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; const sib = (e.target as HTMLImageElement).nextSibling as HTMLElement; if (sib) sib.style.display = 'flex'; }} />}
+        <div className="card-cover-fallback" style={covSrc ? { display: 'none' } : {}}>{g.name.charAt(0)}</div>
+        <div className="card-plat-badge" style={{ background: 'rgba(0,0,0,0.55)', color: platColor }}>{platLetter}</div>
+        {g.favorite && <div className="card-fav"><svg viewBox="0 0 24 24" fill="currentColor" width="10" height="10"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg></div>}
+        {g.installed === false && <div className="card-not-installed-badge" title="Not installed"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="10" height="10"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.88 18.09A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.29"/></svg></div>}
+        <div className="card-hover-actions">
+          <button className="card-hover-btn play" onClick={e => { e.stopPropagation(); onLaunch(g); }}>Play</button>
+          <button className="card-hover-btn ghost" onClick={e => { e.stopPropagation(); onFav(g.id); }}>{g.favorite ? 'Unfav' : 'Fav'}</button>
+        </div>
+      </div>
+      <div className="card-info">
+        <div className="card-name">{g.name}</div>
+        <div className="card-meta">{fmtTime(g.playtimeMinutes)}</div>
+      </div>
+    </div>
+  );
+});
+
 export default function App() {
   const [importProgress, setImportProgress] = useState<any>(null);
+  const [metaProgress, setMetaProgress] = useState<any>(null);
   const [showWizard, setShowWizard] = useState(false);
   const [games, setGames] = useState<Game[]>([]);
   const [gamesLoaded, setGamesLoaded] = useState(false);
@@ -33,6 +171,7 @@ export default function App() {
   const [showThemePicker, setShowThemePicker] = useState(false);
   const [showLayoutPicker, setShowLayoutPicker] = useState(false);
   const [hideSteamSoftware, setHideSteamSoftware] = useState(false);
+  const [showInstalledOnly, setShowInstalledOnly] = useState(false);
   const [focusGame, setFocusGame] = useState<Game | null>(null);
   const [showSearch, setShowSearch] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
@@ -164,10 +303,16 @@ export default function App() {
       const c = camRef.current;
       dragInfo.current = { active: true, sx: e.clientX, sy: e.clientY, cx: c.x, cy: c.y, moved: false };
     };
+    let rafId: number | null = null;
     const onMove = (e: MouseEvent) => {
       const d = dragInfo.current; if (!d.active) return;
       if (Math.abs(e.clientX - d.sx) > 3 || Math.abs(e.clientY - d.sy) > 3) d.moved = true;
-      setCam(c => ({ ...c, x: d.cx + (e.clientX - d.sx), y: d.cy + (e.clientY - d.sy) }));
+      const ex = e.clientX, ey = e.clientY;
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        setCam(c => ({ ...c, x: d.cx + (ex - d.sx), y: d.cy + (ey - d.sy) }));
+      });
     };
     const onUp = () => { dragInfo.current.active = false; };
     vp.addEventListener('wheel', onWheel, { passive: false });
@@ -179,6 +324,7 @@ export default function App() {
       vp.removeEventListener('mousedown', onDown);
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
+      if (rafId !== null) cancelAnimationFrame(rafId);
     };
   }, [viewMode]);
 
@@ -219,8 +365,10 @@ export default function App() {
           const prevMap = new Map((prev || []).map(x => [x.id, x]));
           return incoming.map((ng: Game) => {
             const prevG = prevMap.get(ng.id);
-            if (prevG && (prevG as any)._imgStamp) return { ...ng, _imgStamp: (prevG as any)._imgStamp };
-            return ng;
+            const prevStamp = (prevG as any)?._imgStamp || 0;
+            const newStamp = (ng as any)._imgStamp || 0;
+            const stamp = Math.max(prevStamp, newStamp);
+            return stamp ? { ...ng, _imgStamp: stamp } : ng;
           });
         });
       });
@@ -287,6 +435,15 @@ export default function App() {
     }
   }, [importProgress]);
 
+  // Auto-dismiss the metadata progress overlay once done
+  useEffect(() => {
+    if (!metaProgress) return;
+    if (metaProgress.phase === 'done') {
+      const t = setTimeout(() => setMetaProgress(null), 3000);
+      return () => clearTimeout(t);
+    }
+  }, [metaProgress]);
+
   // Signal Electron to show the window only after React has committed the loaded state
   useEffect(() => {
     if (gamesLoaded) {
@@ -310,7 +467,17 @@ export default function App() {
   // Auto-sync playtime
   useEffect(() => {
     if (!settings.autoSyncPlaytime || !(window.api as any)?.syncPlaytime) return;
-    const sync = async () => { const r = await (window.api as any).syncPlaytime(); if (r?.games) setGames(r.games); };
+    const sync = async () => {
+      const r = await (window.api as any).syncPlaytime();
+      if (r?.games) setGames(prev => {
+        const prevMap = new Map((prev || []).map((x: any) => [x.id, x]));
+        return r.games.map((ng: any) => {
+          const prevStamp = prevMap.get(ng.id)?._imgStamp || 0;
+          const stamp = Math.max(prevStamp, ng._imgStamp || 0);
+          return stamp ? { ...ng, _imgStamp: stamp } : ng;
+        });
+      });
+    };
     const initial = setTimeout(sync, 3000);
     const interval = setInterval(sync, 30 * 60 * 1000);
     return () => { clearTimeout(initial); clearInterval(interval); };
@@ -338,9 +505,6 @@ export default function App() {
     return () => window.removeEventListener('keydown', handler);
   }, [focusGame, showThemePicker, showLayoutPicker, showFilters]);
 
-  // Expose games to global for settings panel header
-  useEffect(() => { (window as any)._games = games; }, [games]);
-
   // Gamepad mouse visibility
   useEffect(() => {
     if (!gpActive) return;
@@ -363,15 +527,15 @@ export default function App() {
     return () => { window.removeEventListener('gamepadconnected', onConn as EventListener); window.removeEventListener('gamepaddisconnected', onDisc); };
   }, []);
 
-  const _updateGameInState = (updated: Game) => {
+  const _updateGameInState = useCallback((updated: Game) => {
     if (!updated) return;
     setGames(prev => prev.map(x => {
       if (x.id !== updated.id) return x;
       return { ...updated, _imgStamp: (updated as any)._imgStamp || Date.now() };
     }));
-  };
+  }, [setGames]);
 
-  const doLaunch = async (game: Game) => {
+  const doLaunch = useCallback(async (game: Game) => {
     if (window.api) {
       const r = await window.api.launchGame(game.id);
       if (r.success) {
@@ -380,12 +544,12 @@ export default function App() {
         if (settings.minimizeOnLaunch) (window.api as any).minimize?.();
       } else flash('Error: ' + r.error);
     } else flash('Launching ' + game.name + '...');
-  };
+  }, [flash, settings.minimizeOnLaunch, _updateGameInState]);
 
-  const doFav = async (id: string) => {
-    if (window.api) { const u = await window.api.toggleFavorite(id); setGames(g => g.map(x => x.id === id ? u : x)); }
+  const doFav = useCallback(async (id: string) => {
+    if (window.api) { const u = await window.api.toggleFavorite(id); setGames(g => g.map(x => x.id === id ? { ...u, _imgStamp: (x as any)._imgStamp } : x)); }
     else setGames(g => g.map(x => x.id === id ? { ...x, favorite: !x.favorite } : x));
-  };
+  }, [setGames]);
 
   const doAdd = async (f: Partial<Game>) => {
     let created: Game | null = null;
@@ -435,7 +599,14 @@ export default function App() {
     if (!window.api || !(window.api as any).syncPlaytime) { flash('Sync not available'); return; }
     flash('Syncing playtime...');
     const r = await (window.api as any).syncPlaytime();
-    if (r.games) setGames(r.games);
+    if (r.games) setGames(prev => {
+      const prevMap = new Map((prev || []).map((x: any) => [x.id, x]));
+      return r.games.map((ng: any) => {
+        const prevStamp = prevMap.get(ng.id)?._imgStamp || 0;
+        const stamp = Math.max(prevStamp, ng._imgStamp || 0);
+        return stamp ? { ...ng, _imgStamp: stamp } : ng;
+      });
+    });
     if (r.updated && r.updated.length > 0) flash('Updated playtime for ' + r.updated.length + ' games');
     else flash('Playtime is up to date');
   };
@@ -443,23 +614,48 @@ export default function App() {
   const doRescanAll = async () => {
     if (!window.api) { flash('Rescan not available'); return; }
     flash('Scanning all platforms...');
-    const all: Game[] = [];
     const scanners = [(window.api as any).detectSteam, (window.api as any).detectEpic, (window.api as any).detectGOG, (window.api as any).detectXbox, (window.api as any).detectEA, (window.api as any).detectBattleNet, (window.api as any).detectItchio, (window.api as any).detectUbisoft];
-    for (const fn of scanners) { try { const res = await fn?.(); if (res?.games) all.push(...res.games); } catch (_) {} }
+    const results = await Promise.allSettled(scanners.map(fn => fn?.()));
+    const all: Game[] = [];
+    for (const r of results) { if (r.status === 'fulfilled' && r.value?.games) all.push(...r.value.games); }
     if (all.length === 0) { flash('No new games found'); return; }
     await doImport(all);
   };
 
   const doFetchAllMetadata = async () => {
     if (!(window.api as any)?.fetchAllMetadata) { flash('Metadata fetch not available'); return; }
-    flash('Fetching metadata (0/' + games.length + ')...');
-    const cleanup = (window.api as any).onMetadataProgress?.((p: any) => { flash('Fetching metadata (' + p.current + '/' + p.total + ') ' + p.name); });
+    setMetaProgress({ phase: 'metadata', current: 0, total: games.length, updated: 0, failed: 0, name: '' });
+    const cleanupMeta = (window.api as any).onMetadataProgress?.((p: any) => {
+      setMetaProgress((prev: any) => ({ ...prev, ...p, phase: 'metadata' }));
+    });
+    const cleanupCover = (window.api as any).onCoverProgress?.((p: any) => {
+      if (p.done) {
+        setMetaProgress((prev: any) => prev ? { ...prev, phase: 'done' } : null);
+      } else {
+        setMetaProgress((prev: any) => prev ? { ...prev, phase: 'covers', coverRemaining: p.remaining } : null);
+      }
+    });
     try {
       const r = await (window.api as any).fetchAllMetadata();
-      if (r.updated > 0) { const g = await (window.api as any).getGames(); setGames(g); flash('Updated metadata for ' + r.updated + ' of ' + r.total + ' games'); }
+      // Metadata phase done — covers may still be downloading in background
+      setMetaProgress((prev: any) => prev ? {
+        ...prev, phase: 'covers', current: r.total, total: r.total, updated: r.updated, failed: r.failed,
+      } : null);
+      // If no covers to download, mark done directly after a short wait
+      setTimeout(() => {
+        setMetaProgress((prev: any) => {
+          if (prev && prev.phase === 'covers') return { ...prev, phase: 'done' };
+          return prev;
+        });
+      }, 3000);
+      if (r.updated > 0) flash('Updated metadata for ' + r.updated + ' of ' + r.total + ' games');
       else flash('All metadata is up to date');
-    } catch (_) { flash('Metadata fetch failed'); }
-    if (cleanup) cleanup();
+    } catch (_) {
+      flash('Metadata fetch failed');
+      setMetaProgress(null);
+    }
+    if (cleanupMeta) cleanupMeta();
+    if (cleanupCover) cleanupCover();
   };
 
   const onSettingsChange = (s: Partial<Settings>) => {
@@ -512,10 +708,11 @@ export default function App() {
         return true;
       });
     }
+    if (showInstalledOnly) list = list.filter(g => g.installed !== false);
     if (selectedPlatforms && selectedPlatforms.length > 0) list = list.filter(g => selectedPlatforms.includes(g.platform));
     if (selectedCategories && selectedCategories.length > 0) list = list.filter(g => (g.categories || []).some(c => selectedCategories.includes(c)));
     return list;
-  }, [games, tab, gameFilter, selectedPlatforms, selectedCategories, hideSteamSoftware]);
+  }, [games, tab, gameFilter, selectedPlatforms, selectedCategories, hideSteamSoftware, showInstalledOnly]);
 
   const groupedByPlatform = useMemo(() => {
     const groups: Record<string, Game[]> = {};
@@ -527,6 +724,7 @@ export default function App() {
     platform, games: sortBy === 'name' ? [...gms].sort((a, b) => a.name.localeCompare(b.name))
       : sortBy === 'played' ? [...gms].sort((a, b) => (b.playtimeMinutes || 0) - (a.playtimeMinutes || 0))
       : sortBy === 'recent' ? [...gms].sort((a, b) => new Date(b.lastPlayed || 0).getTime() - new Date(a.lastPlayed || 0).getTime())
+      : sortBy === 'installed' ? [...gms].sort((a, b) => (b.installed === false ? 0 : 1) - (a.installed === false ? 0 : 1) || a.name.localeCompare(b.name))
       : gms,
   })), [groupedByPlatform, sortBy]);
 
@@ -553,13 +751,13 @@ export default function App() {
 
   const orbData = useMemo(() => {
     const groups: Record<string, Game[]> = {};
-    filteredGames.forEach(g => { if (!groups[g.platform]) groups[g.platform] = []; groups[g.platform].push(g); });
+    filteredGames.forEach(g => { if (g.installed === false) return; if (!groups[g.platform]) groups[g.platform] = []; groups[g.platform].push(g); });
     const allPt = games.map(g => g.playtimeMinutes || 0);
     const maxPt = Math.max(...allPt, 1);
     const result: any[] = []; let idx = 0;
     Object.entries(groups).forEach(([plat, gms]) => {
       const c = CLUSTER_CENTERS[plat] || { x: 1500, y: 1000 };
-      const sortedGms = [...gms].sort((a, b) => (b.playtimeMinutes || 0) - (a.playtimeMinutes || 0));
+      const sortedGms = [...gms].sort(sortBy === 'name' ? (a, b) => a.name.localeCompare(b.name) : sortBy === 'recent' ? (a, b) => new Date(b.lastPlayed || 0).getTime() - new Date(a.lastPlayed || 0).getTime() : sortBy === 'installed' ? (a, b) => (b.installed === false ? 0 : 1) - (a.installed === false ? 0 : 1) || a.name.localeCompare(b.name) : (a, b) => (b.playtimeMinutes || 0) - (a.playtimeMinutes || 0));
       const nArms = Math.max(2, Math.ceil(sortedGms.length / 6));
       sortedGms.forEach((game, i) => {
         const pt = game.playtimeMinutes || 0;
@@ -592,7 +790,7 @@ export default function App() {
       }
     }
     return result;
-  }, [filteredGames]);
+  }, [filteredGames, sortBy]);
 
   const starLayers = useMemo(() => {
     const base = (settings as any).starDensity === 'low' ? 120 : (settings as any).starDensity === 'high' ? 500 : 280;
@@ -818,7 +1016,7 @@ export default function App() {
                     onDoubleClick={e => { e.stopPropagation(); doLaunch(o.game); }}
                     onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setFocusGame(o.game); } }}>
                     <div className="orb-visual">
-                      {(() => { const src = resolveGameImage(o.game, 'coverUrl'); return src ? <img key={src} src={src} alt="" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; const sib = (e.target as HTMLImageElement).nextSibling as HTMLElement; if (sib) sib.style.display = 'flex'; }} /> : null; })()}
+                      {(() => { const src = resolveGameImage(o.game, 'coverUrl'); return src ? <img src={src} alt="" onLoad={e => { (e.target as HTMLImageElement).style.display = ''; const sib = (e.target as HTMLImageElement).nextSibling as HTMLElement; if (sib) sib.style.display = 'none'; }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; const sib = (e.target as HTMLImageElement).nextSibling as HTMLElement; if (sib) sib.style.display = 'flex'; }} /> : null; })()}
                       <div className="orb-fallback" style={resolveGameImage(o.game, 'coverUrl') ? { display: 'none' } : {}}>
                         <span style={{ fontSize: o.size * 0.38 + 'px' }}>{o.game.name.charAt(0)}</span>
                       </div>
@@ -835,67 +1033,25 @@ export default function App() {
 
       {(viewMode === 'cards' || viewTransition === 'cards-exit') && gamesLoaded && games.length > 0 && (
         <div className={'card-grid-wrap' + (viewTransition === 'cards-exit' ? ' cards-exiting' : '')}>
-          <div className="sort-bar">
-            <span className="sort-bar-label">Sort</span>
-            {[['default', 'Default'], ['name', 'Name'], ['played', 'Most Played'], ['recent', 'Recent']].map(([v, l]) => (
-              <button key={v} className={'sort-btn' + (sortBy === v ? ' active' : '')} onClick={() => setSortBy(v)}>{l}</button>
-            ))}
-          </div>
+
           {(() => {
             let _ci = 0;
             return sortedGroups.map(({ platform: plat, games: sortedGms }) => {
-              const p = PLATFORMS[plat];
+              const start = _ci;
+              _ci += sortedGms.length;
               return (
-                <div key={plat} className="card-platform-section">
-                  <div className="card-platform-header">
-                    <div className="card-platform-dot" style={{ background: p.color }} />
-                    <span className="card-platform-name">{p.label}</span>
-                    <span className="card-platform-count">{sortedGms.length}</span>
-                  </div>
-                  <div className="card-grid">
-                    {sortedGms.map((g: Game, gi: number) => {
-                      const dim = isDimmed(g); const cardIdx = _ci++; const isFocused = gpActive && gpArea === 'cards' && gpIdx === cardIdx;
-                      const covSrc = resolveGameImage(g, 'coverUrl');
-                      return (
-                        <div key={g.id} className={'game-card' + (dim ? ' dimmed' : '') + (isFocused ? ' gp-focus' : '')} style={{ animationDelay: gi * 0.04 + 's' }}
-                          role="button"
-                          tabIndex={dim ? -1 : 0}
-                          aria-label={g.name}
-                          onClick={() => setFocusGame(g)}
-                          onDoubleClick={e => { e.preventDefault(); e.stopPropagation(); doLaunch(g); }}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setFocusGame(g); return; }
-                            if (e.key === 'ArrowRight' || e.key === 'ArrowLeft' || e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-                              e.preventDefault();
-                              const cards = Array.from(document.querySelectorAll<HTMLElement>('.game-card[tabindex="0"]'));
-                              const idx = cards.indexOf(e.currentTarget as HTMLElement);
-                              if (e.key === 'ArrowRight' && idx < cards.length - 1) { cards[idx + 1].focus(); return; }
-                              if (e.key === 'ArrowLeft' && idx > 0) { cards[idx - 1].focus(); return; }
-                              const el = e.currentTarget as HTMLElement;
-                              const cols = Math.max(1, Math.round((el.parentElement?.offsetWidth ?? el.offsetWidth) / el.offsetWidth));
-                              if (e.key === 'ArrowDown' && idx + cols < cards.length) cards[idx + cols].focus();
-                              else if (e.key === 'ArrowUp' && idx - cols >= 0) cards[idx - cols].focus();
-                            }
-                          }}>
-                          <div className="card-cover">
-                            {covSrc && <img key={covSrc} src={covSrc} alt="" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; const sib = (e.target as HTMLImageElement).nextSibling as HTMLElement; if (sib) sib.style.display = 'flex'; }} />}
-                            <div className="card-cover-fallback" style={covSrc ? { display: 'none' } : {}}>{g.name.charAt(0)}</div>
-                            <div className="card-plat-badge" style={{ background: 'rgba(0,0,0,0.55)', color: p.color }}>{(p as any).letter}</div>
-                            {g.favorite && <div className="card-fav"><svg viewBox="0 0 24 24" fill="currentColor" width="10" height="10"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg></div>}
-                            <div className="card-hover-actions">
-                              <button className="card-hover-btn play" onClick={e => { e.stopPropagation(); doLaunch(g); }}>Play</button>
-                              <button className="card-hover-btn ghost" onClick={e => { e.stopPropagation(); doFav(g.id); }}>{g.favorite ? 'Unfav' : 'Fav'}</button>
-                            </div>
-                          </div>
-                          <div className="card-info">
-                            <div className="card-name">{g.name}</div>
-                            <div className="card-meta">{fmtTime(g.playtimeMinutes)}</div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
+                <PlatformCardSection key={plat}
+                  plat={plat}
+                  games={sortedGms}
+                  cardIdxStart={start}
+                  gpActive={gpActive}
+                  gpArea={gpArea}
+                  gpIdx={gpIdx}
+                  isDimmed={isDimmed}
+                  onOpen={setFocusGame}
+                  onLaunch={doLaunch}
+                  onFav={doFav}
+                />
               );
             });
           })()}
@@ -954,7 +1110,7 @@ export default function App() {
         <div className="nav-sep" />
         {/* Filter button */}
         {(() => {
-          const filterCount = selectedPlatforms.length + selectedCategories.length + (hideSteamSoftware ? 1 : 0) + (gameFilter ? 1 : 0);
+          const filterCount = selectedPlatforms.length + selectedCategories.length + (hideSteamSoftware ? 1 : 0) + (gameFilter ? 1 : 0) + (showInstalledOnly ? 1 : 0) + (sortBy !== 'default' ? 1 : 0);
           return (
             <div className="nav-filter-wrap" style={{ position: 'relative' }}>
               <button className="nav-btn" onClick={() => setShowFilters(s => s ? '' : 'open')} title="Filter games" style={{ position: 'relative' }}>
@@ -962,9 +1118,15 @@ export default function App() {
                 {filterCount > 0 && <span style={{ position: 'absolute', top: -4, right: -4, minWidth: 16, height: 16, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 16, background: 'var(--accent)', color: '#07070d', fontSize: 9, fontWeight: 700, padding: '0 4px', boxShadow: '0 4px 12px rgba(0,0,0,0.45)' }}>{filterCount}</span>}
               </button>
               {showFilters && (isVertical ? ReactDOM.createPortal : (c: React.ReactNode) => c)(
-                <div style={isVertical ? { position: 'fixed', top: '50%', [tbPos === 'left' ? 'left' : 'right']: 72, transform: 'translateY(-50%)', minWidth: 300, maxWidth: 400, background: 'var(--surface)', border: '1px solid var(--glass-border)', borderRadius: 12, padding: 16, boxShadow: '0 12px 48px rgba(0,0,0,0.7)', zIndex: 300 } : { position: 'absolute', top: 40, right: 0, minWidth: 320, background: 'var(--surface)', border: '1px solid var(--glass-border)', borderRadius: 10, padding: 14, boxShadow: '0 8px 32px rgba(0,0,0,0.6)', zIndex: 200 }}
+                <div style={isVertical ? { position: 'fixed', top: '50%', [tbPos === 'left' ? 'left' : 'right']: 72, transform: 'translateY(-50%)', minWidth: 300, maxWidth: 400, background: 'var(--surface)', border: '1px solid var(--glass-border)', borderRadius: 12, padding: 16, boxShadow: '0 12px 48px rgba(0,0,0,0.7)', zIndex: 300 } : { position: 'absolute', ...(tbPos === 'bottom' ? { bottom: 'calc(100% + 6px)' } : { top: 'calc(100% + 6px)' }), right: 0, minWidth: 320, background: 'var(--surface)', border: '1px solid var(--glass-border)', borderRadius: 10, padding: 14, boxShadow: '0 8px 32px rgba(0,0,0,0.6)', zIndex: 200 }}
                   onClick={e => e.stopPropagation()}>
                   <input value={gameFilter} onChange={e => setGameFilter(e.target.value)} placeholder="Search games..." style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid var(--glass-border)', background: 'var(--glass)', color: 'var(--text-2)', fontSize: 12, width: '100%', marginBottom: 12, boxSizing: 'border-box' }} autoFocus />
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>Sort by</div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+                    {([['default', 'Default'], ['name', 'Name'], ['played', 'Most Played'], ['recent', 'Recent'], ['installed', 'Installed']] as [string, string][]).map(([v, l]) => (
+                      <button key={v} className={'tag' + (sortBy === v ? ' sel' : '')} onClick={() => setSortBy(v)}>{l}</button>
+                    ))}
+                  </div>
                   <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>Platforms</div>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
                     {Object.keys(PLATFORMS).map(pk => {
@@ -991,8 +1153,16 @@ export default function App() {
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--text-2)', fontWeight: 600 }}>Hide Steam software</div>
                   </div>
+                  <div className="toggle-row" style={{ marginBottom: 10 }}>
+                    <div role="switch" aria-checked={showInstalledOnly} tabIndex={0} className={'switch' + (showInstalledOnly ? ' on' : '')}
+                      onClick={() => setShowInstalledOnly(s => !s)}
+                      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setShowInstalledOnly(s => !s); } }}>
+                      <div className="switch-knob" />
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-2)', fontWeight: 600 }}>Installed only</div>
+                  </div>
                   <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                    <button className="btn-sm" onClick={() => { setGameFilter(''); setSelectedPlatforms([]); setSelectedCategories([]); setHideSteamSoftware(false); }}>Reset all</button>
+                    <button className="btn-sm" onClick={() => { setGameFilter(''); setSelectedPlatforms([]); setSelectedCategories([]); setHideSteamSoftware(false); setShowInstalledOnly(false); setSortBy('default'); }}>Reset all</button>
                     <button className="btn-sm primary" onClick={() => setShowFilters('')}>Done</button>
                   </div>
                 </div>,
@@ -1202,11 +1372,10 @@ export default function App() {
       {showChiaki && <Suspense fallback={null}><ChiakiPanel show={showChiaki} onClose={() => setShowChiaki(false)} flash={flash} games={games} setGames={setGames} chiakiSessions={chiakiSessions} /></Suspense>}
       {showXcloud && <Suspense fallback={null}><XcloudPanel show={showXcloud} onClose={() => setShowXcloud(false)} flash={flash} /></Suspense>}
       {showSettings && <Suspense fallback={null}><SettingsPanel show={showSettings} onClose={() => setShowSettings(false)} flash={flash} settings={settings} onSettingsChange={onSettingsChange as any}
-          setGames={setGames} setCats={setCats}
+          games={games} setGames={setGames} setCats={setCats}
           onOpenPlatforms={() => { setShowSettings(false); setTimeout(() => setShowPlatforms(true), 150); }}
-          onOpenDetect={() => { setShowSettings(false); setTimeout(() => setShowDetect(true), 150); }}
           onSync={doSync} onFetchMetadata={doFetchAllMetadata} onRunWizard={() => setShowWizard(true)} onRescanAll={doRescanAll} /></Suspense>}
-      <StartupWizard show={showWizard} onClose={() => setShowWizard(false)} flash={flash} setGames={setGames} />
+      <StartupWizard show={showWizard} onClose={() => setShowWizard(false)} flash={flash} setGames={setGames} settings={settings} onSettingsChange={onSettingsChange} />
 
       {globalArtPicker && (
         <div className="modal-overlay">
@@ -1224,7 +1393,7 @@ export default function App() {
       {toast !== '' && <Toast msg={toast} onDone={() => setToast('')} />}
 
       {importProgress && importProgress.status && (
-        <div style={{ position: 'fixed', bottom: 72, right: 20, zIndex: 9000, width: 300, background: 'var(--glass-heavy, rgba(20,20,30,0.96))', border: '1px solid var(--glass-border)', borderRadius: 12, padding: '12px 16px', boxShadow: '0 8px 32px rgba(0,0,0,0.5)', backdropFilter: 'blur(12px)', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ position: 'fixed', bottom: 72, right: 20, zIndex: 10100, width: 300, background: 'var(--glass-heavy, rgba(20,20,30,0.96))', border: '1px solid var(--glass-border)', borderRadius: 12, padding: '12px 16px', boxShadow: '0 8px 32px rgba(0,0,0,0.5)', backdropFilter: 'blur(12px)', display: 'flex', alignItems: 'center', gap: 12 }}>
           {importProgress.status !== 'done' && importProgress.status !== 'error'
             ? <div style={{ width: 22, height: 22, border: '2px solid rgba(255,255,255,0.1)', borderTopColor: 'var(--accent)', borderRadius: '50%', flexShrink: 0, animation: 'spin 0.8s linear infinite' }} />
             : <div style={{ width: 22, height: 22, borderRadius: '50%', flexShrink: 0, background: importProgress.status === 'error' ? 'var(--red)' : 'var(--green)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12 }}>{importProgress.status === 'error' ? '✕' : '✓'}</div>
@@ -1240,6 +1409,41 @@ export default function App() {
             </div>
           </div>
           <button className="btn-flat" style={{ padding: '2px 6px', fontSize: 11, flexShrink: 0 }} onClick={() => setImportProgress(null)}>✕</button>
+        </div>
+      )}
+
+      {metaProgress && (
+        <div style={{ position: 'fixed', bottom: importProgress ? 144 : 72, right: 20, zIndex: 10100, width: 320, background: 'var(--glass-heavy, rgba(20,20,30,0.96))', border: '1px solid var(--glass-border)', borderRadius: 12, padding: '12px 16px', boxShadow: '0 8px 32px rgba(0,0,0,0.5)', backdropFilter: 'blur(12px)', transition: 'bottom 0.2s ease' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+            {metaProgress.phase === 'done'
+              ? <div style={{ width: 20, height: 20, borderRadius: '50%', background: 'var(--green)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, flexShrink: 0 }}>✓</div>
+              : <div style={{ width: 20, height: 20, border: '2px solid rgba(255,255,255,0.1)', borderTopColor: 'var(--accent)', borderRadius: '50%', flexShrink: 0, animation: 'spin 0.8s linear infinite' }} />
+            }
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12, fontWeight: 700 }}>
+                {metaProgress.phase === 'done' ? 'All done' : metaProgress.phase === 'covers' ? 'Downloading cover art…' : 'Fetching metadata…'}
+              </div>
+              <div style={{ fontSize: 10, color: 'var(--text-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {metaProgress.phase === 'done'
+                  ? (metaProgress.updated || 0) + ' updated · ' + (metaProgress.failed || 0) + ' failed'
+                  : metaProgress.phase === 'covers'
+                    ? (metaProgress.coverRemaining || 0) > 0 ? (metaProgress.coverRemaining + ' remaining') : 'Finishing up…'
+                    : metaProgress.name || 'Starting…'}
+              </div>
+            </div>
+            <button className="btn-flat" style={{ padding: '2px 6px', fontSize: 11, flexShrink: 0 }} onClick={() => setMetaProgress(null)}>✕</button>
+          </div>
+          {metaProgress.phase !== 'done' && metaProgress.total > 0 && (
+            <div style={{ position: 'relative', height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.06)', overflow: 'hidden' }}>
+              <div style={{ position: 'absolute', inset: '0 auto 0 0', width: Math.min(100, ((metaProgress.current || 0) / metaProgress.total) * 100) + '%', background: 'var(--accent)', borderRadius: 2, transition: 'width 0.3s ease' }} />
+            </div>
+          )}
+          {metaProgress.phase === 'metadata' && metaProgress.total > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 10, color: 'var(--text-4)' }}>
+              <span>{metaProgress.current || 0} / {metaProgress.total}</span>
+              <span>{metaProgress.updated || 0} updated{metaProgress.failed > 0 ? ' · ' + metaProgress.failed + ' failed' : ''}</span>
+            </div>
+          )}
         </div>
       )}
 

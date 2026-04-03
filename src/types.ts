@@ -17,6 +17,7 @@ export interface Game {
   favorite?: boolean;
   hidden?: boolean;
   isCustom?: boolean;
+  installed?: boolean;
 
   // Custom/executable games
   executablePath?: string;
@@ -35,7 +36,7 @@ export interface Game {
 // ─── Settings ────────────────────────────────────────────────────────────────
 
 export interface Settings {
-  defaultView?: 'orbit' | 'cards' | 'galaxy';
+  defaultView?: 'orbit' | 'cards';
   theme?: string;
   accentColor?: string;
   navPosition?: 'top' | 'bottom' | 'left' | 'right';

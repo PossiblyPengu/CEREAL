@@ -32,7 +32,7 @@ export function MediaPlayer({ tbPos, viewMode: _viewMode }: MediaPlayerProps) {
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, []);
 
-  const ctrl = (action: string) => { (window.api as any)?.mediaControl?.(action); setTimeout(fetchMedia, 600); };
+  const ctrl = async (action: string) => { await (window.api as any)?.mediaControl?.(action); fetchMedia(); };
 
   const pos = tbPos || 'top';
   const bottom = pos === 'bottom' ? 6 : (pos === 'left' || pos === 'right' ? 8 : 18);

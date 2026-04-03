@@ -35,6 +35,7 @@ async function importLibrary({ db, saveDB, notify }) {
 
     for (const gp of allProducts) {
       idx++;
+      if (!gp.id) continue;
       const gogId = String(gp.id);
       const slug = gp.slug || gp.url?.split('/').pop() || '';
       const title = gp.title || gp.name || '';
@@ -64,6 +65,7 @@ async function importLibrary({ db, saveDB, notify }) {
           extra: {
             storeUrl: slug ? `https://www.gog.com/en/game/${slug}` : '',
             editions: dlc ? [title] : [],
+            installed: false,
           },
         }));
         imported.push(title);

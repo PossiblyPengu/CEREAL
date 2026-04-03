@@ -45,12 +45,14 @@ contextBridge.exposeInMainWorld("api", {
 	xcloudStop: (gameId) => ipcRenderer.invoke("xcloud:stop", gameId),
 	xcloudGetSessions: () => ipcRenderer.invoke("xcloud:getSessions"),
 	onChiakiEvent: (callback) => {
-		ipcRenderer.on("chiaki:event", (event, data) => callback(data));
-		return () => ipcRenderer.removeAllListeners("chiaki:event");
+		const handler = (event, data) => callback(data);
+		ipcRenderer.on("chiaki:event", handler);
+		return () => ipcRenderer.removeListener("chiaki:event", handler);
 	},
 	onGamesRefresh: (callback) => {
-		ipcRenderer.on("games:refresh", (event, data) => callback(data));
-		return () => ipcRenderer.removeAllListeners("games:refresh");
+		const handler = (event, data) => callback(data);
+		ipcRenderer.on("games:refresh", handler);
+		return () => ipcRenderer.removeListener("games:refresh", handler);
 	},
 	pickExecutable: () => ipcRenderer.invoke("dialog:pickExecutable"),
 	pickImage: () => ipcRenderer.invoke("dialog:pickImage"),
@@ -61,6 +63,7 @@ contextBridge.exposeInMainWorld("api", {
 	applyMetadata: (gameId, force) => ipcRenderer.invoke("metadata:apply", gameId, force),
 	fetchAllMetadata: () => ipcRenderer.invoke("metadata:fetchAll"),
 	searchArt: (gameName, platform) => ipcRenderer.invoke("metadata:searchArt", gameName, platform),
+	fetchMetadataForName: (name, platform, platformId) => ipcRenderer.invoke("metadata:fetchForName", name, platform, platformId),
 	steamGridDbLogin: () => ipcRenderer.invoke("steamgriddb:login"),
 	readClipboard: () => ipcRenderer.invoke("clipboard:readText"),
 	syncPlaytime: () => ipcRenderer.invoke("playtime:sync"),
@@ -69,12 +72,19 @@ contextBridge.exposeInMainWorld("api", {
 	platformAuth: (platform) => ipcRenderer.invoke(`accounts:${platform}:auth`),
 	platformImport: (platform) => ipcRenderer.invoke(`accounts:${platform}:import`),
 	onImportProgress: (callback) => {
-		ipcRenderer.on("import:progress", (event, data) => callback(data));
-		return () => ipcRenderer.removeAllListeners("import:progress");
+		const handler = (event, data) => callback(data);
+		ipcRenderer.on("import:progress", handler);
+		return () => ipcRenderer.removeListener("import:progress", handler);
 	},
 	onMetadataProgress: (callback) => {
-		ipcRenderer.on("metadata:progress", (event, data) => callback(data));
-		return () => ipcRenderer.removeAllListeners("metadata:progress");
+		const handler = (event, data) => callback(data);
+		ipcRenderer.on("metadata:progress", handler);
+		return () => ipcRenderer.removeListener("metadata:progress", handler);
+	},
+	onCoverProgress: (callback) => {
+		const handler = (event, data) => callback(data);
+		ipcRenderer.on("cover:progress", handler);
+		return () => ipcRenderer.removeListener("cover:progress", handler);
 	},
 	getSettings: () => ipcRenderer.invoke("settings:get"),
 	saveSettings: (s) => ipcRenderer.invoke("settings:save", s),
@@ -88,8 +98,9 @@ contextBridge.exposeInMainWorld("api", {
 	checkForUpdate: () => ipcRenderer.invoke("update:check"),
 	installUpdate: () => ipcRenderer.invoke("update:install"),
 	onUpdateEvent: (callback) => {
-		ipcRenderer.on("update:event", (event, data) => callback(data));
-		return () => ipcRenderer.removeAllListeners("update:event");
+		const handler = (event, data) => callback(data);
+		ipcRenderer.on("update:event", handler);
+		return () => ipcRenderer.removeListener("update:event", handler);
 	},
 	getMediaInfo: () => ipcRenderer.invoke("media:getInfo"),
 	mediaControl: (action) => ipcRenderer.invoke("media:control", action),

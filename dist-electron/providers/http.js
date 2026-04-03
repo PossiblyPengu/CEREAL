@@ -14,9 +14,9 @@ function attachTimeout(req, reject) {
 function httpGet(url, headers) {
   return new Promise((resolve, reject) => {
     const req = https.get(url, { headers: { 'User-Agent': UA, ...(headers || {}) } }, (res) => {
-      let data = '';
-      res.on('data', c => data += c);
-      res.on('end', () => resolve({ status: res.statusCode, raw: data }));
+      const chunks = [];
+      res.on('data', c => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
+      res.on('end', () => resolve({ status: res.statusCode, raw: Buffer.concat(chunks).toString('utf8') }));
     });
     req.on('error', e => reject(e));
     attachTimeout(req, reject);
@@ -26,9 +26,10 @@ function httpGet(url, headers) {
 function httpGetJson(url, headers) {
   return new Promise((resolve, reject) => {
     const req = https.get(url, { headers: { 'User-Agent': UA, ...(headers || {}) } }, (res) => {
-      let data = '';
-      res.on('data', c => data += c);
+      const chunks = [];
+      res.on('data', c => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
       res.on('end', () => {
+        const data = Buffer.concat(chunks).toString('utf8');
         try { resolve({ status: res.statusCode, data: JSON.parse(data) }); }
         catch (e) { resolve({ status: res.statusCode, data: null, raw: data }); }
       });
@@ -57,9 +58,10 @@ function httpPost(url, body, headers) {
         ...(headers || {}),
       },
     }, (res) => {
-      let data = '';
-      res.on('data', c => data += c);
+      const chunks = [];
+      res.on('data', c => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
       res.on('end', () => {
+        const data = Buffer.concat(chunks).toString('utf8');
         try { resolve({ status: res.statusCode, data: JSON.parse(data) }); }
         catch (e) { resolve({ status: res.statusCode, data: null, raw: data }); }
       });

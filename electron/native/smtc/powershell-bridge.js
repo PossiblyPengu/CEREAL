@@ -6,7 +6,8 @@ const SCRIPT_PATH = path.join(__dirname, '..', '..', 'scripts', 'media-control.p
 
 function runPowerShell(action) {
   return new Promise((resolve, reject) => {
-    const cmd = `powershell -ExecutionPolicy Bypass -File "${SCRIPT_PATH}" -Action ${action}`;
+    const safeAction = String(action).replace(/[^a-zA-Z0-9_-]/g, '');
+    const cmd = `powershell -ExecutionPolicy Bypass -File "${SCRIPT_PATH}" -Action ${safeAction}`;
     exec(cmd, { timeout: 5000 }, (error, stdout, stderr) => {
       if (error) {
         resolve({ playing: false, error: error.message });

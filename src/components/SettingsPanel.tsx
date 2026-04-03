@@ -10,10 +10,10 @@ interface SettingsPanelProps {
   flash: (msg: React.ReactNode) => void;
   settings: Settings;
   onSettingsChange: (s: Settings) => void;
+  games: Game[];
   setGames: React.Dispatch<React.SetStateAction<Game[]>>;
   setCats: React.Dispatch<React.SetStateAction<string[]>>;
   onOpenPlatforms: () => void;
-  onOpenDetect: () => void;
   onSync: () => void;
   onFetchMetadata: () => void;
   onRunWizard: (run: boolean) => void;
@@ -21,7 +21,7 @@ interface SettingsPanelProps {
 }
 
 export function SettingsPanel({
-  show, onClose, flash, settings, onSettingsChange, setGames, setCats,
+  show, onClose, flash, settings, onSettingsChange, games, setGames, setCats,
   onOpenPlatforms, onSync, onFetchMetadata, onRunWizard, onRescanAll,
 }: SettingsPanelProps) {
   const [local, setLocal] = useState<Settings>({});
@@ -109,7 +109,7 @@ export function SettingsPanel({
 
   const doClearAll = async () => {
     if (!confirmClear) { setConfirmClear(true); return; }
-    const prevGames: Game[] = Array.isArray((window as any)._games) ? [...(window as any)._games] : [];
+    const prevGames: Game[] = Array.isArray(games) ? [...games] : [];
     if ((window.api as any)?.clearAllGames) await (window.api as any).clearAllGames();
     setGames([]);
     setConfirmClear(false);
@@ -144,8 +144,8 @@ export function SettingsPanel({
 
 
   const renderHeader = () => {
-    const gameCount = Array.isArray((window as any)._games) ? (window as any)._games.length : 0;
-    const totalMinutes = Array.isArray((window as any)._games) ? (window as any)._games.reduce((s: number, g: Game) => s + (g.playtimeMinutes || 0), 0) : 0;
+    const gameCount = Array.isArray(games) ? games.length : 0;
+    const totalMinutes = Array.isArray(games) ? games.reduce((s: number, g: Game) => s + (g.playtimeMinutes || 0), 0) : 0;
     return (
       <div className="settings-header">
         <span className="settings-header-logo">Cereal</span>
@@ -383,7 +383,8 @@ export function SettingsPanel({
                     const r = sgKey
                       ? await (window.api as any).validateApiKey('steamgriddb', sgKey)
                       : await (window.api as any).validateStoredApiKey?.('steamgriddb');
-                    setSgStatus(r?.ok ? 'valid' : ('invalid: ' + (r?.error || 'unknown')));
+                    const errStr = r?.error ? (typeof r.error === 'string' ? r.error : JSON.stringify(r.error)) : 'unknown';
+                    setSgStatus(r?.ok ? 'valid' : ('invalid: ' + errStr));
                   }}>Validate</button>
                   <button className="btn-sm primary" onClick={async () => {
                     if (!sgKey) { flash('Enter a key first'); return; }

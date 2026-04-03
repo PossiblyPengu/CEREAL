@@ -1,18 +1,23 @@
 import React, { useState, useEffect } from 'react';
-import type { Game } from '../types';
-import { applyUiScale } from '../utils';
+import type { Game, Settings } from '../types';
+import { THEMES, PLATFORMS } from '../constants';
+import { applyTheme, applyUiScale } from '../utils';
 
 interface StartupWizardProps {
   show: boolean;
   onClose: () => void;
   flash: (msg: React.ReactNode) => void;
   setGames: React.Dispatch<React.SetStateAction<Game[]>>;
+  settings: Settings;
+  onSettingsChange: (s: Partial<Settings>) => void;
 }
 
-export function StartupWizard({ show, onClose, flash, setGames }: StartupWizardProps) {
+export function StartupWizard({ show, onClose, flash, setGames, settings, onSettingsChange }: StartupWizardProps) {
+  const TOTAL_STEPS = 7;
   const [step, setStep] = useState(1);
   const [accounts, setAccounts] = useState<Record<string, any>>({});
   const [importStatus, setImportStatus] = useState<Record<string, string>>({});
+  const [importErrors, setImportErrors] = useState<Record<string, string>>({});
   const [importCounts, setImportCounts] = useState<Record<string, number>>({});
   const [chiakiStatus, setChiakiStatus] = useState<any>(null);
   const [chiakiDownloading, setChiakiDownloading] = useState(false);
@@ -24,7 +29,19 @@ export function StartupWizard({ show, onClose, flash, setGames }: StartupWizardP
   const [registering, setRegistering] = useState(false);
   const [manualHost, setManualHost] = useState('');
   const [specs, setSpecs] = useState<any>(null);
-  const [specApplied, setSpecApplied] = useState(false);
+
+  // Local wizard state mirrors settings for live preview
+  const [wTheme, setWTheme] = useState(settings.theme || 'midnight');
+  const [wAccent, setWAccent] = useState(settings.accentColor || '');
+  const [wView, setWView] = useState<'orbit' | 'cards'>(settings.defaultView || 'orbit');
+  const [wDensity, setWDensity] = useState(settings.starDensity || 'normal');
+  const [wScale, setWScale] = useState(settings.uiScale || '1');
+  const [wAnimations, setWAnimations] = useState(settings.showAnimations !== false);
+  const [wNavPos, setWNavPos] = useState<'top' | 'bottom' | 'left' | 'right'>(settings.toolbarPosition || 'top');
+  const [wMinimize, setWMinimize] = useState(!!settings.minimizeOnLaunch);
+  const [wCloseTray, setWCloseTray] = useState(!!settings.closeToTray);
+  const [wDiscord, setWDiscord] = useState(!!settings.discordPresence);
+  const [wAutoSync, setWAutoSync] = useState(!!settings.autoSyncPlaytime);
 
   const refreshAccounts = async () => {
     if ((window.api as any)?.getAccounts) {
@@ -45,26 +62,46 @@ export function StartupWizard({ show, onClose, flash, setGames }: StartupWizardP
       refreshAccounts();
       refreshChiaki();
       setStep(1);
-      setSpecs(null);
-      setSpecApplied(false);
       setManualHost('');
+      setWTheme(settings.theme || 'midnight');
+      setWAccent(settings.accentColor || '');
+      setWView(settings.defaultView || 'orbit');
+      setWDensity(settings.starDensity || 'normal');
+      setWScale(settings.uiScale || '1');
+      setWAnimations(settings.showAnimations !== false);
+      setWNavPos(settings.toolbarPosition || 'top');
+      setWMinimize(!!settings.minimizeOnLaunch);
+      setWCloseTray(!!settings.closeToTray);
+      setWDiscord(!!settings.discordPresence);
+      setWAutoSync(!!settings.autoSyncPlaytime);
       (window.api as any)?.getSystemSpecs?.().then((s: any) => setSpecs(s)).catch(() => {});
     }
   }, [show]);
 
   useEffect(() => {
-    if (step === 5 && chiakiStatus && chiakiStatus.status !== 'missing' && consoles.length === 0 && !discovering) {
+    if (step === 6 && chiakiStatus && chiakiStatus.status !== 'missing' && consoles.length === 0 && !discovering) {
       discoverConsoles();
     }
   }, [step, chiakiStatus]);
 
-  const getRecommendation = (sp: any) => {
-    const ramGb = sp.ramGb || 0;
-    const cpuCount = sp.cpuCount || 0;
-    const starDensity = (ramGb >= 24 && cpuCount >= 8) ? 'high' : (ramGb <= 8 || cpuCount <= 4) ? 'low' : 'normal';
-    const sw = window.screen?.width || 1920;
-    const uiScale = sw >= 2560 ? '1.25' : sw >= 1920 ? '1.1' : sw < 1280 ? '0.9' : '1';
-    return { starDensity, uiScale };
+  // Persist all wizard choices on step change or nav
+  const saveWizardSettings = async (extra?: Partial<Settings>) => {
+    const patch: Partial<Settings> = {
+      theme: wTheme,
+      accentColor: wAccent,
+      defaultView: wView,
+      starDensity: wDensity,
+      uiScale: wScale,
+      showAnimations: wAnimations,
+      toolbarPosition: wNavPos,
+      minimizeOnLaunch: wMinimize,
+      closeToTray: wCloseTray,
+      discordPresence: wDiscord,
+      autoSyncPlaytime: wAutoSync,
+      ...extra,
+    };
+    onSettingsChange(patch);
+    if ((window.api as any)?.saveSettings) await (window.api as any).saveSettings(patch);
   };
 
   const doAuth = async (which: string) => {
@@ -82,7 +119,12 @@ export function StartupWizard({ show, onClose, flash, setGames }: StartupWizardP
         setImportStatus(p => ({ ...p, [which]: 'importing' }));
         try {
           const result = await (window.api as any).platformImport?.(which);
-          if (result?.error) { setImportStatus(p => ({ ...p, [which]: 'error' })); flash(result.error); return; }
+          if (result?.error) {
+            setImportStatus(p => ({ ...p, [which]: 'error' }));
+            setImportErrors(p => ({ ...p, [which]: result.error }));
+            flash(result.error);
+            return;
+          }
           const count = Array.isArray(result?.imported) ? result.imported.length : (typeof result?.imported === 'number' ? result.imported : 0);
           setImportCounts(p => ({ ...p, [which]: count }));
           setImportStatus(p => ({ ...p, [which]: 'done' }));
@@ -131,8 +173,11 @@ export function StartupWizard({ show, onClose, flash, setGames }: StartupWizardP
     setRegistering(false);
   };
 
+  const goNext = () => { saveWizardSettings(); setStep(s => Math.min(s + 1, TOTAL_STEPS)); };
+  const goBack = () => setStep(s => Math.max(s - 1, 1));
+
   const finish = async () => {
-    if ((window.api as any)?.saveSettings) await (window.api as any).saveSettings({ firstRun: false });
+    await saveWizardSettings({ firstRun: false });
     onClose();
   };
 
@@ -141,20 +186,17 @@ export function StartupWizard({ show, onClose, flash, setGames }: StartupWizardP
   const connectedCount = ['steam', 'gog', 'epic', 'xbox'].filter(p => accounts[p]?.connected).length;
   const chiakiReady = chiakiStatus && chiakiStatus.status !== 'missing';
 
-  const stepDots = (
-    <div className="wizard-steps">
-      {[1, 2, 3, 4, 5, 6, 7].map(s => (
-        <div key={s} className={'wizard-dot' + (s === step ? ' active' : s < step ? ' done' : '')} />
-      ))}
-    </div>
+  const Toggle = ({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) => (
+    <button className={'settings-toggle' + (value ? ' on' : '')} onClick={() => onChange(!value)} />
   );
 
-  const renderStep1 = () => (
-    <div style={{ textAlign: 'center', padding: '20px 0' }}>
-      <div style={{ fontSize: 48, marginBottom: 12 }}>🥣</div>
-      <h2 style={{ margin: '0 0 8px', fontSize: 22 }}>Welcome to Cereal</h2>
-      <p style={{ color: 'var(--text-2)', margin: '0 0 20px', fontSize: 13 }}>Your unified game launcher. Let's get you set up in a few quick steps.</p>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 24, textAlign: 'left' }}>
+  // ── Step 1: Welcome ────────────────────────────────────────────────────────
+  const renderWelcome = () => (
+    <div style={{ textAlign: 'center', padding: '14px 0' }}>
+      <div style={{ fontSize: 48, marginBottom: 10 }}>🥣</div>
+      <h2 style={{ margin: '0 0 6px', fontSize: 22 }}>Welcome to Cereal</h2>
+      <p style={{ color: 'var(--text-2)', margin: '0 0 20px', fontSize: 13 }}>Your unified game launcher. Let's get you set up.</p>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 20, textAlign: 'left' }}>
         {([
           ['🌌', 'Orbit View', 'Fly through your games like a solar system'],
           ['🎮', 'All Platforms', 'Steam, Epic, GOG & Xbox in one place'],
@@ -174,102 +216,185 @@ export function StartupWizard({ show, onClose, flash, setGames }: StartupWizardP
     </div>
   );
 
-  const renderStepFeatures = () => (
+  // ── Step 2: Appearance ─────────────────────────────────────────────────────
+  const renderAppearance = () => (
     <div>
-      <h2 style={{ margin: '0 0 4px', fontSize: 18 }}>What's Included</h2>
-      <p style={{ color: 'var(--text-2)', margin: '0 0 14px', fontSize: 12 }}>A quick tour of everything Cereal can do.</p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {([
-          ['🌌', 'Three views', 'Orbit: an interactive solar system. Cards: a classic grid. Galaxy: a cosmic scatter of your whole library.'],
-          ['🔗', 'Unified library', 'Steam, Epic Games, GOG and Xbox libraries sync automatically into one launcher.'],
-          ['📺', 'PlayStation Remote Play', 'Built-in chiaki-ng integration — register your PS4/PS5 and stream over your local network.'],
-          ['🎮', 'Controller support', 'Browse, filter and launch games with a gamepad — navigates menus and the Orbit view too.'],
-          ['➕', 'Custom & detected games', 'Add any executable manually, or auto-scan to find games outside managed platforms.'],
-          ['🖼️', 'Automatic cover art', 'SteamGridDB integration fetches game artwork, heroes and icons in the background.'],
-        ] as [string, string, string][]).map(([icon, label, desc]) => (
-          <div key={label} style={{ display: 'flex', gap: 12, background: 'var(--glass)', border: '1px solid var(--glass-border)', borderRadius: 10, padding: '10px 14px', alignItems: 'flex-start' }}>
-            <div style={{ fontSize: 22, flexShrink: 0, lineHeight: 1.2 }}>{icon}</div>
-            <div>
-              <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 2 }}>{label}</div>
-              <div style={{ fontSize: 11, color: 'var(--text-3)', lineHeight: 1.45 }}>{desc}</div>
-            </div>
-          </div>
-        ))}
+      <h2 style={{ margin: '0 0 4px', fontSize: 18 }}>Appearance</h2>
+      <p style={{ color: 'var(--text-2)', margin: '0 0 14px', fontSize: 12 }}>Pick a theme and view mode. You can always change these later in Settings.</p>
+
+      {/* Theme picker */}
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: 'var(--text-2)' }}>Theme</div>
+        <div className="wizard-theme-grid">
+          {Object.entries(THEMES).map(([key, t]) => (
+            <button key={key} className={'wizard-theme-swatch' + (wTheme === key ? ' active' : '')}
+              onClick={() => { setWTheme(key); setWAccent(''); applyTheme(key); }}>
+              <div className="wizard-theme-preview">
+                {t.preview.map((c, i) => <div key={i} style={{ background: c, flex: 1 }} />)}
+              </div>
+              <div className="wizard-theme-accent" style={{ background: t.accent }} />
+              <div className="wizard-theme-label">{t.label}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Accent color override */}
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-2)' }}>Custom Accent Color</div>
+          <input type="color" value={wAccent || THEMES[wTheme]?.accent || '#d4a853'} style={{ width: 28, height: 28, border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}
+            onChange={e => {
+              setWAccent(e.target.value);
+              document.documentElement.style.setProperty('--accent', e.target.value);
+              document.documentElement.style.setProperty('--accent-soft', e.target.value + '1f');
+              document.documentElement.style.setProperty('--accent-border', e.target.value + '4d');
+            }} />
+          {wAccent && <button className="btn-flat" style={{ padding: '4px 10px', fontSize: 10 }}
+            onClick={() => { setWAccent(''); applyTheme(wTheme); }}>Reset</button>}
+        </div>
+        <div style={{ fontSize: 10, color: 'var(--text-4)', marginTop: 4 }}>Optional — override the theme accent with any color.</div>
+      </div>
+
+      {/* Default view */}
+      <div>
+        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: 'var(--text-2)' }}>Default View</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          {(['orbit', 'cards'] as const).map(v => (
+            <button key={v} className={'wizard-view-btn' + (wView === v ? ' active' : '')}
+              onClick={() => setWView(v)}>
+              <div className="wizard-view-icon">
+                {v === 'orbit'
+                  ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="3"/><ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(-30 12 12)"/><ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(30 12 12)"/></svg>
+                  : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+                }
+              </div>
+              <div style={{ fontWeight: 600, fontSize: 12 }}>{v === 'orbit' ? 'Orbit' : 'Cards'}</div>
+              <div style={{ fontSize: 10, color: 'var(--text-3)', lineHeight: 1.3 }}>
+                {v === 'orbit' ? 'Interactive galaxy with zoom & pan' : 'Classic grid for quick browsing'}
+              </div>
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
 
-  const renderStepPerf = () => {
+  // ── Step 3: Performance & Layout ───────────────────────────────────────────
+  const renderPerformance = () => {
+    const getRecommendation = (sp: any) => {
+      const ramGb = sp.ramGb || 0;
+      const cpuCount = sp.cpuCount || 0;
+      const starDensity = (ramGb >= 24 && cpuCount >= 8) ? 'high' : (ramGb <= 8 || cpuCount <= 4) ? 'low' : 'normal';
+      const sw = window.screen?.width || 1920;
+      const uiScale = sw >= 2560 ? '1.25' : sw >= 1920 ? '1.1' : sw < 1280 ? '0.9' : '1';
+      return { starDensity, uiScale };
+    };
     const rec = specs ? getRecommendation(specs) : null;
-    const densityLabel: Record<string, string> = { low: 'Low', normal: 'Normal', high: 'High' };
-    const scaleLabel: Record<string, string> = { '0.9': 'Compact (90%)', '1': 'Standard (100%)', '1.1': 'Large (110%)', '1.25': 'XL (125%)' };
     return (
       <div>
-        <h2 style={{ margin: '0 0 4px', fontSize: 18 }}>Performance</h2>
-        <p style={{ color: 'var(--text-2)', margin: '0 0 14px', fontSize: 12 }}>We detected your system and can tune Cereal for best performance.</p>
+        <h2 style={{ margin: '0 0 4px', fontSize: 18 }}>Performance & Layout</h2>
+        <p style={{ color: 'var(--text-2)', margin: '0 0 14px', fontSize: 12 }}>Tune rendering quality and UI layout.</p>
+
+        {/* Specs card */}
+        {specs && (
+          <div style={{ background: 'var(--glass)', border: '1px solid var(--glass-border)', borderRadius: 10, padding: '10px 16px', marginBottom: 14, display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '5px 14px', alignItems: 'baseline' }}>
+            {([['RAM', specs.ramGb + '\u00a0GB'], ['CPU', specs.cpuCount + ' cores' + (specs.cpuModel ? ' — ' + specs.cpuModel.slice(0, 32) : '')], specs.gpuName ? ['GPU', specs.gpuName.slice(0, 40)] : null, ['Display', window.screen.width + '×' + window.screen.height]] as (string[] | null)[]).filter((x): x is string[] => x !== null).map(([k, v]) => [
+              <div key={k + 'k'} style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-4)' }}>{k}</div>,
+              <div key={k + 'v'} style={{ fontSize: 12, color: 'var(--text-2)' }}>{v}</div>
+            ])}
+          </div>
+        )}
         {!specs && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-3)', fontSize: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-3)', fontSize: 12, marginBottom: 14 }}>
             <div style={{ width: 14, height: 14, border: '2px solid rgba(255,255,255,0.1)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
             Detecting specs...
           </div>
         )}
-        {specs && (
-          <div>
-            <div style={{ background: 'var(--glass)', border: '1px solid var(--glass-border)', borderRadius: 10, padding: '10px 16px', marginBottom: 14, display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '5px 14px', alignItems: 'baseline' }}>
-              {([['RAM', specs.ramGb + '\u00a0GB'], ['CPU', specs.cpuCount + ' cores' + (specs.cpuModel ? ' — ' + specs.cpuModel.slice(0, 32) : '')], specs.gpuName ? ['GPU', specs.gpuName.slice(0, 40)] : null, ['Display', window.screen.width + '×' + window.screen.height]] as (string[] | null)[]).filter((x): x is string[] => x !== null).map(([k, v]) => [
-                <div key={k + 'k'} style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-4)' }}>{k}</div>,
-                <div key={k + 'v'} style={{ fontSize: 12, color: 'var(--text-2)' }}>{v}</div>
-              ])}
-            </div>
-            <div style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Recommended settings</div>
-              <div className="acct-card" style={{ display: 'flex', gap: 20 }}>
-                <div>
-                  <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-4)', marginBottom: 3 }}>Star Density</div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent)' }}>{densityLabel[rec!.starDensity]}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-4)', marginBottom: 3 }}>UI Scale</div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent)' }}>{scaleLabel[rec!.uiScale]}</div>
-                </div>
-              </div>
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--text-4)', marginTop: 8, marginBottom: 14, lineHeight: 1.5 }}>
-              <strong style={{ color: 'var(--text-3)' }}>Star Density</strong> controls how many animated stars float in the background. <strong style={{ color: 'var(--text-3)' }}>UI Scale</strong> adjusts text and element sizes across the whole app. Both can be changed later in <strong style={{ color: 'var(--text-3)' }}>Settings → Appearance</strong>.
-            </div>
-            {!specApplied
-              ? <button className="btn-accent" onClick={async () => {
-                  if ((window.api as any)?.saveSettings) await (window.api as any).saveSettings({ starDensity: rec!.starDensity, uiScale: rec!.uiScale });
-                  applyUiScale(rec!.uiScale);
-                  setSpecApplied(true);
-                }}>Apply Recommendations</button>
-              : <div style={{ color: 'var(--accent)', fontSize: 12, fontWeight: 600 }}>✓ Settings applied</div>
-            }
+
+        {rec && (
+          <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, fontSize: 11, color: 'var(--text-4)', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', lineHeight: 1.5 }}>
+            💡 Recommended: <strong style={{ color: 'var(--text-3)' }}>{rec.starDensity}</strong> stars, <strong style={{ color: 'var(--text-3)' }}>{{  '0.9': '90%', '1': '100%', '1.1': '110%', '1.25': '125%' }[rec.uiScale]}</strong> scale
+            <button className="btn-flat" style={{ marginLeft: 8, padding: '2px 8px', fontSize: 10, verticalAlign: 'middle' }}
+              onClick={() => { setWDensity(rec.starDensity as any); setWScale(rec.uiScale); applyUiScale(rec.uiScale); }}>Apply</button>
           </div>
         )}
+
+        {/* Star Density */}
+        <div className="wizard-setting-row">
+          <div>
+            <div className="wizard-setting-label">Star Density</div>
+            <div className="wizard-setting-desc">Background star count in Orbit view</div>
+          </div>
+          <div className="wizard-seg">
+            {(['low', 'normal', 'high'] as const).map(v => (
+              <button key={v} className={'wizard-seg-btn' + (wDensity === v ? ' active' : '')}
+                onClick={() => setWDensity(v)}>{v[0].toUpperCase() + v.slice(1)}</button>
+            ))}
+          </div>
+        </div>
+
+        {/* UI Scale */}
+        <div className="wizard-setting-row">
+          <div>
+            <div className="wizard-setting-label">UI Scale</div>
+            <div className="wizard-setting-desc">Text and element sizes</div>
+          </div>
+          <div className="wizard-seg">
+            {([['0.9', '90%'], ['1', '100%'], ['1.1', '110%'], ['1.25', '125%']] as const).map(([v, l]) => (
+              <button key={v} className={'wizard-seg-btn' + (wScale === v ? ' active' : '')}
+                onClick={() => { setWScale(v); applyUiScale(v); }}>{l}</button>
+            ))}
+          </div>
+        </div>
+
+        {/* Animations */}
+        <div className="wizard-setting-row">
+          <div>
+            <div className="wizard-setting-label">Animations</div>
+            <div className="wizard-setting-desc">Orbit drift and UI transitions</div>
+          </div>
+          <Toggle value={wAnimations} onChange={setWAnimations} />
+        </div>
+
+        {/* Nav Position */}
+        <div className="wizard-setting-row">
+          <div>
+            <div className="wizard-setting-label">Toolbar Position</div>
+            <div className="wizard-setting-desc">Where the navigation bar sits</div>
+          </div>
+          <div className="wizard-seg">
+            {(['top', 'bottom', 'left', 'right'] as const).map(v => (
+              <button key={v} className={'wizard-seg-btn' + (wNavPos === v ? ' active' : '')}
+                onClick={() => setWNavPos(v)}>{v[0].toUpperCase() + v.slice(1)}</button>
+            ))}
+          </div>
+        </div>
       </div>
     );
   };
 
+  // ── Step 4: Connect Accounts ───────────────────────────────────────────────
   const renderAccountCard = (platform: string, label: string) => {
     const acct = accounts[platform];
     const connected = acct?.connected;
     const impSt = importStatus[platform];
     const impCt = importCounts[platform];
+    const impErr = importErrors[platform];
     return (
       <div className={'acct-card' + (connected ? ' connected' : '')} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <div className="acct-avatar">
+        <div className="acct-avatar" style={!acct?.avatarUrl && PLATFORMS[platform] ? { color: PLATFORMS[platform].color } : undefined}>
           {acct?.avatarUrl
             ? <img src={acct.avatarUrl} alt="" />
-            : <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="4" stroke="rgba(255,255,255,0.06)" strokeWidth="1.2" /></svg>
+            : PLATFORMS[platform]?.icon || <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="4" stroke="rgba(255,255,255,0.06)" strokeWidth="1.2" /></svg>
           }
         </div>
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <div className="acct-title">{label}</div>
           <div className="acct-status">
             {impSt === 'importing' ? <span style={{ color: 'var(--accent)' }}>Importing games...</span>
               : impSt === 'done' ? <span className="acct-connected-badge">✓ {impCt} games imported</span>
-              : impSt === 'error' ? <span style={{ color: 'var(--red)' }}>Import failed</span>
+              : impSt === 'error' ? <span style={{ color: 'var(--red)', fontSize: 10, lineHeight: 1.4, display: 'block', wordBreak: 'break-word' }}>{impErr || 'Import failed'}</span>
               : connected ? <span className="acct-connected-badge">✓ {acct.displayName || acct.gamertag || 'Connected'}</span>
               : 'Not connected'}
           </div>
@@ -281,7 +406,7 @@ export function StartupWizard({ show, onClose, flash, setGames }: StartupWizardP
     );
   };
 
-  const renderStep2 = () => (
+  const renderAccounts = () => (
     <div>
       <h2 style={{ margin: '0 0 4px', fontSize: 18 }}>Connect Accounts</h2>
       <p style={{ color: 'var(--text-2)', margin: '0 0 14px', fontSize: 12 }}>Sign in to import your game libraries. You can skip any you don't use.</p>
@@ -321,7 +446,65 @@ export function StartupWizard({ show, onClose, flash, setGames }: StartupWizardP
     </div>
   );
 
-  const renderStep3 = () => (
+  // ── Step 5: Behavior ───────────────────────────────────────────────────────
+  const renderBehavior = () => (
+    <div>
+      <h2 style={{ margin: '0 0 4px', fontSize: 18 }}>Behavior</h2>
+      <p style={{ color: 'var(--text-2)', margin: '0 0 14px', fontSize: 12 }}>Configure how Cereal behaves in the background and while gaming.</p>
+
+      <div className="wizard-setting-row">
+        <div>
+          <div className="wizard-setting-label">Minimize on Game Launch</div>
+          <div className="wizard-setting-desc">Hide Cereal's window when you start a game</div>
+        </div>
+        <Toggle value={wMinimize} onChange={setWMinimize} />
+      </div>
+
+      <div className="wizard-setting-row">
+        <div>
+          <div className="wizard-setting-label">Close to System Tray</div>
+          <div className="wizard-setting-desc">Keep running in the background when you close the window</div>
+        </div>
+        <Toggle value={wCloseTray} onChange={setWCloseTray} />
+      </div>
+
+      <div className="wizard-setting-row">
+        <div>
+          <div className="wizard-setting-label">Discord Rich Presence</div>
+          <div className="wizard-setting-desc">Show what you're playing on your Discord profile</div>
+        </div>
+        <Toggle value={wDiscord} onChange={setWDiscord} />
+      </div>
+
+      <div className="wizard-setting-row">
+        <div>
+          <div className="wizard-setting-label">Auto-Sync Playtime</div>
+          <div className="wizard-setting-desc">Sync Steam playtime data when Cereal starts</div>
+        </div>
+        <Toggle value={wAutoSync} onChange={setWAutoSync} />
+      </div>
+
+      <div style={{ marginTop: 14, padding: '10px 14px', borderRadius: 10, background: 'var(--glass)', border: '1px solid var(--glass-border)' }}>
+        <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 8, color: 'var(--text-2)' }}>Quick Reference</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 20px' }}>
+          {([
+            ['Ctrl+K', 'Quick search'],
+            ['Ctrl+,', 'Settings'],
+            ['Esc', 'Close / Back'],
+            ['Scroll', 'Zoom (Orbit)'],
+          ] as [string, string][]).map(([k, v]) => (
+            <div key={k} style={{ display: 'flex', gap: 6, fontSize: 11, padding: '2px 0' }}>
+              <kbd style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.16)', borderBottom: '2px solid rgba(255,255,255,0.22)', borderRadius: 4, padding: '1px 6px', fontSize: 10, fontFamily: 'monospace', fontWeight: 700, color: 'var(--text-2)', whiteSpace: 'nowrap' }}>{k}</kbd>
+              <span style={{ color: 'var(--text-3)' }}>{v}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+
+  // ── Step 6: PlayStation Remote Play ────────────────────────────────────────
+  const renderPlayStation = () => (
     <div>
       <h2 style={{ margin: '0 0 4px', fontSize: 18 }}>PlayStation Remote Play</h2>
       <p style={{ color: 'var(--text-2)', margin: '0 0 10px', fontSize: 12 }}>Optional: Set up chiaki-ng for streaming PS4/PS5 games to your PC.</p>
@@ -397,109 +580,89 @@ export function StartupWizard({ show, onClose, flash, setGames }: StartupWizardP
     </div>
   );
 
-  const renderStepTips = () => (
-    <div>
-      <h2 style={{ margin: '0 0 4px', fontSize: 18 }}>Tips & Shortcuts</h2>
-      <p style={{ color: 'var(--text-2)', margin: '0 0 14px', fontSize: 12 }}>A few things worth knowing before you dive in.</p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
-        {([
-          [['Ctrl', 'K'], 'Quick Search', 'Jump to any game instantly'],
-          [['Ctrl', ','], 'Settings', 'Open app preferences'],
-          [['Esc'], 'Close / Back', 'Dismiss any panel or overlay'],
-          [['Scroll'], 'Zoom', 'Zoom in or out in Orbit view'],
-          [['Drag'], 'Pan', 'Click and drag to pan Orbit view'],
-          [['Dbl-click'], 'Game details', 'Open the focus view for a game'],
-        ] as [string[], string, string][]).map(([keys, action, desc]) => (
-          <div key={action} style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--glass)', border: '1px solid var(--glass-border)', borderRadius: 8, padding: '8px 12px' }}>
-            <div style={{ display: 'flex', gap: 4, flexShrink: 0, minWidth: 110 }}>
-              {keys.map(k => (
-                <kbd key={k} style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.16)', borderBottom: '2px solid rgba(255,255,255,0.22)', borderRadius: 5, padding: '2px 7px', fontSize: 10, fontFamily: 'monospace', fontWeight: 700, color: 'var(--text-2)' }}>{k}</kbd>
+  // ── Step 7: Summary ────────────────────────────────────────────────────────
+  const renderSummary = () => {
+    const themeLabel = THEMES[wTheme]?.label || wTheme;
+    return (
+      <div style={{ textAlign: 'center', padding: '10px 0' }}>
+        <div style={{ fontSize: 40, marginBottom: 10 }}>✨</div>
+        <h2 style={{ margin: '0 0 8px', fontSize: 18 }}>You're All Set</h2>
+        <p style={{ color: 'var(--text-2)', margin: '0 0 16px', fontSize: 12 }}>Here's what was configured:</p>
+        <div style={{ textAlign: 'left', maxWidth: 400, margin: '0 auto' }}>
+          <div className="wizard-summary-item">
+            <div className="wizard-summary-icon ok">🎨</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 600, fontSize: 13 }}>{themeLabel} theme{wAccent ? ' + custom accent' : ''}</div>
+              <div style={{ fontSize: 11, color: 'var(--text-3)' }}>{wView === 'orbit' ? 'Orbit' : 'Cards'} view · {wNavPos} toolbar</div>
+            </div>
+          </div>
+          <div className="wizard-summary-item">
+            <div className="wizard-summary-icon ok">⚡</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 600, fontSize: 13 }}>{wDensity[0].toUpperCase() + wDensity.slice(1)} stars · {{ '0.9': '90%', '1': '100%', '1.1': '110%', '1.25': '125%' }[wScale]} scale</div>
+              <div style={{ fontSize: 11, color: 'var(--text-3)' }}>Animations {wAnimations ? 'on' : 'off'}</div>
+            </div>
+          </div>
+          <div className="wizard-summary-item">
+            <div className={'wizard-summary-icon ' + (connectedCount > 0 ? 'ok' : 'skip')}>{connectedCount > 0 ? '✓' : '—'}</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 600, fontSize: 13 }}>{connectedCount} account{connectedCount !== 1 ? 's' : ''} connected</div>
+              {(['steam', 'gog', 'epic', 'xbox'] as const).filter(p => accounts[p]?.connected).map(p => (
+                <div key={p} style={{ fontSize: 11, color: 'var(--text-3)' }}>
+                  {p === 'epic' ? 'Epic' : p === 'gog' ? 'GOG' : p === 'xbox' ? 'Xbox' : 'Steam'} — {importCounts[p] != null ? importCounts[p] + '\u00a0games' : 'connected'}
+                </div>
               ))}
             </div>
+          </div>
+          <div className="wizard-summary-item">
+            <div className={'wizard-summary-icon ' + ((wMinimize || wCloseTray || wDiscord || wAutoSync) ? 'ok' : 'skip')}>
+              {(wMinimize || wCloseTray || wDiscord || wAutoSync) ? '✓' : '—'}
+            </div>
             <div style={{ flex: 1 }}>
-              <span style={{ fontWeight: 600, fontSize: 12 }}>{action}</span>
-              <span style={{ color: 'var(--text-3)', fontSize: 11 }}> — {desc}</span>
-            </div>
-          </div>
-        ))}
-      </div>
-      <div style={{ background: 'var(--glass)', border: '1px solid var(--glass-border)', borderRadius: 10, padding: '10px 14px' }}>
-        <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 8 }}>🎮 Gamepad controls</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 24px' }}>
-          {([
-            ['Left stick / D-pad', 'Navigate cards'],
-            ['Right stick', 'Pan Orbit view'],
-            ['A / Cross', 'Select / Launch'],
-            ['B / Circle', 'Back / Close'],
-            ['LB / RB', 'Switch tabs'],
-            ['Start', 'Open Settings'],
-          ] as [string, string][]).map(([k, v]) => (
-            <div key={k} style={{ display: 'flex', gap: 6, fontSize: 11, padding: '2px 0' }}>
-              <span style={{ color: 'var(--text-2)', fontWeight: 600, flexShrink: 0 }}>{k}</span>
-              <span style={{ color: 'var(--text-3)' }}>— {v}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-
-  const renderStep4 = () => (
-    <div style={{ textAlign: 'center', padding: '10px 0' }}>
-      <div style={{ fontSize: 40, marginBottom: 10 }}>✨</div>
-      <h2 style={{ margin: '0 0 8px', fontSize: 18 }}>You're All Set</h2>
-      <p style={{ color: 'var(--text-2)', margin: '0 0 18px', fontSize: 12 }}>Here's what was configured:</p>
-      <div style={{ textAlign: 'left', maxWidth: 360, margin: '0 auto' }}>
-        <div className="wizard-summary-item">
-          <div className={'wizard-summary-icon ' + (specApplied ? 'ok' : 'skip')}>{specApplied ? '✓' : '—'}</div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 600, fontSize: 13 }}>{specApplied ? 'Performance tuned' : 'Default performance settings'}</div>
-          </div>
-        </div>
-        <div className="wizard-summary-item">
-          <div className={'wizard-summary-icon ' + (connectedCount > 0 ? 'ok' : 'skip')}>{connectedCount > 0 ? '✓' : '—'}</div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 600, fontSize: 13 }}>{connectedCount} account{connectedCount !== 1 ? 's' : ''} connected</div>
-            {(['steam', 'gog', 'epic', 'xbox'] as const).filter(p => accounts[p]?.connected).map(p => (
-              <div key={p} style={{ fontSize: 11, color: 'var(--text-3)' }}>
-                {p === 'epic' ? 'Epic' : p === 'gog' ? 'GOG' : p === 'xbox' ? 'Xbox' : 'Steam'} — {importCounts[p] != null ? importCounts[p] + '\u00a0games' : 'connected'}
+              <div style={{ fontWeight: 600, fontSize: 13 }}>Behavior</div>
+              <div style={{ fontSize: 11, color: 'var(--text-3)' }}>
+                {[wMinimize && 'Minimize on launch', wCloseTray && 'Close to tray', wDiscord && 'Discord presence', wAutoSync && 'Auto-sync'].filter(Boolean).join(' · ') || 'Defaults'}
               </div>
-            ))}
+            </div>
+          </div>
+          <div className="wizard-summary-item">
+            <div className={'wizard-summary-icon ' + (chiakiReady ? 'ok' : 'skip')}>{chiakiReady ? '✓' : '—'}</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 600, fontSize: 13 }}>{chiakiReady ? 'PlayStation Remote Play ready' : 'PlayStation skipped'}</div>
+            </div>
           </div>
         </div>
-        <div className="wizard-summary-item">
-          <div className={'wizard-summary-icon ' + (chiakiReady ? 'ok' : 'skip')}>{chiakiReady ? '✓' : '—'}</div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 600, fontSize: 13 }}>{chiakiReady ? 'PlayStation Remote Play ready' : 'PlayStation skipped'}</div>
-          </div>
-        </div>
+        <p style={{ color: 'var(--text-4)', fontSize: 11, margin: '14px 0 0' }}>
+          Press <kbd style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.16)', borderRadius: 4, padding: '1px 5px', fontSize: 10, fontFamily: 'monospace', color: 'var(--text-2)' }}>Ctrl+K</kbd> anytime to search your library.
+        </p>
+        <button className="btn-accent" style={{ marginTop: 12, padding: '10px 32px', fontSize: 14 }} onClick={finish}>Launch Cereal</button>
       </div>
-      <p style={{ color: 'var(--text-4)', fontSize: 11, margin: '14px 0 0' }}>
-        Press <kbd style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.16)', borderRadius: 4, padding: '1px 5px', fontSize: 10, fontFamily: 'monospace', color: 'var(--text-2)' }}>Ctrl+K</kbd> anytime to search your library.
-      </p>
-      <button className="btn-accent" style={{ marginTop: 12, padding: '10px 32px', fontSize: 14 }} onClick={finish}>Launch Cereal</button>
-    </div>
-  );
+    );
+  };
 
   return (
     <div className="modal-overlay">
       <div className="modal-card" style={{ width: 640 }}>
-        {stepDots}
-        <div key={step} style={{ animation: 'stepIn 0.2s cubic-bezier(0.16,1,0.3,1)' }}>
-          {step === 1 && renderStep1()}
-          {step === 2 && renderStepFeatures()}
-          {step === 3 && renderStepPerf()}
-          {step === 4 && renderStep2()}
-          {step === 5 && renderStep3()}
-          {step === 6 && renderStepTips()}
-          {step === 7 && renderStep4()}
+        <div className="wizard-steps">
+          {Array.from({ length: TOTAL_STEPS }, (_, i) => i + 1).map(s => (
+            <div key={s} className={'wizard-dot' + (s === step ? ' active' : s < step ? ' done' : '')} />
+          ))}
         </div>
-        {step > 1 && step < 7 && (
+        <div key={step} style={{ animation: 'stepIn 0.2s cubic-bezier(0.16,1,0.3,1)' }}>
+          {step === 1 && renderWelcome()}
+          {step === 2 && renderAppearance()}
+          {step === 3 && renderPerformance()}
+          {step === 4 && renderAccounts()}
+          {step === 5 && renderBehavior()}
+          {step === 6 && renderPlayStation()}
+          {step === 7 && renderSummary()}
+        </div>
+        {step > 1 && step < TOTAL_STEPS && (
           <div className="wizard-nav">
-            <button className="btn-flat" onClick={() => setStep(s => s - 1)}>Back</button>
+            <button className="btn-flat" onClick={goBack}>Back</button>
             <div className="wizard-nav-right">
-              <button className="btn-flat" onClick={() => setStep(s => s + 1)}>Skip</button>
-              <button className="btn-accent" onClick={() => setStep(s => s + 1)}>Next</button>
+              <button className="btn-flat" onClick={goNext}>Skip</button>
+              <button className="btn-accent" onClick={goNext}>Next</button>
             </div>
           </div>
         )}

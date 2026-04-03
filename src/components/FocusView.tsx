@@ -66,7 +66,7 @@ export function FocusView({ game: gameProp, onClose, onLaunch, onFav, onEdit, on
     };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
-  }, [renderedGame, zoomSrc]);
+  }, [renderedGame, zoomSrc, onLaunch, onDelete, onEdit, onFav]);
 
   if (!renderedGame) return null;
 
@@ -95,7 +95,7 @@ export function FocusView({ game: gameProp, onClose, onLaunch, onFav, onEdit, on
       <button className="focus-close" ref={closeRef} onClick={onClose} aria-label="Close">&times;</button>
       <div className="focus-content" onClick={e => e.stopPropagation()}>
         <div className="focus-art">
-          {coverSrc && <img key={coverSrc} src={coverSrc} alt="" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; ((e.target as HTMLElement).nextSibling as HTMLElement).style.display = 'flex'; }} />}
+          {coverSrc && <img src={coverSrc} alt="" onLoad={e => { (e.target as HTMLImageElement).style.display = ''; ((e.target as HTMLElement).nextSibling as HTMLElement).style.display = 'none'; }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; ((e.target as HTMLElement).nextSibling as HTMLElement).style.display = 'flex'; }} />}
           <div className="focus-art-fallback" style={coverSrc ? { display: 'none' } : {}}>{game.name.charAt(0)}</div>
         </div>
         <div className="focus-details">

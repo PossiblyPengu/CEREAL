@@ -74,6 +74,7 @@ async function importLibrary({ db, saveDB, notify }) {
             epicAppName: appName || '',
             storeUrl: productSlug ? `https://store.epicgames.com/en-US/p/${productSlug}` : '',
             editions: dlc ? [title] : [],
+            installed: false,
           },
         }));
         imported.push(title);

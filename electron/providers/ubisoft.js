@@ -195,6 +195,7 @@ async function importLibrary({ db, saveDB, notify }) {
 
   const imported = [];
   const updated = [];
+  let notifyIdx = 0;
   for (const g of allGames) {
     const existing = findExisting(db, 'ubisoft', g.platformId, g.name);
     if (existing) {
@@ -216,7 +217,8 @@ async function importLibrary({ db, saveDB, notify }) {
       }));
       imported.push(g.name);
     }
-    if (notify && (allGames.indexOf(g) % 10 === 0)) notify({ status: 'progress', processed: allGames.indexOf(g) + 1, imported: imported.length, updated: updated.length });
+    notifyIdx++;
+    if (notify && notifyIdx % 10 === 0) notify({ status: 'progress', processed: notifyIdx, imported: imported.length, updated: updated.length });
   }
 
   updateAccountSync(db, saveDB, 'ubisoft', allGames.length);

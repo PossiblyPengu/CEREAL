@@ -65,7 +65,7 @@ export function ChiakiPanel({ show, onClose, flash, games: _games, setGames: _se
   }, [show]);
 
   const addConsole = async () => {
-    if (!newConsole.nickname || !newConsole.host) return;
+    if (!newConsole.nickname?.trim() || !newConsole.host?.trim()) return;
     const updated: ChiakiConfig = { ...chiakiConfig, consoles: [...(chiakiConfig.consoles || []), newConsole] };
     if (window.api) await (window.api as any).saveChiakiConfig?.(updated);
     setChiakiConfig(updated);

@@ -100,11 +100,19 @@ export function PlatformsPanel({ show, onClose, flash, setGames, onOpenChiaki, o
     const r = await (window.api as any).platformImport(id);
     setImporting('');
     if (r.error) { flash(r.error); return; }
-    if (r.games) setGames(r.games);
+    if (r.games) setGames(prev => {
+      const prevMap = new Map((prev || []).map((x: any) => [x.id, x]));
+      return r.games.map((ng: any) => {
+        const prevStamp = prevMap.get(ng.id)?._imgStamp || 0;
+        const stamp = Math.max(prevStamp, ng._imgStamp || 0);
+        return stamp ? { ...ng, _imgStamp: stamp } : ng;
+      });
+    });
     const added = r.imported?.length || 0;
     const updated = r.updated?.length || 0;
+    const localNote = r.source === 'local' ? ' (installed games only — add an API key for full library)' : '';
     flash(added + updated > 0
-      ? 'Imported ' + added + ' new, ' + updated + ' updated'
+      ? `Imported ${added} new, ${updated} updated${localNote}`
       : 'Library already up to date');
     refreshAccounts();
   };

@@ -34,6 +34,7 @@ function makeGameEntry(platform, idPrefix, fields) {
     platform,
     platformId: fields.platformId || '',
     coverUrl: fields.coverUrl || '',
+    headerUrl: fields.headerUrl || '',
     categories: [],
     playtimeMinutes: fields.playtimeMinutes || 0,
     lastPlayed: fields.lastPlayed || null,

@@ -76,11 +76,12 @@ export function resolveGameImage(game: Game | null | undefined, field: 'coverUrl
       try {
         if (p.startsWith('file:')) p = p.replace(/^file:\/+/i, '');
         p = p.replace(/^\/+/, '').replace(/\\/g, '/');
-        const fileUrl = 'file:///' + encodeURI(p);
+        // Use custom protocol so images load from any renderer origin (http/file)
+        const imgUrl = 'local-image:///' + encodeURI(p);
         const stamp = game._imgStamp
-          ? (fileUrl.includes('?') ? '&cb=' + game._imgStamp : '?cb=' + game._imgStamp)
+          ? (imgUrl.includes('?') ? '&cb=' + game._imgStamp : '?cb=' + game._imgStamp)
           : '';
-        return fileUrl + stamp;
+        return imgUrl + stamp;
       } catch (_) { /* fallthrough */ }
     }
     const url = game[field] ?? '';

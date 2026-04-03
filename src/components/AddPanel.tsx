@@ -48,7 +48,10 @@ export function AddPanel({ show, onClose, onSave, categories, editGame, flash, o
   const browse = async () => {
     if (window.api) {
       const p = await (window.api as any).pickExecutable();
-      if (p) setF(x => ({ ...x, executablePath: p }));
+      if (p) setF(x => {
+        const filename = p.split(/[/\\]/).pop()?.replace(/\.exe$/i, '').replace(/[-_.]+/g, ' ').replace(/\s{2,}/g, ' ').trim() || '';
+        return { ...x, executablePath: p, name: x.name || filename };
+      });
     }
   };
 
@@ -69,6 +72,32 @@ export function AddPanel({ show, onClose, onSave, categories, editGame, flash, o
         setShowMeta(true);
         flash('Metadata fetched');
       } else if (r?.error) { flash('No metadata found'); }
+    } catch (_) {}
+    setFetching(false);
+  };
+
+  const doFetchForNew = async () => {
+    if (!f.name.trim() || !(window.api as any)?.fetchMetadataForName) return;
+    setFetching(true);
+    try {
+      const r = await (window.api as any).fetchMetadataForName(f.name, f.platform, (f as any).platformId || '');
+      if (r?.success && r.meta) {
+        const meta = r.meta;
+        setF(prev => ({
+          ...prev,
+          coverUrl: prev.coverUrl || meta.coverUrl || meta.headerUrl || '',
+          headerUrl: (prev as any).headerUrl || meta.headerUrl || meta.coverUrl || '',
+          description: (prev as any).description || meta.description || '',
+          developer: (prev as any).developer || meta.developer || '',
+          publisher: (prev as any).publisher || meta.publisher || '',
+          releaseDate: (prev as any).releaseDate || meta.releaseDate || '',
+          metacritic: prev.metacritic || (meta.metacritic != null ? String(meta.metacritic) : ''),
+          categories: prev.categories.length ? prev.categories : (meta.genres || []),
+          website: (prev as any).website || meta.website || '',
+        }));
+        setShowMeta(true);
+        flash('Metadata filled in');
+      } else { flash('No metadata found'); }
     } catch (_) {}
     setFetching(false);
   };
@@ -136,8 +165,8 @@ export function AddPanel({ show, onClose, onSave, categories, editGame, flash, o
       <div className="field"><label>Notes</label><textarea value={(f as any).notes || ''} onChange={e => setF(p => ({ ...p, notes: e.target.value }))} placeholder="Personal notes about this game..." rows={2} /></div>
       <button className={'meta-toggle' + (showMeta ? ' open' : '')} onClick={() => setShowMeta(!showMeta)}>
         {chevron} Metadata
-        {editGame && <span style={{ marginLeft: 'auto', fontSize: 9, fontWeight: 400, color: 'var(--text-4)', textTransform: 'none', letterSpacing: 0 }}>{fetching ? 'Fetching...' : 'Auto-fill from web'}</span>}
-        {editGame && <span className="btn-flat" style={{ padding: '3px 10px', fontSize: 10, marginLeft: 8 }} onClick={e => { e.stopPropagation(); doFetch(); }}>{I.download}</span>}
+        <span style={{ marginLeft: 'auto', fontSize: 9, fontWeight: 400, color: 'var(--text-4)', textTransform: 'none', letterSpacing: 0 }}>{fetching ? 'Fetching...' : 'Auto-fill from web'}</span>
+        <span className="btn-flat" style={{ padding: '3px 10px', fontSize: 10, marginLeft: 8, opacity: (f.name.trim() && !fetching) ? 1 : 0.4 }} onClick={e => { e.stopPropagation(); if (!f.name.trim() || fetching) return; editGame ? doFetch() : doFetchForNew(); }}>{I.download}</span>
       </button>
       {showMeta && (
         <div className="meta-section">
