@@ -311,7 +311,7 @@ export function SettingsPanel({
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button className="btn-sm" onClick={async () => { setUpdateStatus('checking'); await (window.api as any)?.checkForUpdates?.(); }}>Check</button>
-                  {updateStatus === 'ready' && <button className="btn-sm primary" onClick={() => (window.api as any)?.installUpdates?.()}>Install</button>}
+                  {updateStatus === 'ready' && <button className="btn-sm primary" onClick={() => (window.api as any)?.installUpdate?.()}>Install &amp; Restart</button>}
                 </div>
               </div>
               <div className="settings-row" style={{ borderBottom: 'none' }}>

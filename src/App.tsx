@@ -201,6 +201,7 @@ export default function App() {
   const [gpIdx, setGpIdx] = useState(-1);
   const [gpArea, setGpArea] = useState('cards');
   const [gpActive, setGpActive] = useState(false);
+  const [appUpdate, setAppUpdate] = useState<{ status: string; version?: string; progress?: number } | null>(null);
 
   const viewportRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -525,6 +526,17 @@ export default function App() {
     window.addEventListener('gamepadconnected', onConn as EventListener);
     window.addEventListener('gamepaddisconnected', onDisc);
     return () => { window.removeEventListener('gamepadconnected', onConn as EventListener); window.removeEventListener('gamepaddisconnected', onDisc); };
+  }, []);
+
+  // App auto-update events
+  useEffect(() => {
+    if (!(window.api as any)?.onUpdateEvent) return;
+    return (window.api as any).onUpdateEvent(({ type, data }: any) => {
+      if (type === 'update-available') setAppUpdate({ status: 'downloading', version: data?.version });
+      else if (type === 'download-progress') setAppUpdate(prev => ({ ...prev!, status: 'downloading', progress: Math.round(data?.percent || 0) }));
+      else if (type === 'update-downloaded') setAppUpdate(prev => ({ ...prev!, status: 'ready' }));
+      else if (type === 'error') setAppUpdate(null);
+    });
   }, []);
 
   const _updateGameInState = useCallback((updated: Game) => {
@@ -1444,6 +1456,29 @@ export default function App() {
               <span>{metaProgress.updated || 0} updated{metaProgress.failed > 0 ? ' · ' + metaProgress.failed + ' failed' : ''}</span>
             </div>
           )}
+        </div>
+      )}
+
+      {appUpdate && (
+        <div style={{ position: 'fixed', bottom: 20, left: 20, zIndex: 10100, width: 300, background: 'var(--glass-heavy, rgba(20,20,30,0.96))', border: '1px solid var(--glass-border)', borderRadius: 12, padding: '12px 16px', boxShadow: '0 8px 32px rgba(0,0,0,0.5)', backdropFilter: 'blur(12px)', display: 'flex', alignItems: 'center', gap: 12 }}>
+          {appUpdate.status === 'downloading'
+            ? <div style={{ width: 22, height: 22, border: '2px solid rgba(255,255,255,0.1)', borderTopColor: 'var(--accent)', borderRadius: '50%', flexShrink: 0, animation: 'spin 0.8s linear infinite' }} />
+            : <div style={{ width: 22, height: 22, borderRadius: '50%', flexShrink: 0, background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: '#07070d' }}>↑</div>
+          }
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 2 }}>
+              {appUpdate.status === 'downloading' ? 'Downloading update…' : 'Update ready'}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-3)' }}>
+              {appUpdate.status === 'downloading'
+                ? (appUpdate.progress != null ? appUpdate.progress + '%' : 'Starting…')
+                : 'v' + (appUpdate.version || '?') + ' — Restart to apply'}
+            </div>
+          </div>
+          {appUpdate.status === 'ready'
+            ? <button className="btn-sm primary" style={{ flexShrink: 0 }} onClick={() => (window.api as any)?.installUpdate?.()}>Restart</button>
+            : <button className="btn-flat" style={{ padding: '2px 6px', fontSize: 11, flexShrink: 0 }} onClick={() => setAppUpdate(null)}>✕</button>
+          }
         </div>
       )}
 

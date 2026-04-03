@@ -20,6 +20,8 @@ extraResources:
       - "**/*"
 
 asar: true
+asarUnpack:
+  - "dist-electron/native/**"
 npmRebuild: false
 
 win:
