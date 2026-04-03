@@ -1,20 +1,20 @@
 {
   "format": 1,
   "restore": {
-    "D:\\CODE\\cereal-launcher-vite\\electron\\native\\MediaInfoTool\\MediaInfoTool.csproj": {}
+    "E:\\CODE\\cereal-launcher-vite\\electron\\native\\MediaInfoTool\\MediaInfoTool.csproj": {}
   },
   "projects": {
-    "D:\\CODE\\cereal-launcher-vite\\electron\\native\\MediaInfoTool\\MediaInfoTool.csproj": {
+    "E:\\CODE\\cereal-launcher-vite\\electron\\native\\MediaInfoTool\\MediaInfoTool.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "D:\\CODE\\cereal-launcher-vite\\electron\\native\\MediaInfoTool\\MediaInfoTool.csproj",
+        "projectUniqueName": "E:\\CODE\\cereal-launcher-vite\\electron\\native\\MediaInfoTool\\MediaInfoTool.csproj",
         "projectName": "MediaInfoTool",
-        "projectPath": "D:\\CODE\\cereal-launcher-vite\\electron\\native\\MediaInfoTool\\MediaInfoTool.csproj",
-        "packagesPath": "C:\\Users\\acalabrese\\.nuget\\packages\\",
-        "outputPath": "D:\\CODE\\cereal-launcher-vite\\electron\\native\\MediaInfoTool\\obj\\",
+        "projectPath": "E:\\CODE\\cereal-launcher-vite\\electron\\native\\MediaInfoTool\\MediaInfoTool.csproj",
+        "packagesPath": "C:\\Users\\andre\\.nuget\\packages\\",
+        "outputPath": "E:\\CODE\\cereal-launcher-vite\\electron\\native\\MediaInfoTool\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
-          "C:\\Users\\acalabrese\\AppData\\Roaming\\NuGet\\NuGet.Config"
+          "C:\\Users\\andre\\AppData\\Roaming\\NuGet\\NuGet.Config"
         ],
         "originalTargetFrameworks": [
           "net8.0-windows10.0.18362.0"
@@ -37,7 +37,8 @@
           "enableAudit": "true",
           "auditLevel": "low",
           "auditMode": "direct"
-        }
+        },
+        "SdkAnalysisLevel": "10.0.100"
       },
       "frameworks": {
         "net8.0-windows10.0.18362": {
@@ -46,7 +47,7 @@
             "Microsoft.NET.ILLink.Tasks": {
               "suppressParent": "All",
               "target": "Package",
-              "version": "[8.0.11, )",
+              "version": "[8.0.24, )",
               "autoReferenced": true
             }
           },
@@ -63,31 +64,47 @@
           "warn": true,
           "downloadDependencies": [
             {
+              "name": "Microsoft.AspNetCore.App.Ref",
+              "version": "[8.0.24, 8.0.24]"
+            },
+            {
               "name": "Microsoft.AspNetCore.App.Runtime.win-x64",
-              "version": "[8.0.11, 8.0.11]"
+              "version": "[8.0.24, 8.0.24]"
+            },
+            {
+              "name": "Microsoft.NETCore.App.Host.win-x64",
+              "version": "[8.0.24, 8.0.24]"
+            },
+            {
+              "name": "Microsoft.NETCore.App.Ref",
+              "version": "[8.0.24, 8.0.24]"
             },
             {
               "name": "Microsoft.NETCore.App.Runtime.win-x64",
-              "version": "[8.0.11, 8.0.11]"
+              "version": "[8.0.24, 8.0.24]"
             },
             {
               "name": "Microsoft.Windows.SDK.NET.Ref",
-              "version": "[10.0.18362.53, 10.0.18362.53]"
+              "version": "[10.0.18362.57, 10.0.18362.57]"
+            },
+            {
+              "name": "Microsoft.WindowsDesktop.App.Ref",
+              "version": "[8.0.24, 8.0.24]"
             },
             {
               "name": "Microsoft.WindowsDesktop.App.Runtime.win-x64",
-              "version": "[8.0.11, 8.0.11]"
+              "version": "[8.0.24, 8.0.24]"
             }
           ],
           "frameworkReferences": {
             "Microsoft.NETCore.App": {
               "privateAssets": "all"
             },
-            "Microsoft.Windows.SDK.NET.Ref": {
+            "Microsoft.Windows.SDK.NET.Ref.Windows": {
               "privateAssets": "all"
             }
           },
-          "runtimeIdentifierGraphPath": "D:\\CODE\\important files\\dotnet-sdk-8.0.404-win-x64\\sdk\\8.0.404/PortableRuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.103/PortableRuntimeIdentifierGraph.json"
         }
       },
       "runtimes": {

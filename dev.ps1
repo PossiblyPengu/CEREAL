@@ -6,7 +6,8 @@ $publishOut = "$projectDir\electron\native\MediaInfoTool\publish"
 $bundledDotnet = "D:\CODE\important files\dotnet-sdk-8.0.404-win-x64\dotnet.exe"
 $sysCmd = Get-Command dotnet -ErrorAction SilentlyContinue
 $sysDotnet = if ($sysCmd) { $sysCmd.Source } else { $null }
-$dotnet = if ($sysDotnet -and (& $sysDotnet --list-sdks 2>$null)) { $sysDotnet } else { $bundledDotnet }
+$sdkList = if ($sysDotnet) { & $sysDotnet --list-sdks } else { $null }
+$dotnet = if ($sysDotnet -and $sdkList) { $sysDotnet } else { $bundledDotnet }
 
 Write-Host "Building MediaInfoTool (self-contained)..."
 & $dotnet publish $csproj -c Release --nologo -v quiet -o $publishOut
