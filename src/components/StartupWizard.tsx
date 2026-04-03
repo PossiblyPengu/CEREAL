@@ -139,7 +139,6 @@ export function StartupWizard({ show, onClose, flash, setGames }: StartupWizardP
   if (!show) return null;
 
   const connectedCount = ['steam', 'gog', 'epic', 'xbox'].filter(p => accounts[p]?.connected).length;
-  const totalImported = Object.values(importCounts).reduce((a, b) => a + b, 0);
   const chiakiReady = chiakiStatus && chiakiStatus.status !== 'missing';
 
   const stepDots = (
