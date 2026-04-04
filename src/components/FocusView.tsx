@@ -99,8 +99,8 @@ export function FocusView({ game: gameProp, onClose, onLaunch, onFav, onEdit, on
           <div className="focus-art-fallback" style={coverSrc ? { display: 'none' } : {}}>{game.name.charAt(0)}</div>
         </div>
         <div className="focus-details">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-            <div className="focus-platform" style={{ borderColor: p?.color, color: p?.color, marginBottom: 0 }}>
+          <div className="focus-platform-row">
+            <div className="focus-platform" style={{ borderColor: p?.color, color: p?.color }}>
               <span style={{ width: 6, height: 6, borderRadius: '50%', background: p?.color, display: 'inline-block' }} />
               {platformLabel(game.platform)}
             </div>

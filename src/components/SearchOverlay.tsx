@@ -81,12 +81,12 @@ export function SearchOverlay({ show, onClose, games, onSelect, onLaunch }: Sear
                 <div className="search-hit-meta">{platformLabel(g.platform)} &middot; {fmtTime(g.playtimeMinutes)}</div>
               </div>
               {onLaunch && (
-                <button className="card-hover-btn play" style={{ marginLeft: 'auto', padding: '3px 10px', fontSize: 10, flexShrink: 0 }} onClick={e => { e.stopPropagation(); onLaunch(g); onClose(); }} title="Launch (Ctrl+Enter)">▶</button>
+                <button className="btn-sm primary" style={{ marginLeft: 'auto', flexShrink: 0 }} onClick={e => { e.stopPropagation(); onLaunch(g); onClose(); }} title="Launch (Ctrl+Enter)">▶</button>
               )}
             </div>
           );
         })}
-        {q && hits.length === 0 && <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-4)', fontSize: '13px' }}>No matches</div>}
+        {q && hits.length === 0 && <div className="art-picker-empty" style={{ padding: '20px' }}>No matches</div>}
       </div>
     </div>
   );

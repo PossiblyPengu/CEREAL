@@ -52,10 +52,10 @@ export function ArtPicker({ gameName, platform, field, onPick, onClose }: ArtPic
 
   return (
     <div className="art-picker">
-      <div className="art-picker-head" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div className="art-picker-head">
         <span className="art-picker-title" style={{ flex: '0 0 auto' }}>Select from online sources</span>
         <div style={{ flex: 1, display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input value={query} onChange={e => setQuery(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') doSearch(); }} placeholder={gameName || 'Search term'} style={{ flex: 1, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--glass-border)', background: 'var(--surface)', color: 'var(--text-2)' }} />
+          <input value={query} onChange={e => setQuery(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') doSearch(); }} placeholder={gameName || 'Search term'} style={{ flex: 1, padding: '9px 12px', borderRadius: 8, border: '1px solid var(--glass-border)', background: 'var(--glass)', color: 'var(--text-2)', outline: 'none', transition: 'border-color var(--speed-normal)' }} />
           <button className="btn-flat" onClick={() => doSearch()} style={{ whiteSpace: 'nowrap' }}>Search</button>
         </div>
         <button className="art-picker-close" onClick={onClose}>&times;</button>

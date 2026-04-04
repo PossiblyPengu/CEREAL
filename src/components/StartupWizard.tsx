@@ -212,7 +212,7 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
           </div>
         ))}
       </div>
-      <button className="btn-accent" style={{ padding: '10px 32px', fontSize: 14 }} onClick={() => setStep(2)}>Get Started</button>
+      <button className="btn-accent btn-accent-lg" onClick={() => setStep(2)}>Get Started</button>
     </div>
   );
 
@@ -243,7 +243,7 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
       <div style={{ marginBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-2)' }}>Custom Accent Color</div>
-          <input type="color" value={wAccent || THEMES[wTheme]?.accent || '#d4a853'} style={{ width: 28, height: 28, border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}
+          <input type="color" value={wAccent || THEMES[wTheme]?.accent || '#d4a853'} className="settings-color sm"
             onChange={e => {
               setWAccent(e.target.value);
               document.documentElement.style.setProperty('--accent', e.target.value);
@@ -307,13 +307,13 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
         )}
         {!specs && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-3)', fontSize: 12, marginBottom: 14 }}>
-            <div style={{ width: 14, height: 14, border: '2px solid rgba(255,255,255,0.1)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+            <span className="spinner" />
             Detecting specs...
           </div>
         )}
 
         {rec && (
-          <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, fontSize: 11, color: 'var(--text-4)', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', lineHeight: 1.5 }}>
+          <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, fontSize: 11, color: 'var(--text-4)', background: 'var(--glass)', border: '1px solid var(--glass-border)', lineHeight: 1.5 }}>
             💡 Recommended: <strong style={{ color: 'var(--text-3)' }}>{rec.starDensity}</strong> stars, <strong style={{ color: 'var(--text-3)' }}>{{  '0.9': '90%', '1': '100%', '1.1': '110%', '1.25': '125%' }[rec.uiScale]}</strong> scale
             <button className="btn-flat" style={{ marginLeft: 8, padding: '2px 8px', fontSize: 10, verticalAlign: 'middle' }}
               onClick={() => { setWDensity(rec.starDensity as any); setWScale(rec.uiScale); applyUiScale(rec.uiScale); }}>Apply</button>
@@ -439,7 +439,7 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
           </div>
         </div>
       </div>
-      <div style={{ marginTop: 12, padding: '8px 12px', borderRadius: 8, fontSize: 11, color: 'var(--text-4)', display: 'flex', gap: 8, alignItems: 'center', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+      <div style={{ marginTop: 12, padding: '8px 12px', borderRadius: 8, fontSize: 11, color: 'var(--text-4)', display: 'flex', gap: 8, alignItems: 'center', background: 'var(--glass)', border: '1px solid var(--glass-border)' }}>
         <span>🔒</span>
         <span>Your library data stays local — Cereal never uploads your account info or game list to any server.</span>
       </div>
@@ -494,7 +494,7 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
             ['Scroll', 'Zoom (Orbit)'],
           ] as [string, string][]).map(([k, v]) => (
             <div key={k} style={{ display: 'flex', gap: 6, fontSize: 11, padding: '2px 0' }}>
-              <kbd style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.16)', borderBottom: '2px solid rgba(255,255,255,0.22)', borderRadius: 4, padding: '1px 6px', fontSize: 10, fontFamily: 'monospace', fontWeight: 700, color: 'var(--text-2)', whiteSpace: 'nowrap' }}>{k}</kbd>
+              <kbd className="settings-kbd">{k}</kbd>
               <span style={{ color: 'var(--text-3)' }}>{v}</span>
             </div>
           ))}
@@ -508,7 +508,7 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
     <div>
       <h2 style={{ margin: '0 0 4px', fontSize: 18 }}>PlayStation Remote Play</h2>
       <p style={{ color: 'var(--text-2)', margin: '0 0 10px', fontSize: 12 }}>Optional: Set up chiaki-ng for streaming PS4/PS5 games to your PC.</p>
-      <div style={{ padding: '8px 12px', borderRadius: 8, fontSize: 11, color: 'var(--text-4)', marginBottom: 12, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', lineHeight: 1.5 }}>
+      <div style={{ padding: '8px 12px', borderRadius: 8, fontSize: 11, color: 'var(--text-4)', marginBottom: 12, background: 'var(--glass)', border: '1px solid var(--glass-border)', lineHeight: 1.5 }}>
         💡 Your PC and PlayStation must be on the <strong style={{ color: 'var(--text-3)' }}>same local network</strong>. Find the pairing PIN on your console under <strong style={{ color: 'var(--text-3)' }}>Settings → System → Remote Play → Link Device</strong>.
       </div>
 
@@ -633,9 +633,9 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
           </div>
         </div>
         <p style={{ color: 'var(--text-4)', fontSize: 11, margin: '14px 0 0' }}>
-          Press <kbd style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.16)', borderRadius: 4, padding: '1px 5px', fontSize: 10, fontFamily: 'monospace', color: 'var(--text-2)' }}>Ctrl+K</kbd> anytime to search your library.
+          Press <kbd className="settings-kbd">Ctrl+K</kbd> anytime to search your library.
         </p>
-        <button className="btn-accent" style={{ marginTop: 12, padding: '10px 32px', fontSize: 14 }} onClick={finish}>Launch Cereal</button>
+        <button className="btn-accent btn-accent-lg" onClick={finish}>Launch Cereal</button>
       </div>
     );
   };

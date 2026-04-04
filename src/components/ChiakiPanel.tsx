@@ -160,7 +160,7 @@ export function ChiakiPanel({ show, onClose, flash, games: _games, setGames: _se
 
     return (
       <div key={i} className="conn-card">
-        <div className="conn-icon" style={{ background: '#003087' }}>PS</div>
+        <div className="conn-icon ps">PS</div>
         <div className="conn-info">
           <div className="conn-name">
             {c.nickname}
@@ -243,7 +243,7 @@ export function ChiakiPanel({ show, onClose, flash, games: _games, setGames: _se
             {c.state === 'ready' && <span style={{ color: 'var(--green)', fontSize: 9, fontWeight: 600 }}>Awake</span>}
             {c.firmwareVersion && <span>{c.firmwareVersion}</span>}
             {c.runningTitle && <span className="chiaki-disc-tag live">{c.runningTitle}</span>}
-            {alreadyAdded && <span style={{ color: 'var(--green)', fontSize: 9, fontWeight: 700 }}>Added</span>}
+            {alreadyAdded && <span style={{ color: 'var(--green)', fontSize: 9, fontWeight: 600 }}>Added</span>}
           </div>
         </div>
         <div className="chiaki-disc-actions">

@@ -155,7 +155,7 @@ export function AddPanel({ show, onClose, onSave, categories, editGame, flash, o
         <div style={{ display: 'flex', gap: '8px' }}>
           <input value={f.coverUrl || ''} onChange={e => setF(p => ({ ...p, coverUrl: e.target.value }))} placeholder="URL or file path" style={{ flex: 1 }} />
           <button className="btn-flat" onClick={() => browseImg('coverUrl')}>File</button>
-          <button className="btn-flat" style={{ color: 'var(--accent)' }} onClick={() => artSearch('coverUrl')} disabled={!f.name.trim()}>Search</button>
+          <button className="btn-sm primary" onClick={() => artSearch('coverUrl')} disabled={!f.name.trim()}>Search</button>
         </div>
         {f.coverUrl && <img className="cover-preview" src={f.coverUrl} alt="" onError={e => (e.target as HTMLImageElement).style.display = 'none'} onLoad={e => (e.target as HTMLImageElement).style.display = 'block'} />}
       </div>
@@ -166,7 +166,7 @@ export function AddPanel({ show, onClose, onSave, categories, editGame, flash, o
       <button className={'meta-toggle' + (showMeta ? ' open' : '')} onClick={() => setShowMeta(!showMeta)}>
         {chevron} Metadata
         <span style={{ marginLeft: 'auto', fontSize: 9, fontWeight: 400, color: 'var(--text-4)', textTransform: 'none', letterSpacing: 0 }}>{fetching ? 'Fetching...' : 'Auto-fill from web'}</span>
-        <span className="btn-flat" style={{ padding: '3px 10px', fontSize: 10, marginLeft: 8, opacity: (f.name.trim() && !fetching) ? 1 : 0.4 }} onClick={e => { e.stopPropagation(); if (!f.name.trim() || fetching) return; editGame ? doFetch() : doFetchForNew(); }}>{I.download}</span>
+        <button className="btn-sm" style={{ padding: '3px 10px', marginLeft: 8, opacity: (f.name.trim() && !fetching) ? 1 : 0.4 }} onClick={e => { e.stopPropagation(); if (!f.name.trim() || fetching) return; editGame ? doFetch() : doFetchForNew(); }}>{I.download}</button>
       </button>
       {showMeta && (
         <div className="meta-section">
@@ -183,7 +183,7 @@ export function AddPanel({ show, onClose, onSave, categories, editGame, flash, o
             <div style={{ display: 'flex', gap: '8px' }}>
               <input value={(f as any).headerUrl || ''} onChange={e => setF(p => ({ ...p, headerUrl: e.target.value }))} placeholder="Wide banner URL" style={{ flex: 1 }} />
               <button className="btn-flat" onClick={() => browseImg('headerUrl')}>File</button>
-              <button className="btn-flat" style={{ color: 'var(--accent)' }} onClick={() => artSearch('headerUrl')} disabled={!f.name.trim()}>Search</button>
+              <button className="btn-sm primary" onClick={() => artSearch('headerUrl')} disabled={!f.name.trim()}>Search</button>
             </div>
             <div className="field-hint">Used as blurred background in game detail view</div>
             {(f as any).headerUrl && <img className="cover-preview" src={(f as any).headerUrl} alt="" onError={e => (e.target as HTMLImageElement).style.display = 'none'} onLoad={e => (e.target as HTMLImageElement).style.display = 'block'} />}

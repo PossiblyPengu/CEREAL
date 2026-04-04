@@ -843,6 +843,10 @@ export default function App() {
   const liveFocus = useMemo(() => focusGame ? games.find(g => g.id === focusGame.id) || focusGame : null, [focusGame, games]);
   const tbPos: string = (settings as any).toolbarPosition || 'top';
   const isVertical = tbPos === 'left' || tbPos === 'right';
+  const toastAnchor: React.CSSProperties =
+    tbPos === 'right' ? { top: 12, left: 12, right: 'auto', bottom: 'auto' } :
+    tbPos === 'top'   ? { top: 54, right: 12, left: 'auto', bottom: 'auto' } :
+                        { top: 12, right: 12, left: 'auto', bottom: 'auto' };
 
   useGamepad(useCallback((actions: string[]) => {
     if (!gpActive) setGpActive(true);
@@ -1132,19 +1136,19 @@ export default function App() {
             <div className="nav-filter-wrap" style={{ position: 'relative' }}>
               <button className="nav-btn" onClick={() => setShowFilters(s => s ? '' : 'open')} title="Filter games" style={{ position: 'relative' }}>
                 {I.search}
-                {filterCount > 0 && <span style={{ position: 'absolute', top: -4, right: -4, minWidth: 16, height: 16, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 16, background: 'var(--accent)', color: '#07070d', fontSize: 9, fontWeight: 700, padding: '0 4px', boxShadow: '0 4px 12px rgba(0,0,0,0.45)' }}>{filterCount}</span>}
+                {filterCount > 0 && <span style={{ position: 'absolute', top: -4, right: -4, minWidth: 16, height: 16, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 16, background: 'var(--accent)', color: 'var(--void)', fontSize: 9, fontWeight: 700, padding: '0 4px', boxShadow: '0 4px 12px rgba(0,0,0,0.45)' }}>{filterCount}</span>}
               </button>
               {showFilters && (isVertical ? ReactDOM.createPortal : (c: React.ReactNode) => c)(
-                <div style={isVertical ? { position: 'fixed', top: '50%', [tbPos === 'left' ? 'left' : 'right']: 72, transform: 'translateY(-50%)', minWidth: 300, maxWidth: 400, background: 'var(--surface)', border: '1px solid var(--glass-border)', borderRadius: 12, padding: 16, boxShadow: '0 12px 48px rgba(0,0,0,0.7)', zIndex: 300 } : { position: 'absolute', ...(tbPos === 'bottom' ? { bottom: 'calc(100% + 6px)' } : { top: 'calc(100% + 6px)' }), right: 0, minWidth: 320, background: 'var(--surface)', border: '1px solid var(--glass-border)', borderRadius: 10, padding: 14, boxShadow: '0 8px 32px rgba(0,0,0,0.6)', zIndex: 200 }}
+                <div className="filter-popover" style={isVertical ? { position: 'fixed', top: '50%', [tbPos === 'left' ? 'left' : 'right']: 72, transform: 'translateY(-50%)', maxWidth: 400, zIndex: 300 } : { position: 'absolute', ...(tbPos === 'bottom' ? { bottom: 'calc(100% + 6px)' } : { top: 'calc(100% + 6px)' }), right: 0, zIndex: 200 }}
                   onClick={e => e.stopPropagation()}>
-                  <input value={gameFilter} onChange={e => setGameFilter(e.target.value)} placeholder="Search games..." style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid var(--glass-border)', background: 'var(--glass)', color: 'var(--text-2)', fontSize: 12, width: '100%', marginBottom: 12, boxSizing: 'border-box' }} autoFocus />
-                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>Sort by</div>
+                  <input value={gameFilter} onChange={e => setGameFilter(e.target.value)} placeholder="Search games..." autoFocus />
+                  <div className="filter-section-label">Sort by</div>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
                     {([['default', 'Default'], ['name', 'Name'], ['played', 'Most Played'], ['recent', 'Recent'], ['installed', 'Installed']] as [string, string][]).map(([v, l]) => (
                       <button key={v} className={'tag' + (sortBy === v ? ' sel' : '')} onClick={() => setSortBy(v)}>{l}</button>
                     ))}
                   </div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>Platforms</div>
+                  <div className="filter-section-label">Platforms</div>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
                     {Object.keys(PLATFORMS).map(pk => {
                       const active = selectedPlatforms.includes(pk);
@@ -1153,7 +1157,7 @@ export default function App() {
                   </div>
                   {cats.length > 0 && (
                     <>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>Categories</div>
+                      <div className="filter-section-label">Categories</div>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
                         {cats.map(cat => {
                           const active = selectedCategories.includes(cat);
@@ -1409,67 +1413,70 @@ export default function App() {
       <div role="status" aria-live="polite" aria-atomic="true" style={{ position:'fixed', width:1, height:1, overflow:'hidden', clip:'rect(0,0,0,0)', whiteSpace:'nowrap', pointerEvents:'none' }}>{typeof toast === 'string' ? toast : ''}</div>
       {toast !== '' && <Toast msg={toast} onDone={() => setToast('')} />}
 
-      {importProgress && importProgress.status && (
-        <div className="subtle-pill" onClick={() => { if (importProgress.status === 'done' || importProgress.status === 'error') setImportProgress(null); }}>
-          {importProgress.status !== 'done' && importProgress.status !== 'error'
-            ? <div className="subtle-pill-spinner" />
-            : <div className="subtle-pill-icon" style={{ background: importProgress.status === 'error' ? 'var(--red)' : 'var(--green)' }}>{importProgress.status === 'error' ? '✕' : '✓'}</div>
-          }
-          <span className="subtle-pill-text">
-            {importProgress.status === 'done' ? 'Import complete' : importProgress.status === 'error' ? 'Import failed'
-              : 'Importing ' + (importProgress.provider || '') + (importProgress.processed ? ' · ' + importProgress.processed : '')}
-          </span>
-        </div>
-      )}
-
-      {metaProgress && (
-        <div className="subtle-pill" style={importProgress?.status ? { bottom: 46 } : undefined}
-          onClick={() => { if (metaProgress.phase === 'done') setMetaProgress(null); }}>
-          {metaProgress.phase === 'done'
-            ? <div className="subtle-pill-icon" style={{ background: 'var(--green)' }}>✓</div>
-            : <div className="subtle-pill-spinner" />
-          }
-          <span className="subtle-pill-text">
-            {metaProgress.phase === 'done'
-              ? 'Synced · ' + (metaProgress.updated || 0) + ' updated'
-              : metaProgress.phase === 'covers'
-                ? 'Syncing' + ((metaProgress.coverRemaining || 0) > 0 ? ' · ' + metaProgress.coverRemaining + ' covers' : '')
-                : 'Syncing' + (metaProgress.total > 0 ? ' · ' + (metaProgress.current || 0) + '/' + metaProgress.total : '')}
-          </span>
-          {metaProgress.phase !== 'done' && (
-            <div className="subtle-pill-bar">
-              <div className="subtle-pill-bar-fill" style={{ width:
-                metaProgress.phase === 'covers'
-                  ? (50 + (1 - (metaProgress.coverRemaining || 0) / Math.max(1, metaProgress.coverTotal || 1)) * 50) + '%'
-                  : metaProgress.total > 0 ? (((metaProgress.current || 0) / metaProgress.total) * 50) + '%' : '0%'
-              }} />
-            </div>
-          )}
-        </div>
-      )}
-
-      {appUpdate && (
-        <div style={{ position: 'fixed', bottom: 20, left: 20, zIndex: 10100, width: 300, background: 'var(--glass-heavy, rgba(20,20,30,0.96))', border: '1px solid var(--glass-border)', borderRadius: 12, padding: '12px 16px', boxShadow: '0 8px 32px rgba(0,0,0,0.5)', backdropFilter: 'blur(12px)', display: 'flex', alignItems: 'center', gap: 12 }}>
-          {appUpdate.status === 'downloading'
-            ? <div style={{ width: 22, height: 22, border: '2px solid rgba(255,255,255,0.1)', borderTopColor: 'var(--accent)', borderRadius: '50%', flexShrink: 0, animation: 'spin 0.8s linear infinite' }} />
-            : <div style={{ width: 22, height: 22, borderRadius: '50%', flexShrink: 0, background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: '#07070d' }}>↑</div>
-          }
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 2 }}>
-              {appUpdate.status === 'downloading' ? 'Downloading update…' : 'Update ready'}
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--text-3)' }}>
-              {appUpdate.status === 'downloading'
-                ? (appUpdate.progress != null ? appUpdate.progress + '%' : 'Starting…')
-                : 'v' + (appUpdate.version || '?') + ' — Restart to apply'}
-            </div>
+      <div style={{ position: 'fixed', ...toastAnchor, zIndex: 10100, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {importProgress && importProgress.status && (
+          <div className="subtle-pill" style={{ position: 'relative', bottom: 'auto', right: 'auto', left: 'auto' }}
+            onClick={() => { if (importProgress.status === 'done' || importProgress.status === 'error') setImportProgress(null); }}>
+            {importProgress.status !== 'done' && importProgress.status !== 'error'
+              ? <div className="subtle-pill-spinner" />
+              : <div className="subtle-pill-icon" style={{ background: importProgress.status === 'error' ? 'var(--red)' : 'var(--green)' }}>{importProgress.status === 'error' ? '✕' : '✓'}</div>
+            }
+            <span className="subtle-pill-text">
+              {importProgress.status === 'done' ? 'Import complete' : importProgress.status === 'error' ? 'Import failed'
+                : 'Importing ' + (importProgress.provider || '') + (importProgress.processed ? ' · ' + importProgress.processed : '')}
+            </span>
           </div>
-          {appUpdate.status === 'ready'
-            ? <button className="btn-sm primary" style={{ flexShrink: 0 }} onClick={() => (window.api as any)?.installUpdate?.()}>Restart</button>
-            : <button className="btn-flat" style={{ padding: '2px 6px', fontSize: 11, flexShrink: 0 }} onClick={() => setAppUpdate(null)}>✕</button>
-          }
-        </div>
-      )}
+        )}
+
+        {metaProgress && (
+          <div className="subtle-pill" style={{ position: 'relative', bottom: 'auto', right: 'auto', left: 'auto' }}
+            onClick={() => { if (metaProgress.phase === 'done') setMetaProgress(null); }}>
+            {metaProgress.phase === 'done'
+              ? <div className="subtle-pill-icon" style={{ background: 'var(--green)' }}>✓</div>
+              : <div className="subtle-pill-spinner" />
+            }
+            <span className="subtle-pill-text">
+              {metaProgress.phase === 'done'
+                ? 'Synced · ' + (metaProgress.updated || 0) + ' updated'
+                : metaProgress.phase === 'covers'
+                  ? 'Syncing' + ((metaProgress.coverRemaining || 0) > 0 ? ' · ' + metaProgress.coverRemaining + ' covers' : '')
+                  : 'Syncing' + (metaProgress.total > 0 ? ' · ' + (metaProgress.current || 0) + '/' + metaProgress.total : '')}
+            </span>
+            {metaProgress.phase !== 'done' && (
+              <div className="subtle-pill-bar">
+                <div className="subtle-pill-bar-fill" style={{ width:
+                  metaProgress.phase === 'covers'
+                    ? (50 + (1 - (metaProgress.coverRemaining || 0) / Math.max(1, metaProgress.coverTotal || 1)) * 50) + '%'
+                    : metaProgress.total > 0 ? (((metaProgress.current || 0) / metaProgress.total) * 50) + '%' : '0%'
+                }} />
+              </div>
+            )}
+          </div>
+        )}
+
+        {appUpdate && (
+          <div style={{ width: 300, background: 'var(--glass-heavy, rgba(20,20,30,0.96))', border: '1px solid var(--glass-border)', borderRadius: 12, padding: '12px 16px', boxShadow: '0 8px 32px rgba(0,0,0,0.5)', backdropFilter: 'blur(12px)', display: 'flex', alignItems: 'center', gap: 12 }}>
+            {appUpdate.status === 'downloading'
+              ? <div style={{ width: 22, height: 22, border: '2px solid rgba(255,255,255,0.1)', borderTopColor: 'var(--accent)', borderRadius: '50%', flexShrink: 0, animation: 'spin 0.8s linear infinite' }} />
+              : <div style={{ width: 22, height: 22, borderRadius: '50%', flexShrink: 0, background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: 'var(--void)' }}>↑</div>
+            }
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 2 }}>
+                {appUpdate.status === 'downloading' ? 'Downloading update…' : 'Update ready'}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-3)' }}>
+                {appUpdate.status === 'downloading'
+                  ? (appUpdate.progress != null ? appUpdate.progress + '%' : 'Starting…')
+                  : 'v' + (appUpdate.version || '?') + ' — Restart to apply'}
+              </div>
+            </div>
+            {appUpdate.status === 'ready'
+              ? <button className="btn-sm primary" style={{ flexShrink: 0 }} onClick={() => (window.api as any)?.installUpdate?.()}>Restart</button>
+              : <button className="btn-flat" style={{ padding: '2px 6px', fontSize: 11, flexShrink: 0 }} onClick={() => setAppUpdate(null)}>✕</button>
+            }
+          </div>
+        )}
+      </div>
 
       <MediaPlayer tbPos={tbPos} viewMode={viewMode} />
 

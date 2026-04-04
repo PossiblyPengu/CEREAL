@@ -53,7 +53,7 @@ export function DetectPanel({ show, onClose, onImport }: DetectPanelProps) {
       )}
       {results.map((g, i) => (
         <div key={i} className="conn-card" style={{ cursor: 'pointer' }} onClick={() => toggleSel(i)}>
-          <input type="checkbox" checked={sel.has(i)} readOnly style={{ accentColor: 'var(--accent)' }} />
+          <input type="checkbox" checked={sel.has(i)} readOnly />
           <div className="conn-info">
             <div className="conn-name">{g.name}</div>
             <div className="conn-detail">{platformLabel(g.platform)}{g.platformId ? ' / ' + g.platformId : ''}</div>

@@ -135,9 +135,9 @@ export function SettingsPanel({
 
   const sections = [
     { id: 'appearance', label: 'Appearance', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg> },
+    { id: 'library', label: 'Library', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg> },
     { id: 'behavior', label: 'Behavior', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> },
     { id: 'system', label: 'System', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg> },
-    { id: 'library', label: 'Library', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg> },
     { id: 'danger', label: 'Danger Zone', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> },
   ];
 
@@ -273,7 +273,7 @@ export function SettingsPanel({
                 <div className="settings-row-info">
                   <div className="settings-row-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     Discord Rich Presence
-                    {discordStatus && <span title={discordStatus.connected ? (discordStatus.ready ? 'Discord connected' : 'Discord connecting…') : 'Discord not connected'} style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: discordStatus.ready ? 'var(--green)' : discordStatus.connected ? 'var(--yellow, #f5a623)' : 'var(--text-4)', flexShrink: 0 }} />}
+                    {discordStatus && <span title={discordStatus.connected ? (discordStatus.ready ? 'Discord connected' : 'Discord connecting…') : 'Discord not connected'} style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: discordStatus.ready ? 'var(--green)' : discordStatus.connected ? 'var(--yellow)' : 'var(--text-4)', flexShrink: 0 }} />}
                   </div>
                   <div className="settings-row-desc">Show currently playing game on Discord</div>
                 </div>
@@ -343,8 +343,9 @@ export function SettingsPanel({
                       setChiakiUpd({ checking: true });
                       try {
                         const s = await (window.api as any)?.getChiakiStatus?.();
-                        if (!s?.installed) { setChiakiUpd({ error: 'Not installed' }); return; }
+                        if (s?.status === 'missing') { setChiakiUpd({ error: 'Not installed' }); return; }
                         const r = await (window.api as any)?.chiakiCheckUpdate?.();
+                        if (r?.error) { setChiakiUpd({ error: r.error }); return; }
                         if (r?.hasUpdate) setChiakiUpd({ current: r.current, latest: r.latest, hasUpdate: true });
                         else setChiakiUpd({ current: r?.current || s.version, hasUpdate: false });
                       } catch (e: any) { setChiakiUpd({ error: e.message }); }
@@ -367,93 +368,94 @@ export function SettingsPanel({
 
           {/* Library */}
           {activeSection === 'library' && <div className="settings-section">
-            <div className="settings-section-label">Library &amp; Art</div>
-            <div className="settings-group">
-              <div className="settings-row" style={{ flexDirection: 'column', alignItems: 'stretch', height: 'auto', padding: '12px 14px', borderBottom: 'none' }}>
-                <div className="settings-row-info" style={{ marginBottom: 8 }}>
-                  <div className="settings-row-label">SteamGridDB API Key</div>
-                  <div className="settings-row-desc">Custom game art search.{' '}
-                    <a href="#" onClick={e => { e.preventDefault(); (window.api as any)?.openExternal?.('https://www.steamgriddb.com/profile/preferences/api'); }} style={{ color: 'var(--accent)', textDecoration: 'underline' }}>Get a key</a>
-                  </div>
-                </div>
-                <div className="sgdb-key-row">
-                  <input type="password" value={sgKey} onChange={e => { setSgKey(e.target.value); setSgStatus(null); }} placeholder={sgSavedKey?.hasSecret ? '••••••••' + (sgSavedKey.fingerprint || '') : 'Paste API key'} />
-                  <button className="btn-sm" onClick={async () => {
-                    if (!(window.api as any)?.readClipboard) return flash('Clipboard not available');
-                    const txt = await (window.api as any).readClipboard();
-                    if (!txt) return flash('Clipboard empty');
-                    const k = txt.trim(); setSgKey(k); setSgStatus('checking');
-                    const vr = await (window.api as any).validateApiKey('steamgriddb', k);
-                    if (vr?.ok) { const sr = await (window.api as any).saveApiKey('steamgriddb', k); if (sr?.ok) { setSgSavedKey({ hasSecret: true, fingerprint: sr.fingerprint || null }); flash('SteamGridDB key saved'); } }
-                    else { setSgStatus('invalid'); flash('Key is invalid'); }
-                  }}>Paste</button>
-                </div>
-                <div className="sgdb-key-actions">
-                  <button className="btn-sm" onClick={async () => {
-                    if (!sgKey && !sgSavedKey?.hasSecret) { flash('No key to validate'); return; }
-                    setSgStatus('checking');
-                    const r = sgKey
-                      ? await (window.api as any).validateApiKey('steamgriddb', sgKey)
-                      : await (window.api as any).validateStoredApiKey?.('steamgriddb');
-                    const errStr = r?.error ? (typeof r.error === 'string' ? r.error : JSON.stringify(r.error)) : 'unknown';
-                    setSgStatus(r?.ok ? 'valid' : ('invalid: ' + errStr));
-                  }}>Validate</button>
-                  <button className="btn-sm primary" onClick={async () => {
-                    if (!sgKey) { flash('Enter a key first'); return; }
-                    const r = await (window.api as any).saveApiKey('steamgriddb', sgKey);
-                    if (r?.ok) { setSgSavedKey({ hasSecret: true, fingerprint: r.fingerprint || null }); flash('Key saved securely'); } else flash('Save failed: ' + r?.error);
-                  }}>Save</button>
-                  {sgSavedKey?.hasSecret && (
-                    <button className="btn-sm danger" onClick={async () => {
-                      const r = await (window.api as any).deleteApiKey('steamgriddb');
-                      if (r?.ok) { setSgSavedKey(null); setSgKey(''); flash('Key deleted'); } else flash('Delete failed');
-                    }}>Delete</button>
-                  )}
-                  {sgStatus && <span className="sgdb-key-status" style={{ color: sgStatus === 'valid' ? 'var(--green)' : sgStatus === 'checking' ? 'var(--text-3)' : 'var(--red)' }}>{sgStatus}</span>}
-                </div>
-                {sgSavedKey?.hasSecret && <div className="sgdb-key-saved">Key saved {sgSavedKey.fingerprint ? `(id: ${sgSavedKey.fingerprint})` : ''}</div>}
-              </div>
-            </div>
-          <div className="settings-action-grid" style={{ margin: '10px 0' }}>
+
+            {/* Quick actions */}
+            <div className="lib-section-title">Actions</div>
+            <div className="settings-action-grid">
               <button className="settings-action-card" onClick={async () => { if (onRescanAll) await onRescanAll(); }}>
                 <div className="settings-action-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div>
-                <div className="settings-action-body"><div className="settings-action-label">Re-scan Platforms</div><div className="settings-action-desc">Detect new installed games</div></div>
+                <div className="settings-action-body"><div className="settings-action-label">Re-scan Platforms</div><div className="settings-action-desc">Detect newly installed games</div></div>
+              </button>
+              <button className="settings-action-card" onClick={onFetchMetadata}>
+                <div className="settings-action-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></div>
+                <div className="settings-action-body"><div className="settings-action-label">Fetch Metadata</div><div className="settings-action-desc">Covers, scores &amp; descriptions</div></div>
               </button>
               <button className="settings-action-card" onClick={onSync}>
                 <div className="settings-action-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg></div>
                 <div className="settings-action-body"><div className="settings-action-label">Sync Playtime</div><div className="settings-action-desc">Pull hours from Steam</div></div>
               </button>
-              <button className="settings-action-card" onClick={onFetchMetadata}>
-                <div className="settings-action-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></div>
-                <div className="settings-action-body"><div className="settings-action-label">Fetch Metadata</div><div className="settings-action-desc">Covers, scores, descriptions</div></div>
-              </button>
               <button className="settings-action-card" onClick={onOpenPlatforms}>
                 <div className="settings-action-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg></div>
                 <div className="settings-action-body"><div className="settings-action-label">Platforms</div><div className="settings-action-desc">Manage connected accounts</div></div>
               </button>
+            </div>
+
+            {/* Backup */}
+            <div className="lib-section-title">Backup</div>
+            <div className="settings-action-grid">
               <button className="settings-action-card" onClick={doExport}>
                 <div className="settings-action-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
                 <div className="settings-action-body"><div className="settings-action-label">Export Library</div><div className="settings-action-desc">Save to JSON file</div></div>
               </button>
               <button className="settings-action-card" onClick={doFileImport}>
                 <div className="settings-action-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></div>
-                <div className="settings-action-body"><div className="settings-action-label">Import Library</div><div className="settings-action-desc">Load from JSON file</div></div>
-              </button>
-              <button className="settings-action-card" onClick={() => { if (dataPath) (window.api as any)?.openExternal?.('file:///' + dataPath.replace(/\\/g, '/')); }} disabled={!dataPath}>
-                <div className="settings-action-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg></div>
-                <div className="settings-action-body"><div className="settings-action-label">Open Folder</div><div className="settings-action-desc">Browse data location</div></div>
+                <div className="settings-action-body"><div className="settings-action-label">Import Library</div><div className="settings-action-desc">Restore from JSON file</div></div>
               </button>
             </div>
-            {dataPath && (
-              <div className="settings-group" style={{ marginTop: 10 }}>
-                <div className="settings-row" style={{ borderBottom: 'none' }}>
-                  <div className="settings-row-info">
-                    <div className="settings-row-label">Data Location</div>
-                    <div className="settings-row-desc" style={{ wordBreak: 'break-all', fontFamily: 'Consolas, monospace', fontSize: 9, letterSpacing: '0.3px' }}>{dataPath}</div>
-                  </div>
-                </div>
+
+            {/* SteamGridDB */}
+            <div className="lib-section-title">Integrations</div>
+            <div className="lib-key-card">
+              <div className="lib-key-card-top">
+                <div className="lib-key-card-name">SteamGridDB</div>
+                {sgStatus === 'checking' && <span className="lib-key-card-status busy">Checking…</span>}
+                {sgStatus === 'valid' && <span className="lib-key-card-status ok">Valid</span>}
+                {sgStatus && sgStatus !== 'valid' && sgStatus !== 'checking' && <span className="lib-key-card-status err">Invalid</span>}
+                {!sgStatus && sgSavedKey?.hasSecret && <span className="lib-key-card-status ok">Key saved</span>}
+                {!sgStatus && !sgSavedKey?.hasSecret && <span className="lib-key-card-status missing">No key</span>}
+                {sgSavedKey?.fingerprint && <span className="lib-key-card-fp">{sgSavedKey.fingerprint}</span>}
               </div>
+              <div className="settings-row-desc">Custom game art search. <a href="#" className="settings-link" onClick={e => { e.preventDefault(); (window.api as any)?.openExternal?.('https://www.steamgriddb.com/profile/preferences/api'); }}>Get a key</a></div>
+              <div className="lib-key-input-row">
+                <input type="password" value={sgKey} onChange={e => { setSgKey(e.target.value); setSgStatus(null); }} placeholder={sgSavedKey?.hasSecret ? 'Saved — paste to replace' : 'Paste API key here'} />
+                <button className="btn-sm" onClick={async () => {
+                  if (!(window.api as any)?.readClipboard) return flash('Clipboard not available');
+                  const txt = await (window.api as any).readClipboard();
+                  if (!txt) return flash('Clipboard empty');
+                  setSgKey(txt.trim()); setSgStatus(null);
+                }}>Paste</button>
+                <button className="btn-sm primary" disabled={!sgKey} onClick={async () => {
+                  if (!sgKey) return;
+                  setSgStatus('checking');
+                  const vr = await (window.api as any).validateApiKey('steamgriddb', sgKey);
+                  if (vr?.ok) {
+                    const sr = await (window.api as any).saveApiKey('steamgriddb', sgKey);
+                    if (sr?.ok) { setSgSavedKey({ hasSecret: true, fingerprint: sr.fingerprint || null }); setSgStatus('valid'); flash('SteamGridDB key saved'); }
+                  } else { setSgStatus('invalid'); flash('Key is invalid'); }
+                }}>Save</button>
+                {sgSavedKey?.hasSecret && (
+                  <button className="btn-sm danger" onClick={async () => {
+                    const r = await (window.api as any).deleteApiKey('steamgriddb');
+                    if (r?.ok) { setSgSavedKey(null); setSgKey(''); setSgStatus(null); flash('Key deleted'); } else flash('Delete failed');
+                  }}>Delete</button>
+                )}
+              </div>
+            </div>
+
+            {/* Data */}
+            {dataPath && (
+              <>
+                <div className="lib-section-title">Data</div>
+                <div className="lib-data-path">
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="lib-data-path-label">Storage location</div>
+                    <div className="lib-data-path-val">{dataPath}</div>
+                  </div>
+                  <button className="btn-sm" style={{ flexShrink: 0 }} onClick={() => (window.api as any)?.openExternal?.('file:///' + dataPath.replace(/\\/g, '/'))}>Open</button>
+                </div>
+              </>
             )}
+
           </div>}
 
           {/* Danger Zone */}
