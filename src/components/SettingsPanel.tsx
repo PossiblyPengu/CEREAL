@@ -295,58 +295,70 @@ export function SettingsPanel({
                 <Toggle value={!!(local as any).closeToTray} onChange={v => update('closeToTray' as any, v)} />
               </div>
             </div>
+
             <div className="settings-section-label" style={{ marginTop: 16 }}>Updates</div>
-            <div className="settings-group">
-              <div className="settings-row">
-                <div className="settings-row-info">
-                  <div className="settings-row-label">Software Update</div>
-                  <div className="settings-row-desc">
-                    {updateStatus === 'checking' && 'Checking for updates...'}
-                    {updateStatus === 'downloading' && `Downloading... ${updateProgress}%`}
-                    {updateStatus === 'ready' && 'Update ready to install'}
-                    {updateStatus === 'up-to-date' && 'You are on the latest version'}
-                    {updateStatus === 'error' && (updateError || 'Update check failed')}
-                    {!updateStatus && 'Check for app updates'}
-                  </div>
+            <div className="sys-update-list">
+              {/* Cereal */}
+              <div className="sys-update-card">
+                <div className="sys-update-card-top">
+                  <div className="sys-update-card-name">Cereal</div>
+                  <div className="sys-update-card-ver">v{appVersion}</div>
+                  {updateStatus === 'ready' && <span className="sys-update-badge new">Update ready</span>}
+                  {updateStatus === 'downloading' && <span className="sys-update-badge busy">Downloading {updateProgress}%</span>}
+                  {updateStatus === 'checking' && <span className="sys-update-badge busy">Checking…</span>}
+                  {updateStatus === 'up-to-date' && <span className="sys-update-badge ok">Up to date</span>}
+                  {updateStatus === 'error' && <span className="sys-update-badge err" title={updateError || ''}>Error</span>}
                 </div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button className="btn-sm" onClick={async () => { setUpdateStatus('checking'); await (window.api as any)?.checkForUpdates?.(); }}>Check</button>
-                  {updateStatus === 'ready' && <button className="btn-sm primary" onClick={() => (window.api as any)?.installUpdate?.()}>Install &amp; Restart</button>}
+                <div className="sys-update-card-actions">
+                  <button className="btn-sm" disabled={updateStatus === 'checking' || updateStatus === 'downloading'}
+                    onClick={async () => { setUpdateStatus('checking'); await (window.api as any)?.checkForUpdates?.(); }}>
+                    Check
+                  </button>
+                  {updateStatus === 'ready' && (
+                    <button className="btn-sm primary" onClick={() => (window.api as any)?.installUpdate?.()}>
+                      Install &amp; Restart
+                    </button>
+                  )}
                 </div>
               </div>
-              <div className="settings-row" style={{ borderBottom: 'none' }}>
-                <div className="settings-row-info">
-                  <div className="settings-row-label">chiaki-ng (Remote Play)</div>
-                  <div className="settings-row-desc">
-                    {!chiakiUpd && 'PlayStation Remote Play engine'}
-                    {chiakiUpd?.checking && 'Checking for updates...'}
-                    {chiakiUpd?.hasUpdate && `Update available: v${chiakiUpd.latest} (current: v${chiakiUpd.current})`}
-                    {chiakiUpd?.hasUpdate === false && `Up to date (v${chiakiUpd.current})`}
-                    {chiakiUpd?.updating && 'Updating...'}
-                    {chiakiUpd?.done && `Updated to v${chiakiUpd.version}`}
-                    {chiakiUpd?.error && `Error: ${chiakiUpd.error}`}
-                  </div>
+
+              {/* chiaki-ng */}
+              <div className="sys-update-card">
+                <div className="sys-update-card-top">
+                  <div className="sys-update-card-name">chiaki-ng</div>
+                  {(chiakiUpd?.current || chiakiUpd?.hasUpdate === false) && (
+                    <div className="sys-update-card-ver">v{chiakiUpd.current}</div>
+                  )}
+                  {chiakiUpd?.hasUpdate && <span className="sys-update-badge new">v{chiakiUpd.latest} available</span>}
+                  {chiakiUpd?.hasUpdate === false && <span className="sys-update-badge ok">Up to date</span>}
+                  {chiakiUpd?.checking && <span className="sys-update-badge busy">Checking…</span>}
+                  {chiakiUpd?.updating && <span className="sys-update-badge busy">Updating…</span>}
+                  {chiakiUpd?.done && <span className="sys-update-badge ok">Updated to v{chiakiUpd.version}</span>}
+                  {chiakiUpd?.error && <span className="sys-update-badge err" title={chiakiUpd.error}>Error</span>}
                 </div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button className="btn-sm" disabled={chiakiUpd?.checking || chiakiUpd?.updating} onClick={async () => {
-                    setChiakiUpd({ checking: true });
-                    try {
-                      const s = await (window.api as any)?.getChiakiStatus?.();
-                      if (!s?.installed) { setChiakiUpd({ error: 'Not installed' }); return; }
-                      const r = await (window.api as any)?.chiakiCheckUpdate?.();
-                      if (r?.hasUpdate) setChiakiUpd({ current: r.current, latest: r.latest, hasUpdate: true });
-                      else setChiakiUpd({ current: r?.current || s.version, hasUpdate: false });
-                    } catch (e: any) { setChiakiUpd({ error: e.message }); }
-                  }}>Check</button>
-                  {chiakiUpd?.hasUpdate && (
-                    <button className="btn-sm primary" disabled={chiakiUpd?.updating} onClick={async () => {
-                      setChiakiUpd((prev: any) => ({ ...prev, updating: true }));
+                <div className="sys-update-card-desc">PlayStation Remote Play engine</div>
+                <div className="sys-update-card-actions">
+                  <button className="btn-sm" disabled={chiakiUpd?.checking || chiakiUpd?.updating}
+                    onClick={async () => {
+                      setChiakiUpd({ checking: true });
                       try {
-                        const r = await (window.api as any)?.chiakiUpdate?.();
-                        if (r?.ok) setChiakiUpd({ done: true, version: r.version });
-                        else setChiakiUpd({ error: r?.error || 'Update failed' });
+                        const s = await (window.api as any)?.getChiakiStatus?.();
+                        if (!s?.installed) { setChiakiUpd({ error: 'Not installed' }); return; }
+                        const r = await (window.api as any)?.chiakiCheckUpdate?.();
+                        if (r?.hasUpdate) setChiakiUpd({ current: r.current, latest: r.latest, hasUpdate: true });
+                        else setChiakiUpd({ current: r?.current || s.version, hasUpdate: false });
                       } catch (e: any) { setChiakiUpd({ error: e.message }); }
-                    }}>Update</button>
+                    }}>Check</button>
+                  {chiakiUpd?.hasUpdate && (
+                    <button className="btn-sm primary" disabled={chiakiUpd?.updating}
+                      onClick={async () => {
+                        setChiakiUpd((prev: any) => ({ ...prev, updating: true }));
+                        try {
+                          const r = await (window.api as any)?.chiakiUpdate?.();
+                          if (r?.ok) setChiakiUpd({ done: true, version: r.version });
+                          else setChiakiUpd({ error: r?.error || 'Update failed' });
+                        } catch (e: any) { setChiakiUpd({ error: e.message }); }
+                      }}>Update</button>
                   )}
                 </div>
               </div>

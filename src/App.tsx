@@ -644,7 +644,12 @@ export default function App() {
       if (p.done) {
         setMetaProgress((prev: any) => prev ? { ...prev, phase: 'done' } : null);
       } else {
-        setMetaProgress((prev: any) => prev ? { ...prev, phase: 'covers', coverRemaining: p.remaining } : null);
+        setMetaProgress((prev: any) => {
+          if (!prev) return null;
+          // Capture the initial cover count on first cover progress event
+          const coverTotal = prev.coverTotal || p.remaining;
+          return { ...prev, phase: 'covers', coverTotal, coverRemaining: p.remaining };
+        });
       }
     });
     try {
@@ -1405,55 +1410,39 @@ export default function App() {
       {toast !== '' && <Toast msg={toast} onDone={() => setToast('')} />}
 
       {importProgress && importProgress.status && (
-        <div style={{ position: 'fixed', bottom: 72, right: 20, zIndex: 10100, width: 300, background: 'var(--glass-heavy, rgba(20,20,30,0.96))', border: '1px solid var(--glass-border)', borderRadius: 12, padding: '12px 16px', boxShadow: '0 8px 32px rgba(0,0,0,0.5)', backdropFilter: 'blur(12px)', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div className="subtle-pill" onClick={() => { if (importProgress.status === 'done' || importProgress.status === 'error') setImportProgress(null); }}>
           {importProgress.status !== 'done' && importProgress.status !== 'error'
-            ? <div style={{ width: 22, height: 22, border: '2px solid rgba(255,255,255,0.1)', borderTopColor: 'var(--accent)', borderRadius: '50%', flexShrink: 0, animation: 'spin 0.8s linear infinite' }} />
-            : <div style={{ width: 22, height: 22, borderRadius: '50%', flexShrink: 0, background: importProgress.status === 'error' ? 'var(--red)' : 'var(--green)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12 }}>{importProgress.status === 'error' ? '✕' : '✓'}</div>
+            ? <div className="subtle-pill-spinner" />
+            : <div className="subtle-pill-icon" style={{ background: importProgress.status === 'error' ? 'var(--red)' : 'var(--green)' }}>{importProgress.status === 'error' ? '✕' : '✓'}</div>
           }
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 2 }}>
-              {importProgress.status === 'done' ? 'Import complete' : importProgress.status === 'error' ? 'Import failed' : 'Importing ' + importProgress.provider + '…'}
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--text-3)' }}>
-              {importProgress.status === 'error' && importProgress.message
-                ? importProgress.message
-                : `${importProgress.processed || 0} processed · ${importProgress.imported || 0} new · ${importProgress.updated || 0} updated`}
-            </div>
-          </div>
-          <button className="btn-flat" style={{ padding: '2px 6px', fontSize: 11, flexShrink: 0 }} onClick={() => setImportProgress(null)}>✕</button>
+          <span className="subtle-pill-text">
+            {importProgress.status === 'done' ? 'Import complete' : importProgress.status === 'error' ? 'Import failed'
+              : 'Importing ' + (importProgress.provider || '') + (importProgress.processed ? ' · ' + importProgress.processed : '')}
+          </span>
         </div>
       )}
 
       {metaProgress && (
-        <div style={{ position: 'fixed', bottom: importProgress ? 144 : 72, right: 20, zIndex: 10100, width: 320, background: 'var(--glass-heavy, rgba(20,20,30,0.96))', border: '1px solid var(--glass-border)', borderRadius: 12, padding: '12px 16px', boxShadow: '0 8px 32px rgba(0,0,0,0.5)', backdropFilter: 'blur(12px)', transition: 'bottom 0.2s ease' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+        <div className="subtle-pill" style={importProgress?.status ? { bottom: 46 } : undefined}
+          onClick={() => { if (metaProgress.phase === 'done') setMetaProgress(null); }}>
+          {metaProgress.phase === 'done'
+            ? <div className="subtle-pill-icon" style={{ background: 'var(--green)' }}>✓</div>
+            : <div className="subtle-pill-spinner" />
+          }
+          <span className="subtle-pill-text">
             {metaProgress.phase === 'done'
-              ? <div style={{ width: 20, height: 20, borderRadius: '50%', background: 'var(--green)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, flexShrink: 0 }}>✓</div>
-              : <div style={{ width: 20, height: 20, border: '2px solid rgba(255,255,255,0.1)', borderTopColor: 'var(--accent)', borderRadius: '50%', flexShrink: 0, animation: 'spin 0.8s linear infinite' }} />
-            }
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 12, fontWeight: 700 }}>
-                {metaProgress.phase === 'done' ? 'All done' : metaProgress.phase === 'covers' ? 'Downloading cover art…' : 'Fetching metadata…'}
-              </div>
-              <div style={{ fontSize: 10, color: 'var(--text-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {metaProgress.phase === 'done'
-                  ? (metaProgress.updated || 0) + ' updated · ' + (metaProgress.failed || 0) + ' failed'
-                  : metaProgress.phase === 'covers'
-                    ? (metaProgress.coverRemaining || 0) > 0 ? (metaProgress.coverRemaining + ' remaining') : 'Finishing up…'
-                    : metaProgress.name || 'Starting…'}
-              </div>
-            </div>
-            <button className="btn-flat" style={{ padding: '2px 6px', fontSize: 11, flexShrink: 0 }} onClick={() => setMetaProgress(null)}>✕</button>
-          </div>
-          {metaProgress.phase !== 'done' && metaProgress.total > 0 && (
-            <div style={{ position: 'relative', height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.06)', overflow: 'hidden' }}>
-              <div style={{ position: 'absolute', inset: '0 auto 0 0', width: Math.min(100, ((metaProgress.current || 0) / metaProgress.total) * 100) + '%', background: 'var(--accent)', borderRadius: 2, transition: 'width 0.3s ease' }} />
-            </div>
-          )}
-          {metaProgress.phase === 'metadata' && metaProgress.total > 0 && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 10, color: 'var(--text-4)' }}>
-              <span>{metaProgress.current || 0} / {metaProgress.total}</span>
-              <span>{metaProgress.updated || 0} updated{metaProgress.failed > 0 ? ' · ' + metaProgress.failed + ' failed' : ''}</span>
+              ? 'Synced · ' + (metaProgress.updated || 0) + ' updated'
+              : metaProgress.phase === 'covers'
+                ? 'Syncing' + ((metaProgress.coverRemaining || 0) > 0 ? ' · ' + metaProgress.coverRemaining + ' covers' : '')
+                : 'Syncing' + (metaProgress.total > 0 ? ' · ' + (metaProgress.current || 0) + '/' + metaProgress.total : '')}
+          </span>
+          {metaProgress.phase !== 'done' && (
+            <div className="subtle-pill-bar">
+              <div className="subtle-pill-bar-fill" style={{ width:
+                metaProgress.phase === 'covers'
+                  ? (50 + (1 - (metaProgress.coverRemaining || 0) / Math.max(1, metaProgress.coverTotal || 1)) * 50) + '%'
+                  : metaProgress.total > 0 ? (((metaProgress.current || 0) / metaProgress.total) * 50) + '%' : '0%'
+              }} />
             </div>
           )}
         </div>
