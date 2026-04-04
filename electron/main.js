@@ -307,15 +307,14 @@ function createAuthWindow(width, height, authSession) {
 // ─── HTTP helpers ─────────────────────────────────────────────────────────────
 const { httpGetJson, httpPost } = require('./providers/http');
 
-// ─── Bundled chiaki-ng path resolution ───────────────────────────────────────
-// In dev: resources/chiaki-ng/  relative to project root
-// In packaged app: process.resourcesPath/chiaki-ng/
+// ─── chiaki-ng path resolution ───────────────────────────────────────────────
+// Priority: userData/chiaki-ng (downloaded by app) → dev resources fallback
 function getChiakiDir() {
-  // Packaged (asar) — resourcesPath points to <app>/resources/
-  const packaged = path.join(process.resourcesPath || '', 'chiaki-ng');
-  if (fs.existsSync(packaged)) return packaged;
+  // Primary: userData — chiaki is downloaded here at runtime
+  const userData = path.join(app.getPath('userData'), 'chiaki-ng');
+  if (fs.existsSync(userData)) return userData;
 
-  // Dev (Vite) — copied to dist-electron/resources/chiaki-ng by vite config
+  // Dev fallback — dist-electron/resources/chiaki-ng (if manually placed for testing)
   const dev = path.join(__dirname, 'resources', 'chiaki-ng');
   if (fs.existsSync(dev)) return dev;
 
@@ -3778,7 +3777,8 @@ function autoSetupChiakiIfMissing() {
     return;
   }
 
-  const child = spawn('powershell', ['-ExecutionPolicy', 'Bypass', '-File', scriptPath], { cwd: __dirname, stdio: 'pipe' });
+  const chiakiInstallDir = path.join(app.getPath('userData'), 'chiaki-ng');
+  const child = spawn('powershell', ['-ExecutionPolicy', 'Bypass', '-File', scriptPath, '-InstallDir', chiakiInstallDir], { cwd: __dirname, stdio: 'pipe' });
   let output = '';
   child.stdout.on('data', d => output += d.toString());
   child.stderr.on('data', d => output += d.toString());
@@ -3858,8 +3858,9 @@ ipcMain.handle('chiaki:update', async () => {
       ? path.join(process.resourcesPath, 'scripts', 'setup-chiaki.ps1')
       : path.join(__dirname, 'scripts', 'setup-chiaki.ps1');
     if (!fs.existsSync(scriptPath)) return { error: 'setup-chiaki.ps1 not found at: ' + scriptPath };
+    const chiakiInstallDir = path.join(app.getPath('userData'), 'chiaki-ng');
     return new Promise((resolve) => {
-      const child = spawn('powershell', ['-ExecutionPolicy', 'Bypass', '-File', scriptPath, '-Force'], { cwd: __dirname, stdio: 'pipe' });
+      const child = spawn('powershell', ['-ExecutionPolicy', 'Bypass', '-File', scriptPath, '-Force', '-InstallDir', chiakiInstallDir], { cwd: __dirname, stdio: 'pipe' });
       let output = '';
       child.stdout.on('data', d => output += d.toString());
       child.stderr.on('data', d => output += d.toString());

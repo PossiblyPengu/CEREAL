@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { Game, Settings } from '../types';
 import { SidePanel } from './SidePanel';
-import { THEMES } from '../constants';
+import { THEMES, PLATFORMS } from '../constants';
 import { applyTheme, applyUiScale, fmtTime } from '../utils';
 
 interface SettingsPanelProps {
@@ -38,6 +38,8 @@ export function SettingsPanel({
   const [updateProgress, setUpdateProgress] = useState(0);
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [chiakiUpd, setChiakiUpd] = useState<any>(null);
+  const [specs, setSpecs] = useState<any>(null);
+  const [specsLoading, setSpecsLoading] = useState(false);
   const [activeSection, setActiveSection] = useState('appearance');
 
   useEffect(() => {
@@ -51,6 +53,11 @@ export function SettingsPanel({
       }
       if ((window.api as any)?.getDiscordStatus) {
         try { const ds = await (window.api as any).getDiscordStatus(); setDiscordStatus(ds || null); } catch (_) {}
+      }
+      if ((window.api as any)?.getSystemSpecs && !specs) {
+        setSpecsLoading(true);
+        try { const s = await (window.api as any).getSystemSpecs(); setSpecs(s); } catch (_) {}
+        setSpecsLoading(false);
       }
     })();
     setChiakiUpd(null);
@@ -139,6 +146,7 @@ export function SettingsPanel({
     { id: 'library', label: 'Library', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg> },
     { id: 'behavior', label: 'Behavior', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> },
     { id: 'system', label: 'System', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg> },
+    { id: 'about', label: 'About', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg> },
     { id: 'danger', label: 'Danger Zone', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> },
   ];
 
@@ -462,6 +470,109 @@ export function SettingsPanel({
             )}
 
           </div>}
+
+          {/* About */}
+          {activeSection === 'about' && (() => {
+            const gameList = Array.isArray(games) ? games : [];
+            const gameCount = gameList.length;
+            const installedCount = gameList.filter(g => g.installed !== false).length;
+            const favoriteCount = gameList.filter(g => g.favorite).length;
+            const totalMins = gameList.reduce((s: number, g: Game) => s + (g.playtimeMinutes || 0), 0);
+            const platCounts: Record<string, number> = {};
+            for (const g of gameList) { const p = g.platform || 'custom'; platCounts[p] = (platCounts[p] || 0) + 1; }
+            const platRows = Object.entries(platCounts).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]).map(([key, count]) => ({ key, label: PLATFORMS[key]?.label || key, color: (PLATFORMS[key] as any)?.color || 'var(--text-3)', count }));
+            const maxPlat = Math.max(...platRows.map(r => r.count), 1);
+            const mostPlayed = [...gameList].filter(g => (g.playtimeMinutes || 0) > 0).sort((a, b) => (b.playtimeMinutes || 0) - (a.playtimeMinutes || 0)).slice(0, 3);
+            return (
+              <div className="settings-section">
+                {/* Hero */}
+                <div className="about-hero">
+                  <div className="about-hero-name">Cereal</div>
+                  <div className="about-hero-row">
+                    <span className="settings-header-ver">v{appVersion}</span>
+                    <span className="about-hero-tagline">Your universal game launcher</span>
+                  </div>
+                </div>
+
+                {/* Stats */}
+                <div className="lib-section-title" style={{ marginTop: 18 }}>Library</div>
+                <div className="about-stats-grid">
+                  <div className="about-stat-box">
+                    <div className="about-stat-val">{gameCount}</div>
+                    <div className="about-stat-lbl">Games</div>
+                  </div>
+                  <div className="about-stat-box">
+                    <div className="about-stat-val">{installedCount}</div>
+                    <div className="about-stat-lbl">Installed</div>
+                  </div>
+                  <div className="about-stat-box">
+                    <div className="about-stat-val">{favoriteCount}</div>
+                    <div className="about-stat-lbl">Favorites</div>
+                  </div>
+                  <div className="about-stat-box">
+                    <div className="about-stat-val">{totalMins ? fmtTime(totalMins) : '—'}</div>
+                    <div className="about-stat-lbl">Playtime</div>
+                  </div>
+                </div>
+
+                {/* Platforms */}
+                {platRows.length > 0 && <>
+                  <div className="lib-section-title" style={{ marginTop: 16 }}>Platforms</div>
+                  <div className="about-plat-list">
+                    {platRows.map(({ key, label, color, count }) => (
+                      <div className="about-plat-row" key={key}>
+                        <div className="about-plat-name" style={{ color }}>{label}</div>
+                        <div className="about-plat-bar-wrap">
+                          <div className="about-plat-bar-fill" style={{ width: `${(count / maxPlat) * 100}%`, background: color + '66' }} />
+                        </div>
+                        <div className="about-plat-count">{count}</div>
+                      </div>
+                    ))}
+                  </div>
+                </>}
+
+                {/* Most Played */}
+                {mostPlayed.length > 0 && <>
+                  <div className="lib-section-title" style={{ marginTop: 16 }}>Most Played</div>
+                  <div className="about-top-list">
+                    {mostPlayed.map((g, i) => (
+                      <div className="about-top-row" key={g.id}>
+                        <div className="about-top-rank">{i + 1}</div>
+                        <div className="about-top-name">{g.name}</div>
+                        <div className="about-top-time">{fmtTime(g.playtimeMinutes || 0)}</div>
+                      </div>
+                    ))}
+                  </div>
+                </>}
+
+                {/* System Specs */}
+                <div className="lib-section-title" style={{ marginTop: 16 }}>System</div>
+                <div className="about-spec-card">
+                  {specsLoading ? (
+                    <div className="about-spec-row"><span className="about-spec-lbl">⋯</span><span className="about-spec-val" style={{ opacity: 0.4 }}>Loading…</span></div>
+                  ) : specs ? (<>
+                    {specs.cpuModel && <div className="about-spec-row"><span className="about-spec-lbl">CPU</span><span className="about-spec-val">{specs.cpuModel}{specs.cpuCount > 1 ? ` · ${specs.cpuCount} cores` : ''}</span></div>}
+                    {specs.ramGb > 0 && <div className="about-spec-row"><span className="about-spec-lbl">RAM</span><span className="about-spec-val">{specs.ramGb} GB</span></div>}
+                    {specs.gpuName && <div className="about-spec-row"><span className="about-spec-lbl">GPU</span><span className="about-spec-val">{specs.gpuName}</span></div>}
+                  </>) : <div className="about-spec-row"><span className="about-spec-lbl" style={{ opacity: 0.4 }}>—</span><span className="about-spec-val" style={{ opacity: 0.4 }}>Unavailable</span></div>}
+                </div>
+
+                {/* Storage */}
+                {dataPath && <>
+                  <div className="lib-section-title" style={{ marginTop: 16 }}>Storage</div>
+                  <div className="lib-data-path">
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div className="lib-data-path-label">Data folder</div>
+                      <div className="lib-data-path-val">{dataPath}</div>
+                    </div>
+                    <button className="btn-sm" style={{ flexShrink: 0 }} onClick={() => (window.api as any)?.openExternal?.('file:///' + dataPath.replace(/\\/g, '/'))}>Open</button>
+                  </div>
+                </>}
+
+                <div className="about-footer">Built with Electron · React · Vite</div>
+              </div>
+            );
+          })()}
 
           {/* Danger Zone */}
           {activeSection === 'danger' && <div className="settings-section">

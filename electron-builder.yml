@@ -9,15 +9,10 @@ directories:
 files:
   - dist/**
   - dist-electron/**
-  - "!dist-electron/resources/chiaki-ng/**"   # excluded from asar; added as extraResources
   - node_modules/**
   - package.json
 
 extraResources:
-  - from: dist-electron/resources/chiaki-ng
-    to: chiaki-ng
-    filter:
-      - "**/*"
   - from: dist-electron/scripts
     to: scripts
     filter:

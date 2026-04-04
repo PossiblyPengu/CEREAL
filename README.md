@@ -1,63 +1,83 @@
-# React + TypeScript + Vite
+# C E R E A L
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+**A universal game launcher for Windows.**
 
-Currently, two official plugins are available:
+Cereal aggregates your game libraries from Steam, Epic Games, GOG, itch.io, Battle.net, EA, Ubisoft, Xbox Cloud Gaming, and PlayStation 5 into a single polished interface. Add any executable as a custom game, stream your PS5 via Chiaki-ng, or play Xbox Cloud games in-app — all from one place.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+---
 
-## React Compiler
+## Features
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- **Multi-platform library** — automatically detects installed games from Steam, Epic, GOG, itch.io, Battle.net, EA App, and Ubisoft Connect
+- **Custom games** — add any `.exe` with its own artwork
+- **SteamGridDB integration** — automatic cover and header art with optional API key for higher resolution
+- **Orbit & card views** — switch between a cinematic orbit layout and a traditional card grid
+- **Playtime tracking** — automatic session tracking synced to each game
+- **Favorites & categories** — organize and filter your library your way
+- **PlayStation 5 streaming** — launch Chiaki-ng sessions directly from the launcher
+- **Xbox Cloud Gaming** — stream Xbox games through a built-in browser overlay
+- **Discord Rich Presence** — live game status in your Discord profile
+- **Windows media controls** — SMTC integration so media keys work in-game
+- **Theming** — multiple themes and custom accent colors
 
-## Expanding the ESLint configuration
+---
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## Download
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+Grab the latest installer from the [Releases](../../releases/latest) page:
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```
+Cereal-Setup-x.x.x.exe
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+The NSIS installer lets you choose your install directory and creates Start Menu and Desktop shortcuts.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+---
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
+## Building from Source
+
+**Requirements:** Node.js 20+, .NET 8 SDK, Git
+
+```powershell
+# Install dependencies
+npm install
+
+# Start in development mode (builds native tools then launches Vite + Electron)
+.\dev.ps1
+
+# Build a distributable installer
+npm run build
+npx electron-builder --win
+```
+
+The `publish.ps1` script bumps the version, generates release notes from conventional commits, tags, and pushes — CI picks it up from there.
+
+```powershell
+# Patch bump (default)
+.\publish.ps1
+
+# Minor or major bump
+.\publish.ps1 -Bump minor
+.\publish.ps1 -Bump major
+```
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| UI | React 19, TypeScript |
+| Desktop shell | Electron |
+| Bundler | Vite |
+| Native tools | .NET 8 (MediaInfoTool) |
+| Updates | electron-updater (GitHub Releases) |
+
+---
+
+## License
+
+© 2026 PossiblyPengu. All rights reserved.
       // Enable lint rules for React DOM
       reactDom.configs.recommended,
     ],

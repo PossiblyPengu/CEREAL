@@ -24,3 +24,14 @@ dist-ssr
 *.sw?
 
 .fake
+
+# .NET build artifacts
+electron/native/MediaInfoTool/bin/
+electron/native/MediaInfoTool/obj/
+electron/native/MediaInfoTool/publish/
+
+# electron-builder generated
+release/
+
+# chiaki-ng binaries — downloaded at build time by setup-chiaki.ps1
+dist-electron/resources/chiaki-ng/

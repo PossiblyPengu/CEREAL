@@ -1,12 +1,18 @@
 #Requires -Version 5.1
 param(
-    [switch]$Force
+    [switch]$Force,
+    [string]$InstallDir = ''
 )
 
 $ErrorActionPreference = 'Stop'
 
-$repo        = 'streetpea/chiaki-ng'
-$installDir  = [System.IO.Path]::GetFullPath("$PSScriptRoot\..\resources\chiaki-ng")
+$repo = 'streetpea/chiaki-ng'
+
+# InstallDir is passed by the app (userData/chiaki-ng). Fall back to a local path for manual use.
+if (-not $InstallDir) {
+    $InstallDir = [System.IO.Path]::GetFullPath("$PSScriptRoot\..\resources\chiaki-ng")
+}
+$installDir  = $InstallDir
 $versionFile = Join-Path $installDir '.version'
 
 # Already installed?
