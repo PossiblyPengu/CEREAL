@@ -3833,19 +3833,15 @@ ipcMain.handle('chiaki:status', () => {
 ipcMain.handle('chiaki:checkUpdate', async () => {
   try {
     const repo = process.env.CHIAKI_RELEASE_REPO || 'streetpea/chiaki-ng';
-    const res = await new Promise((resolve, reject) => {
-      const req = https.get(`https://api.github.com/repos/${repo}/releases/latest`, { headers: { 'User-Agent': 'cereal-launcher' } }, (resp) => {
-        let body = '';
-        resp.on('data', c => body += c);
-        resp.on('end', () => { try { resolve(JSON.parse(body)); } catch (e) { reject(e); } });
-      });
-      req.on('error', reject);
-      req.setTimeout(10000, () => { req.destroy(); reject(new Error('timeout')); });
+    const res = await net.fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
+      headers: { 'User-Agent': 'cereal-launcher' }
     });
-    const latestTag = res.tag_name || null;
+    if (!res.ok) throw new Error(`GitHub API returned ${res.status}`);
+    const data = await res.json();
+    const latestTag = data.tag_name || null;
     const currentVersion = getBundledChiakiVersion();
     const hasUpdate = latestTag && (!currentVersion || latestTag !== currentVersion);
-    return { current: currentVersion, latest: latestTag, hasUpdate: !!hasUpdate, releaseName: res.name || latestTag };
+    return { current: currentVersion, latest: latestTag, hasUpdate: !!hasUpdate, releaseName: data.name || latestTag };
   } catch (e) {
     return { error: e.message };
   }

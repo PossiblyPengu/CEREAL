@@ -35,18 +35,20 @@ try {
     exit 1
 }
 
-# Look for a Windows x64 zip asset
+# Prefer the portable zip (contains chiaki-ng.exe directly)
 $asset = $release.assets |
-    Where-Object { $_.name -match 'win' -and $_.name -match 'x64' -and $_.name -match '\.zip$' } |
+    Where-Object { $_.name -match 'win' -and $_.name -match 'x64' -and $_.name -match 'portable' -and $_.name -match '\.zip$' } |
     Select-Object -First 1
 
 if (-not $asset) {
-    # Fallback: any zip asset
-    $asset = $release.assets | Where-Object { $_.name -match '\.zip$' } | Select-Object -First 1
+    # Fallback: any Windows x64 zip that isn't an installer wrapper
+    $asset = $release.assets |
+        Where-Object { $_.name -match 'win' -and $_.name -match 'x64' -and $_.name -match '\.zip$' -and $_.name -notmatch 'installer' } |
+        Select-Object -First 1
 }
 
 if (-not $asset) {
-    Write-Error 'No suitable Windows zip asset found in the latest chiaki-ng release.'
+    Write-Error 'No suitable Windows x64 portable zip found in the latest chiaki-ng release.'
     exit 1
 }
 
