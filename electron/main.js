@@ -168,7 +168,6 @@ function persistAccountData(platform, data = {}) {
 }
 
 // ─── Discord Rich Presence ─────────────────────────────────────────────────────
-const DiscordRPC = require('discord-rpc');
 const DISCORD_CLIENT_ID = '1338877643523145789'; // Cereal Launcher app ID
 let discordRpc = null;
 let discordReady = false;
@@ -177,6 +176,7 @@ let discordCurrentGame = null;
 function connectDiscord() {
   if (discordRpc) return;
   try {
+    const DiscordRPC = require('discord-rpc');
     discordRpc = new DiscordRPC.Client({ transport: 'ipc' });
     discordRpc.on('ready', () => {
       discordReady = true;
@@ -412,11 +412,12 @@ async function processCoverQueue() {
       try {
         const game = db.games.find(g => g.id === gid);
         if (!game) return;
-        // Download cover — try each URL source in order until one works
+        // Download cover — only portrait coverUrl is used. Wide headerUrl/screenshots are
+        // kept in their own slots and never downloaded as the cover image.
         const hasValidCover = game.localCoverPath && fs.existsSync(game.localCoverPath) && (() => { try { return fs.statSync(game.localCoverPath).size >= 1024; } catch(e) { return false; } })();
         if (!hasValidCover) {
           if (game.localCoverPath) { cleanupFile(game.localCoverPath); game.localCoverPath = null; }
-          let candidates = [game.coverUrl, game.headerUrl, ...(game.screenshots || [])].filter(Boolean);
+          let candidates = [game.coverUrl, game.sgdbCoverUrl].filter(Boolean);
           let downloaded = false;
           for (const coverUrl of candidates) {
             try {
@@ -431,35 +432,30 @@ async function processCoverQueue() {
               break;
             } catch (e) { /* try next candidate */ }
           }
-          // If all candidates failed and we only had a coverUrl, try fetching metadata
-          // to get headerUrl / screenshots, then retry with the new URLs
+          // No portrait cover yet — fetch metadata which may find a portrait capsule URL
           if (!downloaded && !game.headerUrl) {
             try {
               const meta = await fetchGameMetadata(game);
               if (meta) {
                 applyMetadataToGame(game, meta);
                 anyChanged = true;
-                const newCandidates = [game.coverUrl, game.headerUrl, ...(game.screenshots || [])].filter(Boolean);
-                // Only try URLs we haven't already tried
-                const tried = new Set(candidates);
-                for (const url of newCandidates) {
-                  if (tried.has(url)) continue;
+                // Only retry with the (potentially new) portrait coverUrl
+                if (game.coverUrl && !candidates.includes(game.coverUrl)) {
                   try {
-                    const ext = path.extname(new URL(url).pathname).split('?')[0] || '.jpg';
+                    const ext = path.extname(new URL(game.coverUrl).pathname).split('?')[0] || '.jpg';
                     const dest = path.join(coversDir, 'cover_' + gid + ext);
-                    await downloadToFile(url, dest);
+                    await downloadToFile(game.coverUrl, dest);
                     game.localCoverPath = dest;
                     game._imgStamp = Date.now();
                     coverRetries.delete(gid);
                     downloaded = true;
-                    break;
-                  } catch (e) { /* try next */ }
+                  } catch (e) { /* metadata cover also failed */ }
                 }
               }
             } catch (e) { /* metadata fetch failed */ }
           }
           if (!downloaded) {
-            const total = [game.coverUrl, game.headerUrl, ...(game.screenshots || [])].filter(Boolean).length;
+            const total = [game.coverUrl].filter(Boolean).length;
             if (total > 0) throw new Error('All cover URLs failed (' + total + ' candidates)');
           }
         }
@@ -1466,8 +1462,8 @@ app.whenReady().then(() => {
     mainWindow.hide();
   }
 
-  // Auto-connect Discord if enabled
-  if (isDiscordEnabled()) connectDiscord();
+  // Auto-connect Discord if enabled — delayed so it doesn't slow window creation
+  if (isDiscordEnabled()) setTimeout(connectDiscord, 8000);
 
   // Auto-update: check after a short delay
   autoUpdater.autoDownload = true;
@@ -1643,15 +1639,20 @@ async function fetchSteamMetadata(appId) {
     }
 
     // Validate library capsule exists (many software/tools/DLC don't have one)
+    // Try 2x first, then 1x — never fall back to wide header/screenshots for coverUrl
     let coverUrl = '';
-    const capsuleUrl = `https://shared.steamstatic.com/store_item_assets/steam/apps/${appId}/library_600x900_2x.jpg`;
-    try {
-      const probe = await net.fetch(capsuleUrl, { method: 'HEAD' });
-      if (probe.ok) coverUrl = capsuleUrl;
-    } catch (e) {}
-    // Fallback to header_image (wide banner) or screenshots
-    if (!coverUrl) coverUrl = info.header_image || '';
-    if (!coverUrl && info.screenshots?.length) coverUrl = info.screenshots[0].path_full || '';
+    const capsuleUrls = [
+      `https://shared.steamstatic.com/store_item_assets/steam/apps/${appId}/library_600x900_2x.jpg`,
+      `https://shared.steamstatic.com/store_item_assets/steam/apps/${appId}/library_600x900.jpg`,
+    ];
+    for (const url of capsuleUrls) {
+      try {
+        const probe = await net.fetch(url, { method: 'HEAD' });
+        if (probe.ok) { coverUrl = url; break; }
+      } catch (e) {}
+    }
+    // coverUrl intentionally left empty if no portrait capsule exists —
+    // wide banners/screenshots are kept in headerUrl/screenshots only
 
     return {
       description: (info.short_description || '').slice(0, 500),
@@ -1828,11 +1829,13 @@ async function fetchGameMetadata(game) {
   }
 
   // Enhance with SteamGridDB art if API key is available
+  // Official Steam portrait capsule has priority — SGDB fills the gap or serves as download fallback
   if (meta && ms.steamGridDbKey) {
     try {
       const art = await fetchSteamGridDBArt(game.name, ms.steamGridDbKey);
       if (art) {
-        if (art.coverUrl) meta.coverUrl = art.coverUrl;
+        if (art.coverUrl && !meta.coverUrl) meta.coverUrl = art.coverUrl;
+        else if (art.coverUrl) meta.sgdbCoverUrl = art.coverUrl;
         if (art.headerUrl) meta.headerUrl = art.headerUrl;
       }
     } catch (e) {}
@@ -1849,10 +1852,9 @@ function applyMetadataToGame(game, meta) {
   let changed = false;
 
   // Only fill in missing data — don't overwrite user customizations
-  if (!game.coverUrl) {
-    const coverFallback = meta.coverUrl || meta.headerUrl || (meta.screenshots && meta.screenshots[0]) || '';
-    if (coverFallback) { game.coverUrl = coverFallback; changed = true; }
-  }
+  // coverUrl must be a portrait image — never fall back to landscape header/screenshots
+  if (!game.coverUrl && meta.coverUrl) { game.coverUrl = meta.coverUrl; changed = true; }
+  if (!game.sgdbCoverUrl && meta.sgdbCoverUrl) { game.sgdbCoverUrl = meta.sgdbCoverUrl; changed = true; }
   if (!game.description && meta.description) { game.description = meta.description; changed = true; }
   if (!game.developer && meta.developer) { game.developer = meta.developer; changed = true; }
   if (!game.publisher && meta.publisher) { game.publisher = meta.publisher; changed = true; }
@@ -1986,12 +1988,22 @@ ipcMain.handle('games:update', (event, updatedGame) => {
   if (idx !== -1) {
     const prev = db.games[idx];
     const merged = { ...prev, ...updatedGame };
-    // If cover/header changed on update, bump the stamp so renderer reloads
+    // If cover/header changed on update, clear the cached local file so the
+    // cover queue re-downloads from the new URL instead of keeping the stale file
     try {
       const coverChanged = (typeof updatedGame.coverUrl === 'string' && updatedGame.coverUrl !== prev.coverUrl);
       const headerChanged = (typeof updatedGame.headerUrl === 'string' && updatedGame.headerUrl !== prev.headerUrl);
-      if (coverChanged || headerChanged) merged._imgStamp = Date.now();
-      else merged._imgStamp = prev._imgStamp;
+      if (coverChanged) {
+        if (prev.localCoverPath) { try { fs.unlinkSync(prev.localCoverPath); } catch (_) {} }
+        merged.localCoverPath = null;
+        merged._imgStamp = Date.now();
+      }
+      if (headerChanged) {
+        if (prev.localHeaderPath) { try { fs.unlinkSync(prev.localHeaderPath); } catch (_) {} }
+        merged.localHeaderPath = null;
+        merged._imgStamp = Date.now();
+      }
+      if (!coverChanged && !headerChanged) merged._imgStamp = prev._imgStamp;
     } catch (e) { merged._imgStamp = prev._imgStamp; }
     db.games[idx] = merged;
     saveDB(db);

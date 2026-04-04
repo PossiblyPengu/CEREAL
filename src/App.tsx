@@ -209,6 +209,9 @@ export default function App() {
   const dragInfo = useRef({ active: false, sx: 0, sy: 0, cx: 0, cy: 0, moved: false });
   const parallaxRefs = [useRef<HTMLDivElement>(null), useRef<HTMLDivElement>(null), useRef<HTMLDivElement>(null)];
   const parallaxSpeeds = [10, 30, 60];
+  const parallaxRafRef = useRef<number | null>(null);
+  const parallaxMouseRef = useRef({ cx: 0, cy: 0 });
+  const kbStateRef = useRef({ focusGame: null as any, showThemePicker: false, showLayoutPicker: false, showFilters: '' });
   const [globalArtPicker, setGlobalArtPicker] = useState<any>(null);
   const artResolve = useRef<((url: string | null) => void) | null>(null);
   const gpMouseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -220,16 +223,22 @@ export default function App() {
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (viewMode === 'cards') return;
-      const cx = e.clientX / window.innerWidth - 0.5;
-      const cy = e.clientY / window.innerHeight - 0.5;
-      for (let i = 0; i < 3; i++) {
-        if (parallaxRefs[i].current) {
-          parallaxRefs[i].current!.style.transform = `translate(${-cx * parallaxSpeeds[i]}px,${-cy * parallaxSpeeds[i]}px)`;
+      parallaxMouseRef.current = { cx: e.clientX / window.innerWidth - 0.5, cy: e.clientY / window.innerHeight - 0.5 };
+      if (parallaxRafRef.current !== null) return;
+      parallaxRafRef.current = requestAnimationFrame(() => {
+        parallaxRafRef.current = null;
+        const { cx, cy } = parallaxMouseRef.current;
+        for (let i = 0; i < 3; i++) {
+          if (parallaxRefs[i].current)
+            parallaxRefs[i].current!.style.transform = `translate(${-cx * parallaxSpeeds[i]}px,${-cy * parallaxSpeeds[i]}px)`;
         }
-      }
+      });
     };
-    window.addEventListener('mousemove', handler);
-    return () => window.removeEventListener('mousemove', handler);
+    window.addEventListener('mousemove', handler, { passive: true });
+    return () => {
+      window.removeEventListener('mousemove', handler);
+      if (parallaxRafRef.current !== null) { cancelAnimationFrame(parallaxRafRef.current); parallaxRafRef.current = null; }
+    };
   }, [viewMode]);
 
   useEffect(() => { camRef.current = cam; }, [cam]);
@@ -490,21 +499,25 @@ export default function App() {
     else document.body.removeAttribute('data-no-anim');
   }, [settings.showAnimations]);
 
-  // Keyboard shortcuts
+  // Keep a stable ref so the keyboard handler never needs to be re-registered
+  useEffect(() => { kbStateRef.current = { focusGame, showThemePicker, showLayoutPicker, showFilters }; });
+
+  // Keyboard shortcuts — registered once, reads state via ref
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); setShowSearch(true); }
       if ((e.ctrlKey || e.metaKey) && e.key === ',') { e.preventDefault(); setShowSettings(true); }
       if (e.key === 'Escape') {
-        if (focusGame) { setFocusGame(null); return; }
-        if (showThemePicker) { setShowThemePicker(false); return; }
-        if (showLayoutPicker) { setShowLayoutPicker(false); return; }
-        if (showFilters) { setShowFilters(''); return; }
+        const { focusGame: fg, showThemePicker: stp, showLayoutPicker: slp, showFilters: sf } = kbStateRef.current;
+        if (fg) { setFocusGame(null); return; }
+        if (stp) { setShowThemePicker(false); return; }
+        if (slp) { setShowLayoutPicker(false); return; }
+        if (sf) { setShowFilters(''); return; }
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [focusGame, showThemePicker, showLayoutPicker, showFilters]);
+  }, []);
 
   // Gamepad mouse visibility
   useEffect(() => {
