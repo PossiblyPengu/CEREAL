@@ -6,7 +6,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $repo        = 'streetpea/chiaki-ng'
-$installDir  = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..' 'resources' 'chiaki-ng'))
+$installDir  = [System.IO.Path]::GetFullPath("$PSScriptRoot\..\resources\chiaki-ng")
 $versionFile = Join-Path $installDir '.version'
 
 # Already installed?
