@@ -3330,12 +3330,7 @@ ipcMain.handle('settings:getDataPath', () => {
 });
 
 ipcMain.handle('settings:getAppVersion', () => {
-  try {
-    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf-8'));
-    return pkg.version || '1.0.0';
-  } catch (e) {
-    return '1.0.0';
-  }
+  return app.getVersion();
 });
 
 // ─── Auto-Update ──────────────────────────────────────────────────────────────
@@ -3837,8 +3832,8 @@ ipcMain.handle('chiaki:checkUpdate', async () => {
     });
     const latestTag = res.tag_name || null;
     const currentVersion = getBundledChiakiVersion();
-    const hasUpdate = latestTag && currentVersion && latestTag !== currentVersion;
-    return { current: currentVersion, latest: latestTag, hasUpdate, releaseName: res.name || latestTag };
+    const hasUpdate = latestTag && (!currentVersion || latestTag !== currentVersion);
+    return { current: currentVersion, latest: latestTag, hasUpdate: !!hasUpdate, releaseName: res.name || latestTag };
   } catch (e) {
     return { error: e.message };
   }

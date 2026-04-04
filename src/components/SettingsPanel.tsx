@@ -33,6 +33,7 @@ export function SettingsPanel({
   const [sgSavedKey, setSgSavedKey] = useState<{ hasSecret: boolean; fingerprint: string | null } | null>(null);
   const [sgStatus, setSgStatus] = useState<string | null>(null);
   const [updateStatus, setUpdateStatus] = useState<string | null>(null);
+  const [availableVersion, setAvailableVersion] = useState<string | null>(null);
   const [discordStatus, setDiscordStatus] = useState<{ ready: boolean; connected: boolean } | null>(null);
   const [updateProgress, setUpdateProgress] = useState(0);
   const [updateError, setUpdateError] = useState<string | null>(null);
@@ -59,10 +60,10 @@ export function SettingsPanel({
     if (!(window.api as any)?.onUpdateEvent) return;
     const unsub = (window.api as any).onUpdateEvent(({ type, data }: any) => {
       if (type === 'checking-for-update') setUpdateStatus('checking');
-      else if (type === 'update-available') setUpdateStatus('downloading');
+      else if (type === 'update-available') { setUpdateStatus('downloading'); setAvailableVersion(data?.version || null); }
       else if (type === 'download-progress') { setUpdateStatus('downloading'); setUpdateProgress(Math.round(data?.percent || 0)); }
       else if (type === 'update-downloaded') setUpdateStatus('ready');
-      else if (type === 'update-not-available') setUpdateStatus('up-to-date');
+      else if (type === 'update-not-available') { setUpdateStatus('up-to-date'); setAvailableVersion(null); }
       else if (type === 'error') { setUpdateStatus('error'); setUpdateError(typeof data === 'string' ? data : 'Update check failed'); }
     });
     return unsub;
@@ -303,15 +304,19 @@ export function SettingsPanel({
                 <div className="sys-update-card-top">
                   <div className="sys-update-card-name">Cereal</div>
                   <div className="sys-update-card-ver">v{appVersion}</div>
-                  {updateStatus === 'ready' && <span className="sys-update-badge new">Update ready</span>}
-                  {updateStatus === 'downloading' && <span className="sys-update-badge busy">Downloading {updateProgress}%</span>}
+                  {updateStatus === 'ready' && <span className="sys-update-badge new">{availableVersion ? `v${availableVersion} ready` : 'Update ready'}</span>}
+                  {updateStatus === 'downloading' && <span className="sys-update-badge busy">{availableVersion ? `v${availableVersion} — ${updateProgress}%` : `Downloading ${updateProgress}%`}</span>}
                   {updateStatus === 'checking' && <span className="sys-update-badge busy">Checking…</span>}
                   {updateStatus === 'up-to-date' && <span className="sys-update-badge ok">Up to date</span>}
                   {updateStatus === 'error' && <span className="sys-update-badge err" title={updateError || ''}>Error</span>}
                 </div>
                 <div className="sys-update-card-actions">
                   <button className="btn-sm" disabled={updateStatus === 'checking' || updateStatus === 'downloading'}
-                    onClick={async () => { setUpdateStatus('checking'); await (window.api as any)?.checkForUpdates?.(); }}>
+                    onClick={async () => {
+                      setUpdateStatus('checking');
+                      const r = await (window.api as any)?.checkForUpdate?.();
+                      if (r?.error) { setUpdateStatus('error'); setUpdateError(r.error); }
+                    }}>
                     Check
                   </button>
                   {updateStatus === 'ready' && (
@@ -343,11 +348,11 @@ export function SettingsPanel({
                       setChiakiUpd({ checking: true });
                       try {
                         const s = await (window.api as any)?.getChiakiStatus?.();
-                        if (s?.status === 'missing') { setChiakiUpd({ error: 'Not installed' }); return; }
                         const r = await (window.api as any)?.chiakiCheckUpdate?.();
                         if (r?.error) { setChiakiUpd({ error: r.error }); return; }
-                        if (r?.hasUpdate) setChiakiUpd({ current: r.current, latest: r.latest, hasUpdate: true });
-                        else setChiakiUpd({ current: r?.current || s.version, hasUpdate: false });
+                        const current = r?.current || s?.version || null;
+                        if (r?.hasUpdate) setChiakiUpd({ current, latest: r.latest, hasUpdate: true });
+                        else setChiakiUpd({ current, latest: r?.latest || null, hasUpdate: false });
                       } catch (e: any) { setChiakiUpd({ error: e.message }); }
                     }}>Check</button>
                   {chiakiUpd?.hasUpdate && (
