@@ -3841,8 +3841,11 @@ ipcMain.handle('chiaki:checkUpdate', async () => {
 
 ipcMain.handle('chiaki:update', async () => {
   try {
-    const scriptPath = path.join(__dirname, 'scripts', 'setup-chiaki.ps1');
-    if (!fs.existsSync(scriptPath)) return { error: 'setup-chiaki.ps1 not found' };
+    // In packaged builds scripts/ is an extraResource next to chiaki-ng, outside asar
+    const scriptPath = app.isPackaged
+      ? path.join(process.resourcesPath, 'scripts', 'setup-chiaki.ps1')
+      : path.join(__dirname, 'scripts', 'setup-chiaki.ps1');
+    if (!fs.existsSync(scriptPath)) return { error: 'setup-chiaki.ps1 not found at: ' + scriptPath };
     return new Promise((resolve) => {
       const child = spawn('powershell', ['-ExecutionPolicy', 'Bypass', '-File', scriptPath, '-Force'], { cwd: __dirname, stdio: 'pipe' });
       let output = '';

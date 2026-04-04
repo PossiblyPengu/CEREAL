@@ -12,15 +12,23 @@ function copyElectronProviders() {
       const src = path.resolve(__dirname, 'electron/providers')
       const dest = path.resolve(__dirname, 'dist-electron/providers')
       fs.cpSync(src, dest, { recursive: true })
+      copyScripts()
       copyMediaInfoExe()
     },
     buildStart() {
       const src = path.resolve(__dirname, 'electron/providers')
       const dest = path.resolve(__dirname, 'dist-electron/providers')
       if (fs.existsSync(src)) fs.cpSync(src, dest, { recursive: true })
+      copyScripts()
       copyMediaInfoExe()
     },
   }
+}
+
+function copyScripts() {
+  const src = path.resolve(__dirname, 'electron/scripts')
+  const dest = path.resolve(__dirname, 'dist-electron/scripts')
+  if (fs.existsSync(src)) fs.cpSync(src, dest, { recursive: true })
 }
 
 function copyMediaInfoExe() {

@@ -2,7 +2,8 @@ const path = require('path');
 const { exec } = require('child_process');
 
 // Path is relative to dist-electron/native/ at runtime (smtc module lives at dist-electron/native/smtc/)
-const EXE_PATH = path.join(__dirname, '..', 'MediaInfoTool.exe');
+// In production, native files are asarUnpacked so we replace .asar with .asar.unpacked for exec()
+const EXE_PATH = path.join(__dirname, '..', 'MediaInfoTool.exe').replace('app.asar', 'app.asar.unpacked');
 
 function runExe(args) {
   return new Promise(resolve => {

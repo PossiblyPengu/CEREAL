@@ -18,6 +18,10 @@ extraResources:
     to: chiaki-ng
     filter:
       - "**/*"
+  - from: dist-electron/scripts
+    to: scripts
+    filter:
+      - "**/*"
 
 asar: true
 asarUnpack:
