@@ -1,0 +1,29 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.5.2.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "native", "native", "{2F2BA0B1-8447-348E-8DA4-622F0257D38B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MediaInfoTool", "native\MediaInfoTool\MediaInfoTool.csproj", "{C9796EA5-FC44-870F-D95B-3B8AB491C0C1}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{C9796EA5-FC44-870F-D95B-3B8AB491C0C1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C9796EA5-FC44-870F-D95B-3B8AB491C0C1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C9796EA5-FC44-870F-D95B-3B8AB491C0C1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C9796EA5-FC44-870F-D95B-3B8AB491C0C1}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{C9796EA5-FC44-870F-D95B-3B8AB491C0C1} = {2F2BA0B1-8447-348E-8DA4-622F0257D38B}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {27CD8EF4-408A-44F9-A5BA-62889E283A72}
+	EndGlobalSection
+EndGlobal

@@ -275,16 +275,59 @@ function isAllowedAuthDomain(url) {
   } catch { return false; }
 }
 
-function createAuthWindow(width, height, authSession) {
-  const win = new BrowserWindow({
-    width, height,
-    parent: mainWindow,
-    modal: true,
-    webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, session: authSession },
-  });
-  win.setMenuBarVisibility(false);
-  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  return win;
+const TAB_BAR_HEIGHT = 40;
+const webTabs = new Map(); // tabId -> { view, finish }
+let activeWebTabId = null;
+
+function getWebTabBounds() {
+  const [cw, ch] = mainWindow ? mainWindow.getContentSize() : [1280, 720];
+  return { x: 0, y: TAB_BAR_HEIGHT, width: cw, height: Math.max(1, ch - TAB_BAR_HEIGHT) };
+}
+
+const WEB_TAB_OFF = { x: 0, y: 9999, width: 1, height: 1 };
+
+function showWebTab(tabId) {
+  activeWebTabId = tabId;
+  const b = getWebTabBounds();
+  for (const [id, tab] of webTabs) {
+    try { tab.view.setBounds(id === tabId ? b : WEB_TAB_OFF); } catch (e) {}
+  }
+}
+
+function hideAllWebTabs() {
+  activeWebTabId = null;
+  for (const [, tab] of webTabs) {
+    try { tab.view.setBounds(WEB_TAB_OFF); } catch (e) {}
+  }
+}
+
+function updateWebTabBounds() {
+  if (!activeWebTabId) return;
+  const tab = webTabs.get(activeWebTabId);
+  if (!tab) return;
+  try { tab.view.setBounds(getWebTabBounds()); } catch (e) {}
+}
+
+const chiakiTabs = new Map(); // tabId -> { gameId }
+let activeChiakiTabId = null;
+
+function sendChiakiTabBounds() {
+  if (!activeChiakiTabId) return;
+  const ct = chiakiTabs.get(activeChiakiTabId);
+  if (!ct) return;
+  const session = chiakiSessions.get(ct.gameId);
+  if (!session?.embedProcess || session.embedProcess.killed) return;
+  const b = getStreamBounds();
+  try { session.embedProcess.stdin.write(`bounds ${b.x} ${b.y} ${b.w} ${b.h}\n`); } catch (e) {}
+}
+
+function hideAllChiakiTabs() {
+  for (const ct of chiakiTabs.values()) {
+    const session = chiakiSessions.get(ct.gameId);
+    if (session?.embedProcess && !session.embedProcess.killed) {
+      try { session.embedProcess.stdin.write('bounds 0 99999 1 1\n'); } catch (e) {}
+    }
+  }
 }
 
 // ─── HTTP helpers ─────────────────────────────────────────────────────────────
@@ -462,9 +505,9 @@ function buildChiakiArgs(game, config) {
   return args;
 }
 
-function startChiakiSession(gameId, chiakiExe, args) {
-  // Kill existing session for this game if any
-  stopChiakiSession(gameId);
+function startChiakiSession(gameId, chiakiExe, args, _isReconnect = false) {
+  // Kill existing session for this game if any (skip on reconnect — caller handles inline cleanup)
+  if (!_isReconnect) stopChiakiSession(gameId);
 
   const chiakiDir = path.dirname(chiakiExe);
   const env = { ...process.env, PATH: `${chiakiDir};${process.env.PATH}` };
@@ -581,12 +624,26 @@ function startChiakiSession(gameId, chiakiExe, args) {
       const carryReconnect = nextAttempt;
       session._reconnectTimer = setTimeout(() => {
         if (chiakiSessions.has(gameId)) {
-          const newSession = startChiakiSession(gameId, chiakiExe, args);
+          // Inline minimal cleanup so the tab stays open during reconnect
+          const old = chiakiSessions.get(gameId);
+          if (old) {
+            stopEmbedHelper(old);
+            try { old.process?.kill(); } catch (e) {}
+            chiakiSessions.delete(gameId);
+          }
+          const newSession = startChiakiSession(gameId, chiakiExe, args, true);
           if (newSession) newSession._reconnectAttempts = carryReconnect;
         }
       }, delay);
     } else {
       chiakiSessions.delete(gameId);
+      // Close tab on permanent disconnect
+      const chiakiTabId = 'chiaki:' + gameId;
+      if (chiakiTabs.has(chiakiTabId)) {
+        chiakiTabs.delete(chiakiTabId);
+        if (activeChiakiTabId === chiakiTabId) activeChiakiTabId = null;
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('tabs:closed', { id: chiakiTabId });
+      }
     }
   });
 
@@ -596,6 +653,21 @@ function startChiakiSession(gameId, chiakiExe, args) {
   session._titleStartTime = Date.now();
   session.embedded = false;
   chiakiSessions.set(gameId, session);
+
+  // Register or reuse tab
+  const chiakiTabId = 'chiaki:' + gameId;
+  if (!_isReconnect) {
+    const gameName = (db?.games || []).find(g => g.id === gameId)?.name;
+    const tabTitle = gameName || 'PlayStation';
+    chiakiTabs.set(chiakiTabId, { gameId });
+    activeChiakiTabId = chiakiTabId;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('tabs:opened', { id: chiakiTabId, title: tabTitle, platform: 'psn' });
+    }
+  } else {
+    activeChiakiTabId = chiakiTabId; // ensure still active after reconnect
+  }
+
   sendChiakiEvent(gameId, 'state', { state: 'launching' });
 
   // Start Win32 embed helper to reparent chiaki window into Electron
@@ -618,6 +690,14 @@ function stopChiakiSession(gameId) {
   if (!session) return false;
 
   if (session._reconnectTimer) clearTimeout(session._reconnectTimer);
+
+  // Close the tab
+  const chiakiTabId = 'chiaki:' + gameId;
+  if (chiakiTabs.has(chiakiTabId)) {
+    chiakiTabs.delete(chiakiTabId);
+    if (activeChiakiTabId === chiakiTabId) activeChiakiTabId = null;
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('tabs:closed', { id: chiakiTabId });
+  }
 
   // Stop the Win32 embed helper first
   stopEmbedHelper(session);
@@ -683,10 +763,15 @@ function startXcloudSession(gameId, url) {
 
   mainWindow.contentView.addChildView(view);
 
-  const sess = { gameId, view, state: 'loading', startTime: Date.now() };
+  const tabId = 'xcloud:' + gameId;
+  const gameName = (db?.games || []).find(g => g.id === gameId)?.name;
+  const tabTitle = gameName ? gameName + ' \u2014 Xbox Cloud' : 'Xbox Cloud';
+
+  const sess = { gameId, view, state: 'loading', startTime: Date.now(), tabId };
   xcloudSessions.set(gameId, sess);
 
-  updateXcloudBounds(sess);
+  webTabs.set(tabId, { view, finish: () => stopXcloudSession(gameId) });
+  showWebTab(tabId);
 
   view.webContents.loadURL(url || 'https://www.xbox.com/play');
 
@@ -700,6 +785,10 @@ function startXcloudSession(gameId, url) {
     sendStreamEvent(gameId, 'disconnected', { reason: desc, platform: 'xbox' });
   });
 
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('tabs:opened', { id: tabId, title: tabTitle, platform: 'xbox' });
+  }
+
   sendStreamEvent(gameId, 'state', { state: 'connecting', platform: 'xbox' });
   return sess;
 }
@@ -711,6 +800,13 @@ function stopXcloudSession(gameId) {
   // Mark as stopping to prevent re-entry
   if (sess._stopping) return false;
   sess._stopping = true;
+
+  // Remove from tab system immediately
+  if (sess.tabId) {
+    webTabs.delete(sess.tabId);
+    if (activeWebTabId === sess.tabId) activeWebTabId = null;
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('tabs:closed', { id: sess.tabId });
+  }
 
   try {
     // 1. Navigate to Xbox home to gracefully end any active game session
@@ -856,12 +952,13 @@ function stopEmbedHelper(session) {
 function sendEmbedBoundsToAll() {
   if (!mainWindow) return;
   const b = getStreamBounds();
-  for (const session of chiakiSessions.values()) {
-    if (session.embedProcess && !session.embedProcess.killed) {
-      try {
-        session.embedProcess.stdin.write(`bounds ${b.x} ${b.y} ${b.w} ${b.h}\n`);
-      } catch (e) { /* ok */ }
-    }
+  for (const [gameId, session] of chiakiSessions) {
+    if (!session.embedProcess || session.embedProcess.killed) continue;
+    const isActive = activeChiakiTabId && chiakiTabs.get(activeChiakiTabId)?.gameId === gameId;
+    const line = isActive
+      ? `bounds ${b.x} ${b.y} ${b.w} ${b.h}\n`
+      : 'bounds 0 99999 1 1\n';
+    try { session.embedProcess.stdin.write(line); } catch (e) { /* ok */ }
   }
 }
 
@@ -1204,9 +1301,10 @@ function createWindow() {
   });
 
   mainWindow.on('focus', () => {
-    for (const session of chiakiSessions.values()) {
+    for (const [gameId, session] of chiakiSessions) {
       if (session.embedded && session.embedProcess && !session.embedProcess.killed) {
-        try { session.embedProcess.stdin.write('show\n'); } catch (e) { /* ok */ }
+        const isActive = activeChiakiTabId && chiakiTabs.get(activeChiakiTabId)?.gameId === gameId;
+        if (isActive) try { session.embedProcess.stdin.write('show\n'); } catch (e) { /* ok */ }
       }
     }
     for (const sess of xcloudSessions.values()) {
@@ -1370,7 +1468,8 @@ function onWindowBoundsChanged() {
   clearTimeout(_embedResizeTimer);
   _embedResizeTimer = setTimeout(() => {
     sendEmbedBoundsToAll();
-    updateAllXcloudBounds();
+    updateWebTabBounds();
+    sendChiakiTabBounds();
   }, 50);
   scheduleSaveWindowBounds();
 }
@@ -3190,40 +3289,104 @@ ipcMain.handle('accounts:remove', (event, platform) => {
 const auth = require('./providers/auth');
 
 // ─── OAuth Auth Window Helper ─────────────────────────────────────────────────
-function runOAuthFlow({ partition, width, height, authUrl, redirectMatch, onRedirect }) {
+function runOAuthFlow({ partition, authUrl, redirectMatch, onRedirect }) {
   return new Promise((resolve) => {
+    const tabId = 'tab:' + partition + ':' + Date.now();
     const authSession = session.fromPartition(partition + ':' + Date.now());
-    const authWin = createAuthWindow(width || 700, height || 700, authSession);
+    const view = new WebContentsView({
+      webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, session: authSession },
+    });
+    view.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+
     let resolved = false;
     let authTimeout = null;
+
     const cleanup = () => {
       if (authTimeout) { clearTimeout(authTimeout); authTimeout = null; }
+      webTabs.delete(tabId);
+      if (activeWebTabId === tabId) activeWebTabId = null;
+      try {
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.contentView.removeChildView(view);
+      } catch (e) {}
       try { authSession.clearStorageData(); } catch (e) {}
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('tabs:closed', { id: tabId });
     };
+
     const finish = (result) => {
       if (resolved) return;
       resolved = true;
       cleanup();
-      try { authWin.close(); } catch (e) {}
       resolve(result);
     };
+
+    const platform = partition.replace('auth:', '');
+    const label = PLATFORM_LABELS[platform] || (platform.charAt(0).toUpperCase() + platform.slice(1));
+    const title = 'Sign in \u2014 ' + label;
+
+    mainWindow.contentView.addChildView(view);
+    view.setBounds(getWebTabBounds());
+    webTabs.set(tabId, { view, finish });
+    activeWebTabId = tabId;
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('tabs:opened', { id: tabId, title, platform });
+    }
+
     authTimeout = setTimeout(() => finish({ error: 'Authentication timed out' }), AUTH_TIMEOUT_MS);
+
     const handleUrl = (url) => {
       if (resolved) return;
       if (redirectMatch(url)) onRedirect(url, finish);
     };
-    authWin.webContents.on('will-navigate', (event, url) => {
+    view.webContents.on('will-navigate', (event, url) => {
       if (redirectMatch(url)) { event.preventDefault(); handleUrl(url); return; }
       if (!isAllowedAuthDomain(url)) { event.preventDefault(); }
     });
-    authWin.webContents.on('will-redirect', (event, url) => {
-      if (redirectMatch(url)) { event.preventDefault(); handleUrl(url); }
+    view.webContents.on('will-redirect', (event, url) => {
+      if (redirectMatch(url)) { event.preventDefault(); handleUrl(url); return; }
+      if (!isAllowedAuthDomain(url)) { event.preventDefault(); }
     });
-    authWin.webContents.on('did-navigate', (event, url) => handleUrl(url));
-    authWin.on('closed', () => { cleanup(); if (!resolved) { resolved = true; resolve({ error: 'cancelled' }); } });
-    authWin.loadURL(authUrl);
+    view.webContents.on('did-navigate', (event, url) => handleUrl(url));
+    view.webContents.loadURL(authUrl);
   });
 }
+
+ipcMain.handle('tabs:switch', (event, { id }) => {
+  if (!mainWindow || event.sender !== mainWindow.webContents) return;
+  if (typeof id !== 'string') return;
+  if (chiakiTabs.has(id)) {
+    activeChiakiTabId = id;
+    hideAllWebTabs();
+    sendChiakiTabBounds();
+  } else {
+    activeChiakiTabId = null;
+    hideAllChiakiTabs();
+    if (id === 'launcher') {
+      hideAllWebTabs();
+    } else {
+      showWebTab(id);
+    }
+  }
+});
+
+ipcMain.handle('tabs:close', (event, { id }) => {
+  if (!mainWindow || event.sender !== mainWindow.webContents) return;
+  if (typeof id !== 'string') return;
+  if (chiakiTabs.has(id)) {
+    const ct = chiakiTabs.get(id);
+    stopChiakiSession(ct.gameId);
+  } else {
+    const tab = webTabs.get(id);
+    if (tab?.finish) {
+      tab.finish({ error: 'cancelled' });
+    } else if (tab) {
+      webTabs.delete(id);
+      if (activeWebTabId === id) activeWebTabId = null;
+      try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.contentView.removeChildView(tab.view); } catch (e) {}
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('tabs:closed', { id });
+    }
+  }
+});
 
 // ─── Token Refresh (thin wrappers that persist to db) ────────────────────────
 async function refreshAccountToken(platform) {

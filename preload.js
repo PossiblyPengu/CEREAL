@@ -133,6 +133,20 @@ contextBridge.exposeInMainWorld('api', {
   validateApiKey: (provider, apiKey) => ipcRenderer.invoke('keys:validate', { provider, apiKey }),
   validateStoredApiKey: (provider) => ipcRenderer.invoke('keys:validateStored', { provider, service: `cereal-${provider}`, account: 'default' }),
 
+  // Tab system
+  onTabsOpened: (callback) => {
+    const handler = (event, data) => callback(data);
+    ipcRenderer.on('tabs:opened', handler);
+    return () => ipcRenderer.removeListener('tabs:opened', handler);
+  },
+  onTabsClosed: (callback) => {
+    const handler = (event, data) => callback(data);
+    ipcRenderer.on('tabs:closed', handler);
+    return () => ipcRenderer.removeListener('tabs:closed', handler);
+  },
+  switchTab: (id) => ipcRenderer.invoke('tabs:switch', { id }),
+  closeTab: (id) => ipcRenderer.invoke('tabs:close', { id }),
+
   // Signal to main process that the renderer has finished loading all data
   signalReady: () => ipcRenderer.send('window:ready'),
   // System specs
