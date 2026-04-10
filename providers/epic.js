@@ -4,14 +4,21 @@ const { canonicalize, isDlcTitle, findExisting, makeGameEntry, updateAccountSync
 function pickCoverImage(rec) {
   try {
     const keys = rec.metadata?.keyImages || rec.keyImages || rec.images || [];
-    if (Array.isArray(keys) && keys.length) {
-      const pref = keys.find(k =>
-        (k.type || k.imageType || '').toLowerCase().includes('key') ||
-        (k.type || '').toLowerCase().includes('offer') ||
-        (k.type || '').toLowerCase().includes('hero')
-      ) || keys[0];
-      return pref?.url || pref?.image || pref?.src || '';
-    }
+    if (!Array.isArray(keys) || !keys.length) return rec.metadata?.image || '';
+    const url = (k) => k?.url || k?.image || k?.src || '';
+    // Prefer portrait/tall types for card covers
+    const tall = keys.find(k => {
+      const t = (k.type || k.imageType || '').toLowerCase();
+      return t.includes('tall') || t.includes('portrait') || t.includes('cover') || t === 'thumbnail';
+    });
+    if (tall && url(tall)) return url(tall);
+    // Key art is usually portrait
+    const key = keys.find(k => (k.type || '').toLowerCase().includes('key'));
+    if (key && url(key)) return url(key);
+    // Any offer image (may be wide but better than nothing)
+    const offer = keys.find(k => (k.type || '').toLowerCase().includes('offer'));
+    if (offer && url(offer)) return url(offer);
+    return url(keys[0]);
   } catch (e) { /* fall through */ }
   return rec.metadata?.image || '';
 }

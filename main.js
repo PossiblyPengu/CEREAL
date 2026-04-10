@@ -384,68 +384,6 @@ function getBundledChiakiVersion() {
   catch (e) { return null; }
 }
 
-// --- Cover cache directory ---
-function getCoversDir() {
-  const dir = path.join(app.getPath('userData'), 'covers');
-  try { if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true }); } catch (e) {}
-  return dir;
-}
-
-async function downloadToFile(url, destPath) {
-  return new Promise((resolve, reject) => {
-    const req = https.get(url, (res) => {
-      if (res.statusCode && res.statusCode >= 400) return reject(new Error('HTTP ' + res.statusCode));
-      const file = fs.createWriteStream(destPath);
-      res.pipe(file);
-      file.on('finish', () => file.close(() => resolve(true)));
-      file.on('error', (err) => reject(err));
-    });
-    req.on('error', reject);
-  });
-}
-
-// Background fetch queue (simple FIFO)
-const coverQueue = [];
-let coverWorkerRunning = false;
-
-function enqueueCoverFetch(gameId) {
-  if (!gameId) return;
-  if (!coverQueue.includes(gameId)) coverQueue.push(gameId);
-  if (!coverWorkerRunning) processCoverQueue();
-}
-
-async function processCoverQueue() {
-  coverWorkerRunning = true;
-  while (coverQueue.length > 0) {
-    const batch = coverQueue.splice(0, 3);
-    let anyChanged = false;
-    await Promise.allSettled(batch.map(async gid => {
-      try {
-        const game = db.games.find(g => g.id === gid);
-        if (!game) return;
-        if (game.localCoverPath && fs.existsSync(game.localCoverPath)) return;
-        const url = game.coverUrl || game.headerUrl || (game.screenshots && game.screenshots[0]);
-        if (!url) return;
-        const ext = path.extname(new URL(url).pathname).split('?')[0] || '.jpg';
-        const fname = 'cover_' + gid + ext;
-        const dest = path.join(getCoversDir(), fname);
-        await downloadToFile(url, dest);
-        game.localCoverPath = dest;
-        game._imgStamp = Date.now();
-        anyChanged = true;
-        console.log('[CoverFetcher] saved', dest);
-      } catch (e) {
-        console.log('[CoverFetcher] download failed for', gid, e && e.message);
-      }
-    }));
-    if (anyChanged) {
-      saveDB(db);
-      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('games:refresh', db.games);
-    }
-    if (coverQueue.length > 0) await new Promise(r => setTimeout(r, 150));
-  }
-  coverWorkerRunning = false;
-}
 
 // ─── Chiaki Session Manager ──────────────────────────────────────────────────
 // Manages chiaki-ng as a child process with JSON status event streaming.
@@ -1586,8 +1524,8 @@ async function fetchSteamMetadata(appId) {
       publisher: (info.publishers || [])[0] || '',
       releaseDate: info.release_date?.date || '',
       genres: (info.genres || []).map(g => g.description),
-      coverUrl: `https://shared.steamstatic.com/store_item_assets/steam/apps/${appId}/library_600x900_2x.jpg`,
-      headerUrl: info.header_image || `https://shared.steamstatic.com/store_item_assets/steam/apps/${appId}/library_hero.jpg`,
+      coverUrl: `https://cdn.akamai.steamstatic.com/steam/apps/${appId}/library_600x900.jpg`,
+      headerUrl: info.header_image || `https://cdn.akamai.steamstatic.com/steam/apps/${appId}/header.jpg`,
       screenshots: (info.screenshots || []).slice(0, 4).map(s => s.path_full),
       metacritic: info.metacritic?.score || null,
       website: info.website || '',
@@ -1873,20 +1811,11 @@ ipcMain.handle('games:add', (event, game) => {
     // Merge into existing record instead of creating a duplicate
     const prev = existing;
     const merged = { ...prev, ...game };
-    try {
-      const coverChanged = (typeof game.coverUrl === 'string' && game.coverUrl !== prev.coverUrl);
-      const headerChanged = (typeof game.headerUrl === 'string' && game.headerUrl !== prev.headerUrl);
-      if (coverChanged || headerChanged) merged._imgStamp = Date.now(); else merged._imgStamp = prev._imgStamp;
-    } catch (e) { merged._imgStamp = prev._imgStamp; }
-    // Ensure platform/platformId are preserved
     if (!merged.platform) merged.platform = prev.platform;
     if (!merged.platformId) merged.platformId = prev.platformId;
     db.games[db.games.findIndex(g => g.id === prev.id)] = merged;
     saveDB(db);
-    console.log('[Main] games:update (dedupe merged)', merged.id, 'coverUrl=', merged.coverUrl, '_imgStamp=', merged._imgStamp);
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('games:refresh', db.games);
-    // If cover URL changed, enqueue fetch
-    try { enqueueCoverFetch(merged.id); } catch(e) {}
     return merged;
   }
 
@@ -1896,11 +1825,8 @@ ipcMain.handle('games:add', (event, game) => {
   game.lastPlayed = null;
   game.playtimeMinutes = 0;
   game.favorite = false;
-  // Stamp new games that already have a cover to force immediate reloads in renderer
-  if (game.coverUrl) game._imgStamp = Date.now();
   db.games.push(game);
   saveDB(db);
-  console.log('[Main] games:add', game.id, 'coverUrl=', game.coverUrl, '_imgStamp=', game._imgStamp);
 
   // Auto-fetch metadata in the background
   fetchGameMetadata(game).then(meta => {
@@ -1912,9 +1838,6 @@ ipcMain.handle('games:add', (event, game) => {
     }
   }).catch(() => {});
 
-  // Enqueue cover fetch for newly added game
-  try { enqueueCoverFetch(game.id); } catch(e) {}
-
   return game;
 });
 
@@ -1923,19 +1846,9 @@ ipcMain.handle('games:update', (event, updatedGame) => {
   if (idx !== -1) {
     const prev = db.games[idx];
     const merged = { ...prev, ...updatedGame };
-    // If cover/header changed on update, bump the stamp so renderer reloads
-    try {
-      const coverChanged = (typeof updatedGame.coverUrl === 'string' && updatedGame.coverUrl !== prev.coverUrl);
-      const headerChanged = (typeof updatedGame.headerUrl === 'string' && updatedGame.headerUrl !== prev.headerUrl);
-      if (coverChanged || headerChanged) merged._imgStamp = Date.now();
-      else merged._imgStamp = prev._imgStamp;
-    } catch (e) { merged._imgStamp = prev._imgStamp; }
     db.games[idx] = merged;
-    console.log('[Main] games:update', merged.id, 'coverUrl=', merged.coverUrl, '_imgStamp=', merged._imgStamp, 'localCoverPath=', merged.localCoverPath);
     saveDB(db);
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('games:refresh', db.games);
-    // If cover URL changed, enqueue fetch
-    try { enqueueCoverFetch(updatedGame.id); } catch(e) {}
     return db.games[idx];
   }
   return null;
@@ -1957,12 +1870,6 @@ ipcMain.handle('games:toggleFavorite', (event, id) => {
   return null;
 });
 
-ipcMain.handle('covers:fetchNow', async (event, gameId) => {
-  try {
-    enqueueCoverFetch(gameId);
-    return { queued: true };
-  } catch (e) { return { error: e.message }; }
-});
 
 // --- Secure key storage and validation (uses Electron safeStorage)
 function summarizeSecret(secret) {
@@ -2068,7 +1975,8 @@ ipcMain.handle('metadata:searchArt', async (event, gameName, platform) => {
           const det = await httpGet(`https://store.steampowered.com/api/appdetails?appids=${id}&l=english`);
           const info = det?.[String(id)]?.data;
           if (info) {
-            results.push({ url: `https://shared.steamstatic.com/store_item_assets/steam/apps/${id}/library_600x900_2x.jpg`, type: 'cover', source: 'Steam', label: name + ' - Portrait (HD)' });
+            results.push({ url: `https://cdn.akamai.steamstatic.com/steam/apps/${id}/library_600x900.jpg`, type: 'cover', source: 'Steam', label: name + ' - Portrait' });
+            results.push({ url: `https://cdn.akamai.steamstatic.com/steam/apps/${id}/header.jpg`, type: 'header', source: 'Steam', label: name + ' - Header' });
             if (info.header_image) results.push({ url: info.header_image, type: 'header', source: 'Steam', label: name + ' - Header' });
             results.push({ url: `https://shared.steamstatic.com/store_item_assets/steam/apps/${id}/library_hero.jpg`, type: 'header', source: 'Steam', label: name + ' - Hero' });
             if (info.screenshots) {
@@ -2742,8 +2650,8 @@ ipcMain.handle('detect:steam', async () => {
               platformId: appid[1],
               installPath: gamePath,
               executablePath: '', // User may need to set this
-              coverUrl: `https://shared.steamstatic.com/store_item_assets/steam/apps/${appid[1]}/library_600x900_2x.jpg`,
-              heroUrl: `https://shared.steamstatic.com/store_item_assets/steam/apps/${appid[1]}/library_hero.jpg`,
+              coverUrl: `https://cdn.akamai.steamstatic.com/steam/apps/${appid[1]}/library_600x900.jpg`,
+              headerUrl: `https://cdn.akamai.steamstatic.com/steam/apps/${appid[1]}/header.jpg`,
               categories: [],
               source: 'auto-detected'
             });
@@ -3219,13 +3127,8 @@ ipcMain.handle('settings:importLibrary', async () => {
 
 ipcMain.handle('settings:clearCovers', () => {
   for (const game of db.games) {
-    if (game.platform === 'steam' && game.platformId) {
-      game.coverUrl = `https://shared.steamstatic.com/store_item_assets/steam/apps/${game.platformId}/library_600x900_2x.jpg`;
-      game.headerUrl = `https://shared.steamstatic.com/store_item_assets/steam/apps/${game.platformId}/library_hero.jpg`;
-    } else {
-      game.coverUrl = '';
-      game.headerUrl = '';
-    }
+    game.localCoverPath = null;
+    game.localHeaderPath = null;
   }
   saveDB(db);
   return { success: true, games: db.games };
@@ -3690,7 +3593,7 @@ function autoSetupChiakiIfMissing() {
     return;
   }
 
-  const child = spawn('powershell', ['-ExecutionPolicy', 'Bypass', '-File', scriptPath], { cwd: __dirname, stdio: 'pipe' });
+  const child = spawn('powershell.exe', ['-ExecutionPolicy', 'Bypass', '-File', scriptPath], { cwd: __dirname, stdio: 'pipe' });
   let output = '';
   child.stdout.on('data', d => output += d.toString());
   child.stderr.on('data', d => output += d.toString());
@@ -3768,7 +3671,7 @@ ipcMain.handle('chiaki:update', async () => {
     const scriptPath = path.join(__dirname, 'scripts', 'setup-chiaki.ps1');
     if (!fs.existsSync(scriptPath)) return { error: 'setup-chiaki.ps1 not found' };
     return new Promise((resolve) => {
-      const child = spawn('powershell', ['-ExecutionPolicy', 'Bypass', '-File', scriptPath, '-Force'], { cwd: __dirname, stdio: 'pipe' });
+      const child = spawn('powershell.exe', ['-ExecutionPolicy', 'Bypass', '-File', scriptPath, '-Force'], { cwd: __dirname, stdio: 'pipe' });
       let output = '';
       child.stdout.on('data', d => output += d.toString());
       child.stderr.on('data', d => output += d.toString());
