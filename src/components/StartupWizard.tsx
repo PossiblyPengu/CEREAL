@@ -29,6 +29,8 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
   const [registering, setRegistering] = useState(false);
   const [manualHost, setManualHost] = useState('');
   const [specs, setSpecs] = useState<any>(null);
+  const [steamApiKey, setSteamApiKey] = useState('');
+  const [steamApiKeySaving, setSteamApiKeySaving] = useState(false);
 
   // Local wizard state mirrors settings for live preview
   const [wTheme, setWTheme] = useState(settings.theme || 'midnight');
@@ -104,6 +106,35 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
     if ((window.api as any)?.saveSettings) await (window.api as any).saveSettings(patch);
   };
 
+  const doImport = async (which: string, apiKey?: string) => {
+    setImportStatus(p => ({ ...p, [which]: 'importing' }));
+    try {
+      if (apiKey && (window.api as any)?.saveApiKey) {
+        setSteamApiKeySaving(true);
+        await (window.api as any).saveApiKey(which, apiKey);
+        setSteamApiKeySaving(false);
+      }
+      const result = await (window.api as any).platformImport?.(which);
+      if (result?.error) {
+        setImportStatus(p => ({ ...p, [which]: 'error' }));
+        setImportErrors(p => ({ ...p, [which]: result.error }));
+        flash(result.error);
+        return;
+      }
+      const count = Array.isArray(result?.imported) ? result.imported.length : (typeof result?.imported === 'number' ? result.imported : 0);
+      setImportCounts(p => ({ ...p, [which]: count }));
+      setImportStatus(p => ({ ...p, [which]: 'done' }));
+      flash(count > 0 ? count + ' games imported from ' + which : which + ' library up to date');
+      if ((window.api as any)?.getGames) {
+        const g = await (window.api as any).getGames();
+        if (typeof setGames === 'function') setGames(g || []);
+      }
+    } catch (e) {
+      console.error('Import error', e);
+      setImportStatus(p => ({ ...p, [which]: 'error' }));
+    }
+  };
+
   const doAuth = async (which: string) => {
     try {
       if (!window.api) return;
@@ -116,27 +147,7 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
       const fresh = await (window.api as any).getAccounts?.();
       if (fresh && fresh[which] && fresh[which].connected) {
         flash(which + ' connected — importing library...');
-        setImportStatus(p => ({ ...p, [which]: 'importing' }));
-        try {
-          const result = await (window.api as any).platformImport?.(which);
-          if (result?.error) {
-            setImportStatus(p => ({ ...p, [which]: 'error' }));
-            setImportErrors(p => ({ ...p, [which]: result.error }));
-            flash(result.error);
-            return;
-          }
-          const count = Array.isArray(result?.imported) ? result.imported.length : (typeof result?.imported === 'number' ? result.imported : 0);
-          setImportCounts(p => ({ ...p, [which]: count }));
-          setImportStatus(p => ({ ...p, [which]: 'done' }));
-          flash(count > 0 ? count + ' games imported from ' + which : which + ' library up to date');
-          if ((window.api as any)?.getGames) {
-            const g = await (window.api as any).getGames();
-            if (typeof setGames === 'function') setGames(g || []);
-          }
-        } catch (e) {
-          console.error('Import error', e);
-          setImportStatus(p => ({ ...p, [which]: 'error' }));
-        }
+        await doImport(which);
       }
     } catch (e) { console.error('Auth error', e); flash('Authentication error'); }
   };
@@ -381,27 +392,51 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
     const impSt = importStatus[platform];
     const impCt = importCounts[platform];
     const impErr = importErrors[platform];
+    const showApiKeyFallback = platform === 'steam' && impSt === 'error';
     return (
-      <div className={'acct-card' + (connected ? ' connected' : '')} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <div className="acct-avatar" style={!acct?.avatarUrl && PLATFORMS[platform] ? { color: PLATFORMS[platform].color } : undefined}>
-          {acct?.avatarUrl
-            ? <img src={acct.avatarUrl} alt="" />
-            : PLATFORMS[platform]?.icon || <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="4" stroke="rgba(255,255,255,0.06)" strokeWidth="1.2" /></svg>
-          }
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="acct-title">{label}</div>
-          <div className="acct-status">
-            {impSt === 'importing' ? <span style={{ color: 'var(--accent)' }}>Importing games...</span>
-              : impSt === 'done' ? <span className="acct-connected-badge">✓ {impCt} games imported</span>
-              : impSt === 'error' ? <span style={{ color: 'var(--red)', fontSize: 10, lineHeight: 1.4, display: 'block', wordBreak: 'break-word' }}>{impErr || 'Import failed'}</span>
-              : connected ? <span className="acct-connected-badge">✓ {acct.displayName || acct.gamertag || 'Connected'}</span>
-              : 'Not connected'}
+      <div className={'acct-card' + (connected ? ' connected' : '')} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div className="acct-avatar" style={!acct?.avatarUrl && PLATFORMS[platform] ? { color: PLATFORMS[platform].color } : undefined}>
+            {acct?.avatarUrl
+              ? <img src={acct.avatarUrl} alt="" />
+              : PLATFORMS[platform]?.icon || <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="4" stroke="rgba(255,255,255,0.06)" strokeWidth="1.2" /></svg>
+            }
           </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="acct-title">{label}</div>
+            <div className="acct-status">
+              {impSt === 'importing' ? <span style={{ color: 'var(--accent)' }}>Importing games...</span>
+                : impSt === 'done' ? <span className="acct-connected-badge">✓ {impCt} game{impCt !== 1 ? 's' : ''} imported</span>
+                : impSt === 'error' ? <span style={{ color: 'var(--red)', fontSize: 10, lineHeight: 1.4, display: 'block', wordBreak: 'break-word' }}>{impErr || 'Import failed'}</span>
+                : connected ? <span className="acct-connected-badge">✓ {acct.displayName || acct.gamertag || 'Connected'}</span>
+                : 'Not connected'}
+            </div>
+          </div>
+          <button className="btn-flat" onClick={() => doAuth(platform)} disabled={impSt === 'importing'}>
+            {connected ? 'Re-auth' : 'Sign in'}
+          </button>
         </div>
-        <button className="btn-flat" onClick={() => doAuth(platform)} disabled={impSt === 'importing'}>
-          {connected ? 'Re-auth' : 'Sign in'}
-        </button>
+        {showApiKeyFallback && (
+          <div style={{ borderTop: '1px solid var(--glass-border)', paddingTop: 8 }}>
+            <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 6 }}>Profile private? Enter a <a href="https://steamcommunity.com/dev/apikey" style={{ color: 'var(--accent)', textDecoration: 'none', cursor: 'pointer' }} onClick={e => { e.preventDefault(); (window.api as any)?.openExternal?.('https://steamcommunity.com/dev/apikey'); }}>Steam Web API Key</a> to import anyway:</div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input
+                type="password"
+                placeholder="Steam Web API Key"
+                value={steamApiKey}
+                onChange={e => setSteamApiKey(e.target.value)}
+                style={{ flex: 1, fontSize: 11, padding: '4px 8px' }}
+                onKeyDown={e => { if (e.key === 'Enter' && steamApiKey.trim().length > 10) doImport('steam', steamApiKey.trim()); }}
+              />
+              <button
+                className="btn-accent"
+                style={{ fontSize: 11, padding: '4px 10px' }}
+                disabled={steamApiKey.trim().length < 10 || steamApiKeySaving}
+                onClick={() => doImport('steam', steamApiKey.trim())}
+              >{steamApiKeySaving ? 'Saving...' : 'Import'}</button>
+            </div>
+          </div>
+        )}
       </div>
     );
   };

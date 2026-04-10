@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { PLATFORMS } from '../constants';
 import { I } from '../constants';
-import { platformLabel, fmtTime, fmtDate, resolveGameImage } from '../utils';
+import { platformLabel, fmtTime, fmtDate, resolveGameImage, steamImgFallback } from '../utils';
 import type { Game } from '../types';
 
 interface FocusViewProps {
@@ -95,7 +95,7 @@ export function FocusView({ game: gameProp, onClose, onLaunch, onFav, onEdit, on
       <button className="focus-close" ref={closeRef} onClick={onClose} aria-label="Close">&times;</button>
       <div className="focus-content" onClick={e => e.stopPropagation()}>
         <div className="focus-art">
-          {coverSrc && <img src={coverSrc} alt="" onLoad={e => { (e.target as HTMLImageElement).style.display = ''; ((e.target as HTMLElement).nextSibling as HTMLElement).style.display = 'none'; }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; ((e.target as HTMLElement).nextSibling as HTMLElement).style.display = 'flex'; }} />}
+          {coverSrc && <img src={coverSrc} alt="" onLoad={e => { (e.target as HTMLImageElement).style.display = ''; ((e.target as HTMLElement).nextSibling as HTMLElement).style.display = 'none'; }} onError={e => { steamImgFallback(game, e as React.SyntheticEvent<HTMLImageElement>); const img = e.target as HTMLImageElement; const sib = img.nextSibling as HTMLElement; if (img.style.display === 'none' && sib) sib.style.display = 'flex'; }} />}
           <div className="focus-art-fallback" style={coverSrc ? { display: 'none' } : {}}>{game.name.charAt(0)}</div>
         </div>
         <div className="focus-details">

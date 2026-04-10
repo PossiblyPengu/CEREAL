@@ -64,33 +64,26 @@ export function fmtDate(d: string | number | undefined): string {
   } catch (_) { return ''; }
 }
 
-// ─── Image resolution (prefers local cached paths) ───────────────────────────
+// ─── Image resolution ────────────────────────────────────────────────────────
 
 export function resolveGameImage(game: Game | null | undefined, field: 'coverUrl' | 'headerUrl'): string {
   if (!game) return '';
-  try {
-    const localField = field === 'coverUrl' ? game.localCoverPath : game.localHeaderPath;
-    if (localField) {
-      let p = String(localField);
-      if (!p) return '';
-      try {
-        if (p.startsWith('file:')) p = p.replace(/^file:\/+/i, '');
-        p = p.replace(/^\/+/, '').replace(/\\/g, '/');
-        // Use custom protocol so images load from any renderer origin (http/file)
-        const imgUrl = 'local-image:///' + encodeURI(p);
-        const stamp = game._imgStamp
-          ? (imgUrl.includes('?') ? '&cb=' + game._imgStamp : '?cb=' + game._imgStamp)
-          : '';
-        return imgUrl + stamp;
-      } catch (_) { /* fallthrough */ }
-    }
-    const url = game[field] ?? '';
-    if (!url) return '';
-    const stamp = game._imgStamp
-      ? (url.includes('?') ? '&cb=' + game._imgStamp : '?cb=' + game._imgStamp)
-      : '';
-    return url + stamp;
-  } catch (_) { return game[field] ?? ''; }
+  // Steam: always build from platformId using reliable Akamai CDN
+  const pid = (game as any).platformId;
+  if (game.platform === 'steam' && pid) {
+    if (field === 'coverUrl') return `https://cdn.akamai.steamstatic.com/steam/apps/${pid}/library_600x900.jpg`;
+    if (field === 'headerUrl') return `https://cdn.akamai.steamstatic.com/steam/apps/${pid}/header.jpg`;
+  }
+  // All other platforms: use whatever URL the provider gave us
+  return game[field] ?? '';
+}
+
+export function steamImgFallback(game: Game | null | undefined, e: React.SyntheticEvent<HTMLImageElement>): void {
+  const img = e.currentTarget;
+  const pid = (game as any)?.platformId;
+  if (game?.platform !== 'steam' || !pid) { img.style.display = 'none'; return; }
+  const fallback = `https://cdn.akamai.steamstatic.com/steam/apps/${pid}/header.jpg`;
+  if (img.src !== fallback) { img.src = fallback; } else { img.style.display = 'none'; }
 }
 
 // ─── Gamepad hook ────────────────────────────────────────────────────────────

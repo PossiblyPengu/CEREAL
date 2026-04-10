@@ -2,7 +2,8 @@
 import ReactDOM from 'react-dom';
 import type { Game, Settings, ChiakiSession } from './types';
 import { PLATFORMS, STREAMING_PLATFORMS, CLUSTER_CENTERS, GALAXY_W, GALAXY_H, THEMES, I } from './constants';
-import { applyTheme, applyUiScale, resolveGameImage, fmtTime, useGamepad } from './utils';
+import { applyTheme, applyUiScale, resolveGameImage, steamImgFallback, fmtTime, useGamepad } from './utils';
+import { TabBar } from './components/TabBar';
 import { Toast } from './components/Toast';
 import { SearchOverlay } from './components/SearchOverlay';
 import { FocusView } from './components/FocusView';
@@ -138,7 +139,7 @@ const GameCard = React.memo(function GameCard({ game: g, dim, isFocused, platCol
         }
       }}>
       <div className="card-cover">
-        {covSrc && <img src={covSrc} alt="" loading="lazy" decoding="async" onLoad={e => { (e.target as HTMLImageElement).style.display = ''; const sib = (e.target as HTMLImageElement).nextSibling as HTMLElement; if (sib) sib.style.display = 'none'; }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; const sib = (e.target as HTMLImageElement).nextSibling as HTMLElement; if (sib) sib.style.display = 'flex'; }} />}
+        {covSrc && <img src={covSrc} alt="" loading="lazy" decoding="async" onLoad={e => { (e.target as HTMLImageElement).style.display = ''; const sib = (e.target as HTMLImageElement).nextSibling as HTMLElement; if (sib) sib.style.display = 'none'; }} onError={e => { steamImgFallback(g, e as React.SyntheticEvent<HTMLImageElement>); const img = e.target as HTMLImageElement; const sib = img.nextSibling as HTMLElement; if (img.style.display === 'none' && sib) sib.style.display = 'flex'; }} />}
         <div className="card-cover-fallback" style={covSrc ? { display: 'none' } : {}}>{g.name.charAt(0)}</div>
         <div className="card-plat-badge" style={{ background: 'rgba(0,0,0,0.55)', color: platColor }}>{platLetter}</div>
         {g.favorite && <div className="card-fav"><svg viewBox="0 0 24 24" fill="currentColor" width="10" height="10"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg></div>}
@@ -202,6 +203,10 @@ export default function App() {
   const [gpArea, setGpArea] = useState('cards');
   const [gpActive, setGpActive] = useState(false);
   const [appUpdate, setAppUpdate] = useState<{ status: string; version?: string; progress?: number } | null>(null);
+  const [tabs, setTabs] = useState<{ id: string; title: string; closable: boolean; platform: string | null }[]>(
+    [{ id: 'launcher', title: 'Cereal', closable: false, platform: null }]
+  );
+  const [activeTabId, setActiveTabId] = useState('launcher');
 
   const viewportRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -343,6 +348,22 @@ export default function App() {
     const t1 = setTimeout(() => setEntered(true), 200);
     const t2 = setTimeout(() => setReady(true), 2200);
     return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, []);
+
+  // Tab system listeners
+  useEffect(() => {
+    const api = window.api as Record<string, unknown>;
+    const u1 = typeof api?.onTabsOpened === 'function'
+      ? (api.onTabsOpened as (cb: (d: { id: string; title: string; platform: string }) => void) => () => void)(
+          data => { setTabs(p => [...p, { id: data.id, title: data.title, closable: true, platform: data.platform }]); setActiveTabId(data.id); (api.switchTab as (id: string) => void)?.(data.id); }
+        )
+      : null;
+    const u2 = typeof api?.onTabsClosed === 'function'
+      ? (api.onTabsClosed as (cb: (d: { id: string }) => void) => () => void)(
+          data => { setTabs(p => p.filter(t => t.id !== data.id)); setActiveTabId(p => p === data.id ? 'launcher' : p); }
+        )
+      : null;
+    return () => { u1?.(); u2?.(); };
   }, []);
 
   // Chiaki + games refresh listeners
@@ -961,8 +982,15 @@ export default function App() {
       showSearch, showAdd, showDetect, showChiaki, showXcloud, showSettings, showPlatforms, showWizard,
       groupedByPlatform, orbData]));
 
+  const handleCloseTab = (id: string) => {
+    setTabs(p => p.filter(t => t.id !== id));
+    setActiveTabId(p => p === id ? 'launcher' : p);
+    (window.api as Record<string, (id: string) => void>)?.closeTab?.(id);
+  };
+
   return (
     <div className={'pos-' + tbPos + '-layout'} style={{ width: '100%', height: '100%', position: 'relative' }}>
+      <TabBar tabs={tabs} activeTab={activeTabId} onSwitch={id => { setActiveTabId(id); (window.api as Record<string, (id: string) => void>)?.switchTab?.(id); }} onClose={handleCloseTab} />
       <div className="void-layer">
         {starLayers.map((layer, d) => (
           <div key={d} ref={parallaxRefs[d]} className={'parallax-layer depth-' + d}>
@@ -1050,7 +1078,7 @@ export default function App() {
                     onDoubleClick={e => { e.stopPropagation(); doLaunch(o.game); }}
                     onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setFocusGame(o.game); } }}>
                     <div className="orb-visual">
-                      {(() => { const src = resolveGameImage(o.game, 'coverUrl'); return src ? <img src={src} alt="" onLoad={e => { (e.target as HTMLImageElement).style.display = ''; const sib = (e.target as HTMLImageElement).nextSibling as HTMLElement; if (sib) sib.style.display = 'none'; }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; const sib = (e.target as HTMLImageElement).nextSibling as HTMLElement; if (sib) sib.style.display = 'flex'; }} /> : null; })()}
+                      {(() => { const src = resolveGameImage(o.game, 'coverUrl'); return src ? <img src={src} alt="" onLoad={e => { (e.target as HTMLImageElement).style.display = ''; const sib = (e.target as HTMLImageElement).nextSibling as HTMLElement; if (sib) sib.style.display = 'none'; }} onError={e => { steamImgFallback(o.game, e as React.SyntheticEvent<HTMLImageElement>); const img = e.target as HTMLImageElement; const sib = img.nextSibling as HTMLElement; if (img.style.display === 'none' && sib) sib.style.display = 'flex'; }} /> : null; })()}
                       <div className="orb-fallback" style={resolveGameImage(o.game, 'coverUrl') ? { display: 'none' } : {}}>
                         <span style={{ fontSize: o.size * 0.38 + 'px' }}>{o.game.name.charAt(0)}</span>
                       </div>

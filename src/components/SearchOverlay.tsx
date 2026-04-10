@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { PLATFORMS } from '../constants';
-import { platformLabel, fmtTime, resolveGameImage } from '../utils';
+import { platformLabel, fmtTime, resolveGameImage, steamImgFallback } from '../utils';
 import type { Game } from '../types';
 
 interface SearchOverlayProps {
@@ -74,7 +74,7 @@ export function SearchOverlay({ show, onClose, games, onSelect, onLaunch }: Sear
           return (
             <div key={g.id} className={'search-hit' + (i === sel ? ' selected' : '')} onClick={() => { onSelect(g); onClose(); }} role="option" aria-selected={i === sel}>
               <div className="search-hit-cover">
-                {src ? <img src={src} alt={g.name} onLoad={e => (e.target as HTMLImageElement).style.display = ''} onError={e => (e.target as HTMLImageElement).style.display = 'none'} /> : g.name.charAt(0)}
+                {src ? <img src={src} alt={g.name} onLoad={e => (e.target as HTMLImageElement).style.display = ''} onError={e => steamImgFallback(g, e as React.SyntheticEvent<HTMLImageElement>)} /> : g.name.charAt(0)}
               </div>
               <div>
                 <div className="search-hit-name">{g.name}</div>
