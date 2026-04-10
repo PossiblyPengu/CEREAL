@@ -1,6 +1,6 @@
 ﻿import React, { useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense } from 'react';
 import ReactDOM from 'react-dom';
-import type { Game, Settings, ChiakiSession } from './types';
+import type { Game, Settings, ChiakiSession, ImportProgress, MetaProgress, ArtPickerOpts } from './types';
 import { PLATFORMS, STREAMING_PLATFORMS, CLUSTER_CENTERS, GALAXY_W, GALAXY_H, THEMES, I } from './constants';
 import { applyTheme, applyUiScale, resolveGameImage, steamImgFallback, fmtTime, useGamepad } from './utils';
 import { TabBar } from './components/TabBar';
@@ -40,17 +40,15 @@ interface PlatformCardSectionProps {
 
 const PlatformCardSection = React.memo(function PlatformCardSection({ plat, games: sortedGms, cardIdxStart, gpActive, gpArea, gpIdx, isDimmed, onOpen, onLaunch, onFav }: PlatformCardSectionProps) {
   const p = PLATFORMS[plat];
+  const [prevGamesLen, setPrevGamesLen] = useState(sortedGms.length);
   const [visibleCount, setVisibleCount] = useState(Math.min(sortedGms.length, INITIAL_CARDS));
   const sentinelRef = useRef<HTMLDivElement>(null);
-  const prevGamesLen = useRef(sortedGms.length);
 
-  // Reset visible count when game list changes significantly (filter/sort)
-  useEffect(() => {
-    if (sortedGms.length !== prevGamesLen.current) {
-      setVisibleCount(Math.min(sortedGms.length, INITIAL_CARDS));
-      prevGamesLen.current = sortedGms.length;
-    }
-  }, [sortedGms.length]);
+  // Reset visible count during render when game list changes (avoids setState-in-effect)
+  if (sortedGms.length !== prevGamesLen) {
+    setPrevGamesLen(sortedGms.length);
+    setVisibleCount(Math.min(sortedGms.length, INITIAL_CARDS));
+  }
 
   // IntersectionObserver to load more cards as user scrolls
   useEffect(() => {
@@ -84,7 +82,7 @@ const PlatformCardSection = React.memo(function PlatformCardSection({ plat, game
               dim={dim}
               isFocused={isFocused}
               platColor={p.color}
-              platLetter={(p as any).letter}
+              platLetter={p.letter}
               animDelay={Math.min(gi, 15) * 0.04 + 's'}
               noAnim={gi >= INITIAL_CARDS}
               onOpen={onOpen}
@@ -157,9 +155,16 @@ const GameCard = React.memo(function GameCard({ game: g, dim, isFocused, platCol
   );
 });
 
+interface OrbItem { game: Game; x: number; y: number; size: number; driftX: number; driftY: number; driftDur: number; driftDelay: number; enterDelay: number; }
+interface StarLayerItem { x: number; y: number; sz: number; op: number; tw: boolean; twDur: number; twDel: number; }
+interface GalaxyStar { x: number; y: number; sz: number; op: number; hue: string; tw: boolean; twDur: number; twDel: number; }
+interface ShootingStar { x: number; y: number; angle: number; dur: number; del: number; }
+
+const PARALLAX_SPEEDS = [10, 30, 60] as const;
+
 export default function App() {
-  const [importProgress, setImportProgress] = useState<any>(null);
-  const [metaProgress, setMetaProgress] = useState<any>(null);
+  const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
+  const [metaProgress, setMetaProgress] = useState<MetaProgress | null>(null);
   const [showWizard, setShowWizard] = useState(false);
   const [games, setGames] = useState<Game[]>([]);
   const [gamesLoaded, setGamesLoaded] = useState(false);
@@ -212,16 +217,18 @@ export default function App() {
   const canvasRef = useRef<HTMLDivElement>(null);
   const camRef = useRef({ zoom: 0.4, x: 0, y: 0 });
   const dragInfo = useRef({ active: false, sx: 0, sy: 0, cx: 0, cy: 0, moved: false });
-  const parallaxRefs = [useRef<HTMLDivElement>(null), useRef<HTMLDivElement>(null), useRef<HTMLDivElement>(null)];
-  const parallaxSpeeds = [10, 30, 60];
+  const pRef0 = useRef<HTMLDivElement>(null);
+  const pRef1 = useRef<HTMLDivElement>(null);
+  const pRef2 = useRef<HTMLDivElement>(null);
+  const parallaxRefsArray = useRef([pRef0, pRef1, pRef2]);
   const parallaxRafRef = useRef<number | null>(null);
   const parallaxMouseRef = useRef({ cx: 0, cy: 0 });
-  const kbStateRef = useRef({ focusGame: null as any, showThemePicker: false, showLayoutPicker: false, showFilters: '' });
-  const [globalArtPicker, setGlobalArtPicker] = useState<any>(null);
+  const kbStateRef = useRef({ focusGame: null as Game | null, showThemePicker: false, showLayoutPicker: false, showFilters: '' });
+  const [globalArtPicker, setGlobalArtPicker] = useState<ArtPickerOpts | null>(null);
   const artResolve = useRef<((url: string | null) => void) | null>(null);
   const gpMouseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const openArtPicker = (opts: any) =>
+  const openArtPicker = (opts: ArtPickerOpts) =>
     new Promise<string | null>(resolve => { artResolve.current = resolve; setGlobalArtPicker(opts); });
 
   // Parallax
@@ -233,10 +240,9 @@ export default function App() {
       parallaxRafRef.current = requestAnimationFrame(() => {
         parallaxRafRef.current = null;
         const { cx, cy } = parallaxMouseRef.current;
-        for (let i = 0; i < 3; i++) {
-          if (parallaxRefs[i].current)
-            parallaxRefs[i].current!.style.transform = `translate(${-cx * parallaxSpeeds[i]}px,${-cy * parallaxSpeeds[i]}px)`;
-        }
+        parallaxRefsArray.current.forEach((ref, i) => {
+          if (ref.current) ref.current.style.transform = `translate(${cx * PARALLAX_SPEEDS[i]}px, ${cy * PARALLAX_SPEEDS[i]}px)`;
+        });
       });
     };
     window.addEventListener('mousemove', handler, { passive: true });
@@ -287,13 +293,13 @@ export default function App() {
     setTimeout(() => setAnimating(false), 350);
   };
 
-  const switchView = (mode: string) => {
+  const switchView = useCallback((mode: string) => {
     if (mode === viewMode || viewTransition) return;
     if (mode === 'orbit' && viewMode === 'cards') {
       setViewTransition('cards-exit');
       setTimeout(() => { setViewMode('orbit'); setViewTransition(null); setGalaxyEntering(true); setTimeout(() => setGalaxyEntering(false), 900); }, 500);
     } else { setViewMode(mode); }
-  };
+  }, [viewMode, viewTransition]);
 
   useEffect(() => {
     if (viewMode === 'orbit') {
@@ -371,11 +377,13 @@ export default function App() {
     let unsubChiaki: (() => void) | null = null;
     let unsubRefresh: (() => void) | null = null;
     if (window.api?.onChiakiEvent) {
-      unsubChiaki = window.api.onChiakiEvent!((evt: any) => {
+      unsubChiaki = window.api.onChiakiEvent!((evt: ChiakiSession) => {
+        const gid = evt.gameId;
+        if (!gid) return;
         if (evt.type === 'title_change') {
           setChiakiSessions(prev => {
             const n = { ...prev };
-            n[evt.gameId] = { ...(n[evt.gameId] || {}), ...evt, detectedTitle: evt.titleName || evt.gameName || '' };
+            n[gid] = { ...(n[gid] || {}), ...evt, detectedTitle: (evt.titleName as string) || evt.gameName || '' };
             return n;
           });
           if (evt.gameName) flash('Now playing: ' + evt.gameName);
@@ -383,8 +391,8 @@ export default function App() {
         }
         setChiakiSessions(prev => {
           const n = { ...prev };
-          if ((evt.type === 'disconnected' || evt.type === 'chiaki_disconnect') && evt.reason !== 'transient_error') delete n[evt.gameId];
-          else n[evt.gameId] = { ...(n[evt.gameId] || {}), ...evt };
+          if ((evt.type === 'disconnected' || evt.type === 'chiaki_disconnect') && evt.reason !== 'transient_error') delete n[gid];
+          else n[gid] = { ...(n[gid] || {}), ...evt };
           return n;
         });
       });
@@ -396,8 +404,8 @@ export default function App() {
           const prevMap = new Map((prev || []).map(x => [x.id, x]));
           return incoming.map((ng: Game) => {
             const prevG = prevMap.get(ng.id);
-            const prevStamp = (prevG as any)?._imgStamp || 0;
-            const newStamp = (ng as any)._imgStamp || 0;
+            const prevStamp = prevG?._imgStamp || 0;
+            const newStamp = ng._imgStamp || 0;
             const stamp = Math.max(prevStamp, newStamp);
             return stamp ? { ...ng, _imgStamp: stamp } : ng;
           });
@@ -405,7 +413,7 @@ export default function App() {
       });
     }
     return () => { unsubChiaki?.(); unsubRefresh?.(); };
-  }, []);
+  }, [flash]);
 
   // Load initial data
   useEffect(() => {
@@ -414,7 +422,7 @@ export default function App() {
         const [g, c, s] = await Promise.all([
           window.api.getGames(),
           window.api.getCategories(),
-          (window.api as any).getSettings?.(),
+          window.api.getSettings(),
         ]);
         setGames(g || []);
         setCats(c || []);
@@ -449,9 +457,9 @@ export default function App() {
       }
     })();
     let unsubImport: (() => void) | null = null;
-    if (window.api && (window.api as any).onImportProgress) {
-      unsubImport = (window.api as any).onImportProgress((data: any) => {
-        try { setImportProgress(data); } catch (_) {}
+    if (window.api?.onImportProgress) {
+      unsubImport = window.api.onImportProgress((data: ImportProgress) => {
+        setImportProgress(data);
       });
     }
     return () => { if (unsubImport) unsubImport(); };
@@ -478,7 +486,7 @@ export default function App() {
   // Signal Electron to show the window only after React has committed the loaded state
   useEffect(() => {
     if (gamesLoaded) {
-      (window.api as any)?.signalReady?.();
+      window.api?.signalReady?.();
     }
   }, [gamesLoaded]);
 
@@ -486,29 +494,29 @@ export default function App() {
   useEffect(() => {
     const t = setTimeout(async () => {
       try {
-        if ((window.api as any)?.saveSettings) {
-          await (window.api as any).saveSettings({ filterPlatforms: selectedPlatforms, filterCategories: selectedCategories, filterHideSteamSoftware: hideSteamSoftware });
+        if (window.api?.saveSettings) {
+          await window.api.saveSettings({ filterPlatforms: selectedPlatforms, filterCategories: selectedCategories, filterHideSteamSoftware: hideSteamSoftware });
         }
         setSettings(prev => ({ ...prev, filterPlatforms: selectedPlatforms, filterCategories: selectedCategories, filterHideSteamSoftware: hideSteamSoftware } as Settings));
-      } catch (_) {}
+      } catch { /* ignore */ }
     }, 300);
     return () => clearTimeout(t);
   }, [selectedPlatforms, selectedCategories, hideSteamSoftware]);
 
   // Auto-sync playtime
   useEffect(() => {
-    if (!settings.autoSyncPlaytime || !(window.api as any)?.syncPlaytime) return;
+    if (!settings.autoSyncPlaytime || !window.api?.syncPlaytime) return;
     const sync = async () => {
-      const r = await (window.api as any).syncPlaytime();
+      const r = await window.api!.syncPlaytime!();
       if (r?.games) setGames(prev => {
-        const prevMap = new Map((prev || []).map((x: any) => [x.id, x]));
-        return r.games.map((ng: any) => {
+        const prevMap = new Map((prev || []).map(x => [x.id, x]));
+        return r.games.map((ng: Game) => {
           const prevStamp = prevMap.get(ng.id)?._imgStamp || 0;
           const stamp = Math.max(prevStamp, ng._imgStamp || 0);
           return stamp ? { ...ng, _imgStamp: stamp } : ng;
         });
       });
-    };
+    }
     const initial = setTimeout(sync, 3000);
     const interval = setInterval(sync, 30 * 60 * 1000);
     return () => { clearTimeout(initial); clearInterval(interval); };
@@ -560,14 +568,15 @@ export default function App() {
     window.addEventListener('gamepadconnected', onConn as EventListener);
     window.addEventListener('gamepaddisconnected', onDisc);
     return () => { window.removeEventListener('gamepadconnected', onConn as EventListener); window.removeEventListener('gamepaddisconnected', onDisc); };
-  }, []);
+  }, [flash]);
 
   // App auto-update events
   useEffect(() => {
-    if (!(window.api as any)?.onUpdateEvent) return;
-    return (window.api as any).onUpdateEvent(({ type, data }: any) => {
-      if (type === 'update-available') setAppUpdate({ status: 'downloading', version: data?.version });
-      else if (type === 'download-progress') setAppUpdate(prev => ({ ...prev!, status: 'downloading', progress: Math.round(data?.percent || 0) }));
+    if (!window.api?.onUpdateEvent) return;
+    return window.api.onUpdateEvent(({ type, data }) => {
+      const d = data as { version?: string; percent?: number } | null | undefined;
+      if (type === 'update-available') setAppUpdate({ status: 'downloading', version: d?.version });
+      else if (type === 'download-progress') setAppUpdate(prev => ({ ...prev!, status: 'downloading', progress: Math.round(d?.percent || 0) }));
       else if (type === 'update-downloaded') setAppUpdate(prev => ({ ...prev!, status: 'ready' }));
       else if (type === 'error') setAppUpdate(null);
     });
@@ -577,7 +586,7 @@ export default function App() {
     if (!updated) return;
     setGames(prev => prev.map(x => {
       if (x.id !== updated.id) return x;
-      return { ...updated, _imgStamp: (updated as any)._imgStamp || Date.now() };
+      return { ...updated, _imgStamp: updated._imgStamp || Date.now() };
     }));
   }, [setGames]);
 
@@ -587,13 +596,13 @@ export default function App() {
       if (r.success) {
         flash('Launching ' + game.name);
         if (r.lastPlayed) _updateGameInState({ ...game, lastPlayed: r.lastPlayed });
-        if (settings.minimizeOnLaunch) (window.api as any).minimize?.();
+        if (settings.minimizeOnLaunch) window.api?.minimize?.();
       } else flash('Error: ' + r.error);
     } else flash('Launching ' + game.name + '...');
   }, [flash, settings.minimizeOnLaunch, _updateGameInState]);
 
   const doFav = useCallback(async (id: string) => {
-    if (window.api) { const u = await window.api.toggleFavorite(id); setGames(g => g.map(x => x.id === id ? { ...u, _imgStamp: (x as any)._imgStamp } : x)); }
+    if (window.api) { const u = await window.api.toggleFavorite(id); setGames(g => g.map(x => x.id === id ? { ...u, _imgStamp: x._imgStamp } : x)); }
     else setGames(g => g.map(x => x.id === id ? { ...x, favorite: !x.favorite } : x));
   }, [setGames]);
 
@@ -601,7 +610,7 @@ export default function App() {
     let created: Game | null = null;
     if (window.api) {
       const n = await window.api.addGame(f as Game);
-      if (n) { if (n.coverUrl) (n as any)._imgStamp = Date.now(); setGames(g => [...g, n]); created = n; }
+      if (n) { if (n.coverUrl) n._imgStamp = Date.now(); setGames(g => [...g, n]); created = n; }
     } else {
       const g: Game = { ...f, id: Date.now() + '', addedAt: new Date().toISOString(), playtimeMinutes: 0, favorite: false } as Game;
       setGames(prev => [...prev, g]); created = g;
@@ -613,21 +622,21 @@ export default function App() {
   const doEdit = async (f: Game) => {
     let updated: Game | null = null;
     if (window.api) { const u = await window.api.updateGame(f); if (u) { _updateGameInState(u); updated = u; } }
-    else { setGames(g => g.map(x => x.id === f.id ? { ...x, ...f, _imgStamp: f.coverUrl ? Date.now() : (x as any)._imgStamp } as Game : x)); updated = f; }
+    else { setGames(g => g.map(x => x.id === f.id ? { ...x, ...f, _imgStamp: f.coverUrl ? Date.now() : x._imgStamp } as Game : x)); updated = f; }
     setShowAdd(false); setEditGame(null); flash('Game updated');
     return updated;
   };
 
-  const doDelete = async (id: string) => {
+  const doDelete = useCallback(async (id: string) => {
     if (window.api) await window.api.deleteGame(id);
     setGames(g => g.filter(x => x.id !== id)); setFocusGame(null); flash('Game removed');
-  };
+  }, [flash]);
 
   const doImport = async (list: Game[]) => {
     const results: Game[] = [];
     let failed = 0;
     for (const g of list) {
-      if (window.api) { try { const n = await window.api.addGame(g); if (n) results.push(n); } catch (_) { failed++; } }
+      if (window.api) { try { const n = await window.api.addGame(g); if (n) results.push(n); } catch { failed++; } }
       else results.push({ ...g, id: Date.now() + '' + Math.random(), addedAt: new Date().toISOString(), playtimeMinutes: 0, favorite: false });
     }
     let added = 0, updated = 0;
@@ -642,12 +651,12 @@ export default function App() {
   };
 
   const doSync = async () => {
-    if (!window.api || !(window.api as any).syncPlaytime) { flash('Sync not available'); return; }
+    if (!window.api?.syncPlaytime) { flash('Sync not available'); return; }
     flash('Syncing playtime...');
-    const r = await (window.api as any).syncPlaytime();
+    const r = await window.api.syncPlaytime();
     if (r.games) setGames(prev => {
-      const prevMap = new Map((prev || []).map((x: any) => [x.id, x]));
-      return r.games.map((ng: any) => {
+      const prevMap = new Map((prev || []).map(x => [x.id, x]));
+      return r.games.map((ng: Game) => {
         const prevStamp = prevMap.get(ng.id)?._imgStamp || 0;
         const stamp = Math.max(prevStamp, ng._imgStamp || 0);
         return stamp ? { ...ng, _imgStamp: stamp } : ng;
@@ -660,7 +669,7 @@ export default function App() {
   const doRescanAll = async () => {
     if (!window.api) { flash('Rescan not available'); return; }
     flash('Scanning all platforms...');
-    const scanners = [(window.api as any).detectSteam, (window.api as any).detectEpic, (window.api as any).detectGOG, (window.api as any).detectXbox, (window.api as any).detectEA, (window.api as any).detectBattleNet, (window.api as any).detectItchio, (window.api as any).detectUbisoft];
+    const scanners = [window.api.detectSteam, window.api.detectEpic, window.api.detectGOG, window.api.detectXbox, window.api.detectEA, window.api.detectBattleNet, window.api.detectItchio, window.api.detectUbisoft];
     const results = await Promise.allSettled(scanners.map(fn => fn?.()));
     const all: Game[] = [];
     for (const r of results) { if (r.status === 'fulfilled' && r.value?.games) all.push(...r.value.games); }
@@ -669,39 +678,39 @@ export default function App() {
   };
 
   const doFetchAllMetadata = async () => {
-    if (!(window.api as any)?.fetchAllMetadata) { flash('Metadata fetch not available'); return; }
+    if (!window.api?.fetchAllMetadata) { flash('Metadata fetch not available'); return; }
     setMetaProgress({ phase: 'metadata', current: 0, total: games.length, updated: 0, failed: 0, name: '' });
-    const cleanupMeta = (window.api as any).onMetadataProgress?.((p: any) => {
-      setMetaProgress((prev: any) => ({ ...prev, ...p, phase: 'metadata' }));
+    const cleanupMeta = window.api.onMetadataProgress?.((p: Partial<MetaProgress>) => {
+      setMetaProgress(prev => prev ? { ...prev, ...p, phase: 'metadata' } : null);
     });
-    const cleanupCover = (window.api as any).onCoverProgress?.((p: any) => {
-      if (p.done) {
-        setMetaProgress((prev: any) => prev ? { ...prev, phase: 'done' } : null);
+    const cleanupCover = window.api.onCoverProgress?.(({ done, remaining }) => {
+      if (done) {
+        setMetaProgress(prev => prev ? { ...prev, phase: 'done' } : null);
       } else {
-        setMetaProgress((prev: any) => {
+        setMetaProgress(prev => {
           if (!prev) return null;
           // Capture the initial cover count on first cover progress event
-          const coverTotal = prev.coverTotal || p.remaining;
-          return { ...prev, phase: 'covers', coverTotal, coverRemaining: p.remaining };
+          const coverTotal = prev.coverTotal || remaining;
+          return { ...prev, phase: 'covers', coverTotal, coverRemaining: remaining };
         });
       }
     });
     try {
-      const r = await (window.api as any).fetchAllMetadata();
+      const r = await window.api.fetchAllMetadata();
       // Metadata phase done — covers may still be downloading in background
-      setMetaProgress((prev: any) => prev ? {
+      setMetaProgress(prev => prev ? {
         ...prev, phase: 'covers', current: r.total, total: r.total, updated: r.updated, failed: r.failed,
       } : null);
       // If no covers to download, mark done directly after a short wait
       setTimeout(() => {
-        setMetaProgress((prev: any) => {
+        setMetaProgress(prev => {
           if (prev && prev.phase === 'covers') return { ...prev, phase: 'done' };
           return prev;
         });
       }, 3000);
       if (r.updated > 0) flash('Updated metadata for ' + r.updated + ' of ' + r.total + ' games');
       else flash('All metadata is up to date');
-    } catch (_) {
+    } catch {
       flash('Metadata fetch failed');
       setMetaProgress(null);
     }
@@ -713,10 +722,10 @@ export default function App() {
     setSettings(prev => ({ ...prev, ...s }));
     if (s.defaultView) setViewMode(s.defaultView);
     if (s.theme) applyTheme(s.theme as string);
-    if ((s as any).accentColor !== undefined && (s as any).accentColor !== '') {
-      document.documentElement.style.setProperty('--accent', (s as any).accentColor);
-      document.documentElement.style.setProperty('--accent-soft', (s as any).accentColor + '1f');
-      document.documentElement.style.setProperty('--accent-border', (s as any).accentColor + '4d');
+    if (s.accentColor !== undefined && s.accentColor !== '') {
+      document.documentElement.style.setProperty('--accent', s.accentColor);
+      document.documentElement.style.setProperty('--accent-soft', s.accentColor + '1f');
+      document.documentElement.style.setProperty('--accent-border', s.accentColor + '4d');
     }
     if (s.uiScale) applyUiScale(s.uiScale as string);
   };
@@ -747,8 +756,8 @@ export default function App() {
     if (hideSteamSoftware) {
       list = list.filter(g => {
         if (g.platform !== 'steam') return true;
-        if ((g as any).software === true) return false;
-        if ((g as any).type && typeof (g as any).type === 'string' && (g as any).type.toLowerCase().includes('soft')) return false;
+        if (g.software === true) return false;
+        if (g.type && typeof g.type === 'string' && g.type.toLowerCase().includes('soft')) return false;
         if ((g.categories || []).some(c => {
           if (!c || typeof c !== 'string') return false;
           const lc = c.toLowerCase();
@@ -805,7 +814,7 @@ export default function App() {
     filteredGames.forEach(g => { if (g.installed === false) return; if (!groups[g.platform]) groups[g.platform] = []; groups[g.platform].push(g); });
     const allPt = games.map(g => g.playtimeMinutes || 0);
     const maxPt = Math.max(...allPt, 1);
-    const result: any[] = []; let idx = 0;
+    const result: OrbItem[] = []; let idx = 0;
     Object.entries(groups).forEach(([plat, gms]) => {
       const c = CLUSTER_CENTERS[plat] || { x: 1500, y: 1000 };
       const sortedGms = [...gms].sort(sortBy === 'name' ? (a, b) => a.name.localeCompare(b.name) : sortBy === 'recent' ? (a, b) => new Date(b.lastPlayed || 0).getTime() - new Date(a.lastPlayed || 0).getTime() : sortBy === 'installed' ? (a, b) => (b.installed === false ? 0 : 1) - (a.installed === false ? 0 : 1) || a.name.localeCompare(b.name) : (a, b) => (b.playtimeMinutes || 0) - (a.playtimeMinutes || 0));
@@ -841,11 +850,11 @@ export default function App() {
       }
     }
     return result;
-  }, [filteredGames, sortBy]);
+  }, [filteredGames, sortBy, games]);
 
   const starLayers = useMemo(() => {
-    const base = (settings as any).starDensity === 'low' ? 120 : (settings as any).starDensity === 'high' ? 500 : 280;
-    const layers: any[][] = [[], [], []];
+    const base = settings.starDensity === 'low' ? 120 : settings.starDensity === 'high' ? 500 : 280;
+    const layers: StarLayerItem[][] = [[], [], []];
     const counts = [Math.round(base * 0.5), Math.round(base * 0.35), Math.round(base * 0.15)];
     for (let d = 0; d < 3; d++) {
       for (let i = 0; i < counts[d]; i++) {
@@ -854,28 +863,28 @@ export default function App() {
       }
     }
     return layers;
-  }, [(settings as any).starDensity]);
+  }, [settings.starDensity]);
 
   const galaxyStars = useMemo(() => {
-    const count = (settings as any).starDensity === 'low' ? 250 : (settings as any).starDensity === 'high' ? 800 : 500;
-    const s: any[] = [];
+    const count = settings.starDensity === 'low' ? 250 : settings.starDensity === 'high' ? 800 : 500;
+    const s: GalaxyStar[] = [];
     for (let i = 0; i < count; i++) {
       const bright = Math.random() > 0.9;
       const hue = Math.random() > 0.82 ? (Math.random() > 0.5 ? 'rgb(180,200,255)' : 'rgb(255,220,180)') : 'white';
       s.push({ x: Math.random() * GALAXY_W, y: Math.random() * GALAXY_H, sz: bright ? 2 + Math.random() * 3 : 0.3 + Math.random() * 2.5, op: bright ? 0.15 + Math.random() * 0.3 : 0.03 + Math.random() * 0.12, hue, tw: Math.random() > 0.45, twDur: 2.5 + Math.random() * 7, twDel: Math.random() * 10 });
     }
     return s;
-  }, [(settings as any).starDensity]);
+  }, [settings.starDensity]);
 
   const shootingStars = useMemo(() => {
-    const s: any[] = [];
+    const s: ShootingStar[] = [];
     for (let i = 0; i < 8; i++) s.push({ x: 150 + Math.random() * (GALAXY_W - 300), y: 80 + Math.random() * (GALAXY_H - 160), angle: -25 + Math.random() * 50, dur: 4 + Math.random() * 8, del: i * 2.5 + Math.random() * 5 });
     return s;
   }, []);
 
   const anyPanelOpen = showChiaki || showXcloud || showSettings || showAdd || showDetect || showPlatforms || showSearch || showWizard;
   const liveFocus = useMemo(() => focusGame ? games.find(g => g.id === focusGame.id) || focusGame : null, [focusGame, games]);
-  const tbPos: string = (settings as any).toolbarPosition || 'top';
+  const tbPos: string = settings.toolbarPosition || 'top';
   const isVertical = tbPos === 'left' || tbPos === 'right';
   const toastAnchor: React.CSSProperties =
     tbPos === 'right' ? { top: 12, left: 12, right: 'auto', bottom: 'auto' } :
@@ -961,7 +970,7 @@ export default function App() {
           if (act === 'r_left' || act === 'r_up') curPlat = (curPlat - 1 + allPlats.length) % allPlats.length;
           const np = allPlats[curPlat]; setTab(np);
           const cc = CLUSTER_CENTERS[np]; if (cc) flyTo(cc.x, cc.y, 1.6);
-          const firstOrb = orbData.findIndex((o: any) => o.game.platform === np);
+          const firstOrb = orbData.findIndex((o: OrbItem) => o.game.platform === np);
           if (firstOrb >= 0) setGpIdx(firstOrb);
           continue;
         }
@@ -980,7 +989,7 @@ export default function App() {
     }
   }, [gpActive, focusGame, viewMode, tab, activePlatforms, gpIdx, gpArea, anyPanelOpen, showFilters,
       showSearch, showAdd, showDetect, showChiaki, showXcloud, showSettings, showPlatforms, showWizard,
-      groupedByPlatform, orbData]));
+      groupedByPlatform, orbData, doDelete, doFav, doLaunch, switchView]));
 
   const handleCloseTab = (id: string) => {
     setTabs(p => p.filter(t => t.id !== id));
@@ -993,8 +1002,8 @@ export default function App() {
       <TabBar tabs={tabs} activeTab={activeTabId} onSwitch={id => { setActiveTabId(id); (window.api as Record<string, (id: string) => void>)?.switchTab?.(id); }} onClose={handleCloseTab} />
       <div className="void-layer">
         {starLayers.map((layer, d) => (
-          <div key={d} ref={parallaxRefs[d]} className={'parallax-layer depth-' + d}>
-            {layer.map((s: any, i: number) => (
+          <div key={d} ref={parallaxRefsArray.current[d]} className={'parallax-layer depth-' + d}>
+            {layer.map((s: StarLayerItem, i: number) => (
               <div key={i} className={s.tw ? 'bg-star tw' : 'bg-star'} style={{ left: s.x + '%', top: s.y + '%', width: s.sz + 'px', height: s.sz + 'px', opacity: s.op, '--tw-dur': s.twDur + 's', '--tw-del': s.twDel + 's' } as React.CSSProperties} />
             ))}
           </div>
@@ -1004,10 +1013,10 @@ export default function App() {
       {viewMode === 'orbit' && (
         <div className={'galaxy-viewport' + (galaxyEntering ? ' galaxy-entering' : '')} ref={viewportRef} onDoubleClick={fitAll}>
           <div className={'galaxy-canvas' + (animating ? ' fly' : '')} ref={canvasRef} style={{ transform: `translate(${cam.x}px,${cam.y}px) scale(${cam.zoom})`, width: GALAXY_W, height: GALAXY_H }}>
-            {galaxyStars.map((s: any, i: number) => (
+            {galaxyStars.map((s: GalaxyStar, i: number) => (
               <div key={i} className={'galaxy-star' + (s.tw ? ' tw' : '')} style={{ left: s.x, top: s.y, width: s.sz, height: s.sz, background: s.hue, opacity: s.op, '--tw-dur': s.twDur + 's', '--tw-del': s.twDel + 's' } as React.CSSProperties} />
             ))}
-            {shootingStars.map((s: any, i: number) => (
+            {shootingStars.map((s: ShootingStar, i: number) => (
               <div key={'sh' + i} style={{ position: 'absolute', left: s.x, top: s.y, transform: `rotate(${s.angle}deg)`, pointerEvents: 'none' }}>
                 <div className="shooting-star" style={{ '--sh-dur': s.dur + 's', '--sh-del': s.del + 's' } as React.CSSProperties} />
               </div>
@@ -1041,7 +1050,7 @@ export default function App() {
             })}
             {activeStations.map(plat => {
               const c = CLUSTER_CENTERS[plat]; const p = PLATFORMS[plat]; const col = p.color;
-              const onClick = () => { if (!dragInfo.current.moved) { plat === 'psn' ? setShowChiaki(true) : setShowXcloud(true); } };
+              const onClick = () => { if (!dragInfo.current.moved) { if (plat === 'psn') setShowChiaki(true); else setShowXcloud(true); } };
               return (
                 <React.Fragment key={'station-' + plat}>
                   <div className="nebula" style={{ left: c.x, top: c.y, width: 350, height: 350, background: col, opacity: 0.04 }} />
@@ -1061,7 +1070,7 @@ export default function App() {
                 </React.Fragment>
               );
             })}
-            {orbData.map((o: any, oi: number) => {
+            {orbData.map((o: OrbItem, oi: number) => {
               const p = PLATFORMS[o.game.platform];
               const dimmed = isDimmed(o.game);
               const anim = settings.showAnimations !== false;
@@ -1132,7 +1141,7 @@ export default function App() {
             const p = PLATFORMS[plat];
             return (
               <button key={plat} className={'stream-pill-btn' + (gpActive && gpArea === 'pill' && gpIdx === pi ? ' gp-focus' : '')}
-                onClick={() => { plat === 'psn' ? setShowChiaki(true) : setShowXcloud(true); }}>
+                onClick={() => { if (plat === 'psn') setShowChiaki(true); else setShowXcloud(true); }}>
                 <div className="sp-icon" style={{ background: p.color + '33', color: p.color }}>{p.icon}</div>
                 {plat === 'psn' ? 'Remote Play' : 'Cloud Gaming'}
               </button>
@@ -1143,9 +1152,9 @@ export default function App() {
 
       <div className="drag-bar" />
       <div className="win-ctrls">
-        <button onClick={() => (window.api as any)?.minimize?.()} aria-label="Minimize">{I.min}</button>
-        <button onClick={() => (window.api as any)?.maximize?.()} aria-label="Maximize">{I.max}</button>
-        <button onClick={() => (window.api as any)?.close?.()} aria-label="Close">{I.close}</button>
+        <button onClick={() => window.api?.minimize?.()} aria-label="Minimize">{I.min}</button>
+        <button onClick={() => window.api?.maximize?.()} aria-label="Maximize">{I.max}</button>
+        <button onClick={() => window.api?.close?.()} aria-label="Close">{I.close}</button>
       </div>
 
       <div className={'nav-pill pos-' + tbPos} onClick={() => { setShowThemePicker(false); setShowLayoutPicker(false); }}>
@@ -1228,7 +1237,7 @@ export default function App() {
                     <button className="btn-sm primary" onClick={() => setShowFilters('')}>Done</button>
                   </div>
                 </div>,
-                isVertical ? document.body : undefined as any
+                isVertical ? document.body : (null as unknown as Element)
               )}
             </div>
           );
@@ -1240,22 +1249,22 @@ export default function App() {
         <div className="nav-sep" />
         {/* Theme picker */}
         {(() => {
-          const activeTheme = THEMES[(settings as any).theme || 'midnight'] || THEMES.midnight;
+          const activeTheme = THEMES[settings.theme || 'midnight'] || THEMES.midnight;
           const chevron = <svg viewBox="0 0 8 8" width="8" height="8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M1 2l3 3 3-3" /></svg>;
-          const accentVal = (settings as any).accentColor || activeTheme.accent;
+          const accentVal = settings.accentColor || activeTheme.accent;
           const applyCustomAccent = async (c: string) => {
             document.documentElement.style.setProperty('--accent', c);
             document.documentElement.style.setProperty('--accent-soft', c + '1f');
             document.documentElement.style.setProperty('--accent-border', c + '4d');
-            const saved = await (window.api as any)?.saveSettings?.({ accentColor: c });
+            const saved = await window.api?.saveSettings?.({ accentColor: c });
             onSettingsChange(saved || { accentColor: c });
           };
           const dots = (
             <div className="theme-picker-popover" style={{ flexDirection: 'column', width: 'auto', ...(tbPos === 'bottom' ? { bottom: 'calc(100% + 6px)', left: 0 } : { top: 'calc(100% + 6px)', left: 0 }) }} onClick={e => e.stopPropagation()}>
               <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', width: 128 }}>
                 {Object.entries(THEMES).map(([key, t]) => (
-                  <button key={key} className={'theme-dot' + (((settings as any).theme || 'midnight') === key ? ' active' : '')} style={{ background: t.accent }} title={t.label}
-                    onClick={async () => { const saved = await (window.api as any)?.saveSettings?.({ theme: key, accentColor: '' }); onSettingsChange(saved || { theme: key, accentColor: '' }); applyTheme(key); setShowThemePicker(false); }} />
+                  <button key={key} className={'theme-dot' + ((settings.theme || 'midnight') === key ? ' active' : '')} style={{ background: t.accent }} title={t.label}
+                    onClick={async () => { const saved = await window.api?.saveSettings?.({ theme: key, accentColor: '' }); onSettingsChange(saved || { theme: key, accentColor: '' }); applyTheme(key); setShowThemePicker(false); }} />
                 ))}
               </div>
               <div style={{ height: 1, background: 'var(--glass-border)', margin: '6px 0' }} />
@@ -1286,8 +1295,8 @@ export default function App() {
                       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--glass-border)', borderRadius: 12, padding: 8, boxShadow: '0 8px 32px rgba(0,0,0,0.6)', display: 'flex', flexDirection: 'column', gap: 0, width: 'auto', animation: 'popoverIn 0.15s cubic-bezier(0.16,1,0.3,1)' }}>
                         <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', width: 128 }}>
                           {Object.entries(THEMES).map(([key, t]) => (
-                            <button key={key} className={'theme-dot' + (((settings as any).theme || 'midnight') === key ? ' active' : '')} style={{ background: t.accent }} title={t.label}
-                              onClick={async () => { const saved = await (window.api as any)?.saveSettings?.({ theme: key, accentColor: '' }); onSettingsChange(saved || { theme: key, accentColor: '' }); applyTheme(key); setShowThemePicker(false); }} />
+                            <button key={key} className={'theme-dot' + ((settings.theme || 'midnight') === key ? ' active' : '')} style={{ background: t.accent }} title={t.label}
+                              onClick={async () => { const saved = await window.api?.saveSettings?.({ theme: key, accentColor: '' }); onSettingsChange(saved || { theme: key, accentColor: '' }); applyTheme(key); setShowThemePicker(false); }} />
                           ))}
                         </div>
                         <div style={{ height: 1, background: 'var(--glass-border)', margin: '6px 0' }} />
@@ -1320,8 +1329,8 @@ export default function App() {
             ['bottom', 'Bottom', <svg viewBox="0 0 12 12" fill="none"><rect x="1" y="1" width="10" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.2"/><rect x="1" y="7.5" width="10" height="3.5" rx="1" fill="currentColor"/></svg>],
             ['left',   'Left',   <svg viewBox="0 0 12 12" fill="none"><rect x="1" y="1" width="10" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.2"/><rect x="1" y="1" width="3.5" height="10" rx="1" fill="currentColor"/></svg>],
             ['right',  'Right',  <svg viewBox="0 0 12 12" fill="none"><rect x="1" y="1" width="10" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.2"/><rect x="7.5" y="1" width="3.5" height="10" rx="1" fill="currentColor"/></svg>],
-          ] as [string, string, React.ReactNode][];
-          const currentPos = (settings as any).toolbarPosition || 'top';
+          ] as ['top' | 'bottom' | 'left' | 'right', string, React.ReactNode][];
+          const currentPos = settings.toolbarPosition || 'top';
           const currentIcon = layoutOptions.find(([v]) => v === currentPos)?.[2] ?? layoutOptions[0][2];
           const chevron = <svg viewBox="0 0 8 8" width="8" height="8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M1 2l3 3 3-3" /></svg>;
           const popoverStyle: React.CSSProperties = tbPos === 'bottom'
@@ -1337,7 +1346,7 @@ export default function App() {
                 <button key={val}
                   className={'layout-picker-option' + (currentPos === val ? ' active' : '')}
                   title={label}
-                  onClick={async () => { const saved = await (window.api as any)?.saveSettings?.({ toolbarPosition: val }); onSettingsChange(saved || { toolbarPosition: val }); setShowLayoutPicker(false); setShowThemePicker(false); }}>
+                  onClick={async () => { const saved = await window.api?.saveSettings?.({ toolbarPosition: val }); onSettingsChange(saved || { toolbarPosition: val }); setShowLayoutPicker(false); setShowThemePicker(false); }}>
                   <span className="layout-picker-icon">{icon}</span>
                   <span className="layout-picker-label">{label}</span>
                 </button>
@@ -1358,7 +1367,7 @@ export default function App() {
                           <button key={val}
                             className={'layout-picker-option' + (currentPos === val ? ' active' : '')}
                             title={label}
-                            onClick={async () => { const saved = await (window.api as any)?.saveSettings?.({ toolbarPosition: val }); onSettingsChange(saved || { toolbarPosition: val }); setShowLayoutPicker(false); }}>
+                            onClick={async () => { const saved = await window.api?.saveSettings?.({ toolbarPosition: val }); onSettingsChange(saved || { toolbarPosition: val }); setShowLayoutPicker(false); }}>
                             <span className="layout-picker-icon">{icon}</span>
                             <span className="layout-picker-label">{label}</span>
                           </button>
@@ -1410,7 +1419,7 @@ export default function App() {
             </div>
             <button className="stream-float-stop" onClick={async e => {
               e.stopPropagation();
-              if (window.api) await (window.api as any).chiakiStopStream?.(gid);
+              if (window.api) await window.api.chiakiStopStream?.(gid);
               setChiakiSessions(p => { const n = { ...p }; delete n[gid]; return n; });
               flash('Stream stopped');
             }}>Stop</button>
@@ -1420,20 +1429,20 @@ export default function App() {
 
       <StreamOverlay sessions={chiakiSessions} games={games} onStop={async gid => {
         const s = chiakiSessions[gid];
-        if (window.api) { if (s && (s as any).platform === 'xbox') await (window.api as any).xcloudStop?.(gid); else await (window.api as any).chiakiStopStream?.(gid); }
+        if (window.api) { if (s && s['platform'] === 'xbox') await window.api.xcloudStop?.(gid); else await window.api.chiakiStopStream?.(gid); }
         setChiakiSessions(p => { const n = { ...p }; delete n[gid]; return n; });
         flash('Stream stopped');
       }} />
 
       <SearchOverlay show={showSearch} onClose={() => setShowSearch(false)} games={games} onSelect={g => setFocusGame(g)} onLaunch={doLaunch} />
-      <AddPanel show={showAdd} onClose={() => { setShowAdd(false); setEditGame(null); }} onSave={editGame ? doEdit as any : doAdd as any}
+      <AddPanel show={showAdd} onClose={() => { setShowAdd(false); setEditGame(null); }} onSave={editGame ? (f: Partial<Game>) => doEdit(f as Game).then(r => r ?? undefined) : (f: Partial<Game>) => doAdd(f).then(r => r ?? undefined)}
         onUpdated={(g: Game) => { _updateGameInState(g); setShowAdd(false); setEditGame(null); }}
         categories={cats} editGame={editGame} flash={flash} onOpenArtPicker={openArtPicker} />
       <DetectPanel show={showDetect} onClose={() => setShowDetect(false)} onImport={doImport} />
       {showPlatforms && <Suspense fallback={null}><PlatformsPanel show={showPlatforms} onClose={() => setShowPlatforms(false)} flash={flash} setGames={setGames} onOpenChiaki={() => setShowChiaki(true)} onOpenXcloud={() => setShowXcloud(true)} /></Suspense>}
       {showChiaki && <Suspense fallback={null}><ChiakiPanel show={showChiaki} onClose={() => setShowChiaki(false)} flash={flash} games={games} setGames={setGames} chiakiSessions={chiakiSessions} /></Suspense>}
       {showXcloud && <Suspense fallback={null}><XcloudPanel show={showXcloud} onClose={() => setShowXcloud(false)} flash={flash} /></Suspense>}
-      {showSettings && <Suspense fallback={null}><SettingsPanel show={showSettings} onClose={() => setShowSettings(false)} flash={flash} settings={settings} onSettingsChange={onSettingsChange as any}
+      {showSettings && <Suspense fallback={null}><SettingsPanel show={showSettings} onClose={() => setShowSettings(false)} flash={flash} settings={settings} onSettingsChange={(s: Settings) => onSettingsChange(s)}
           games={games} setGames={setGames} setCats={setCats}
           onOpenPlatforms={() => { setShowSettings(false); setTimeout(() => setShowPlatforms(true), 150); }}
           onSync={doSync} onFetchMetadata={doFetchAllMetadata} onRunWizard={() => setShowWizard(true)} onRescanAll={doRescanAll} /></Suspense>}
@@ -1481,14 +1490,14 @@ export default function App() {
                 ? 'Synced · ' + (metaProgress.updated || 0) + ' updated'
                 : metaProgress.phase === 'covers'
                   ? 'Syncing' + ((metaProgress.coverRemaining || 0) > 0 ? ' · ' + metaProgress.coverRemaining + ' covers' : '')
-                  : 'Syncing' + (metaProgress.total > 0 ? ' · ' + (metaProgress.current || 0) + '/' + metaProgress.total : '')}
+                  : 'Syncing' + ((metaProgress.total ?? 0) > 0 ? ' · ' + (metaProgress.current || 0) + '/' + metaProgress.total : '')}
             </span>
             {metaProgress.phase !== 'done' && (
               <div className="subtle-pill-bar">
                 <div className="subtle-pill-bar-fill" style={{ width:
                   metaProgress.phase === 'covers'
                     ? (50 + (1 - (metaProgress.coverRemaining || 0) / Math.max(1, metaProgress.coverTotal || 1)) * 50) + '%'
-                    : metaProgress.total > 0 ? (((metaProgress.current || 0) / metaProgress.total) * 50) + '%' : '0%'
+                    : (metaProgress.total ?? 0) > 0 ? (((metaProgress.current || 0) / (metaProgress.total ?? 1)) * 50) + '%' : '0%'
                 }} />
               </div>
             )}
@@ -1512,7 +1521,7 @@ export default function App() {
               </div>
             </div>
             {appUpdate.status === 'ready'
-              ? <button className="btn-sm primary" style={{ flexShrink: 0 }} onClick={() => (window.api as any)?.installUpdate?.()}>Restart</button>
+              ? <button className="btn-sm primary" style={{ flexShrink: 0 }} onClick={() => window.api?.installUpdate?.()}>Restart</button>
               : <button className="btn-flat" style={{ padding: '2px 6px', fontSize: 11, flexShrink: 0 }} onClick={() => setAppUpdate(null)}>✕</button>
             }
           </div>

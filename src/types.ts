@@ -31,6 +31,10 @@ export interface Game {
 
   // Xbox Cloud Gaming
   streamUrl?: string;
+
+  // Steam-specific dynamic fields
+  software?: boolean;
+  type?: string;
 }
 
 // ─── Settings ────────────────────────────────────────────────────────────────
@@ -124,6 +128,40 @@ export interface MediaInfo {
   duration?: number;
 }
 
+// ─── Progress overlays ──────────────────────────────────────────────────────
+
+export interface ImportProgress {
+  status: 'running' | 'done' | 'error';
+  provider?: string;
+  processed?: number;
+  total?: number;
+  name?: string;
+}
+
+export interface MetaProgress {
+  phase: 'metadata' | 'covers' | 'done';
+  current?: number;
+  total?: number;
+  updated?: number;
+  failed?: number;
+  name?: string;
+  coverTotal?: number;
+  coverRemaining?: number;
+}
+
+export interface CoverProgress {
+  remaining: number;
+  done: boolean;
+}
+
+// ─── Art picker ───────────────────────────────────────────────────────────────
+
+export interface ArtPickerOpts {
+  gameName: string;
+  platform: string;
+  field: 'coverUrl' | 'headerUrl';
+}
+
 // ─── Electron API (exposed via preload) ──────────────────────────────────────
 
 export interface ElectronAPI {
@@ -150,6 +188,38 @@ export interface ElectronAPI {
   stopChiaki?(gameId: string): Promise<void>;
   getChiakiRegistered?(host: string): Promise<boolean>;
   registerChiaki?(host: string, pin: string): Promise<{ success: boolean; error?: string }>;
+  // Window controls
+  minimize?(): void;
+  maximize?(): void;
+  close?(): void;
+  // Playtime sync
+  syncPlaytime?(): Promise<{ games: Game[]; updated: string[] }>;
+  // Import progress
+  onImportProgress?(cb: (data: ImportProgress) => void): () => void;
+  // App updates
+  onUpdateEvent?(cb: (e: { type: string; data: unknown }) => void): () => void;
+  installUpdate?(): void;
+  // Metadata
+  fetchAllMetadata?(): Promise<{ total: number; updated: number; failed: number }>;
+  onMetadataProgress?(cb: (p: Partial<MetaProgress>) => void): () => void;
+  onCoverProgress?(cb: (p: CoverProgress) => void): () => void;
+  // Tab system
+  onTabsOpened?(cb: (d: { id: string; title: string; platform: string }) => void): () => void;
+  onTabsClosed?(cb: (d: { id: string }) => void): () => void;
+  switchTab?(id: string): void;
+  closeTab?(id: string): void;
+  // Platform detection
+  detectSteam?(): Promise<{ games: Game[] }>;
+  detectEpic?(): Promise<{ games: Game[] }>;
+  detectGOG?(): Promise<{ games: Game[] }>;
+  detectXbox?(): Promise<{ games: Game[] }>;
+  detectEA?(): Promise<{ games: Game[] }>;
+  detectBattleNet?(): Promise<{ games: Game[] }>;
+  detectItchio?(): Promise<{ games: Game[] }>;
+  detectUbisoft?(): Promise<{ games: Game[] }>;
+  // Streaming
+  chiakiStopStream?(gameId: string): Promise<void>;
+  xcloudStop?(gameId: string): Promise<void>;
   [key: string]: unknown;
 }
 
