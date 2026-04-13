@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { canonicalize, findExisting, makeGameEntry, updateAccountSync } = require('./utils');
-const log = require('../modules/logger');
+const _log = require('../modules/logger');
 
 // ─── Detect ALL owned games from Ubisoft Connect's local cache ───────────────
 function detectOwned() {
@@ -20,7 +20,7 @@ function detectOwned() {
         // Ubisoft game IDs are typically 1-5 digit numbers embedded in the binary
         const matches = text.match(/\b(\d{1,5})\b/g);
         if (matches) matches.forEach(id => ownedIds.add(id));
-      } catch (e) {}
+      } catch { /* ignore */ }
     }
 
     // 2. Read configurations directory for game metadata
@@ -49,9 +49,9 @@ function detectOwned() {
               source: 'config-cache',
               installed: false,
             });
-          } catch (e) {}
+          } catch { /* ignore */ }
         }
-      } catch (e) {}
+      } catch { /* ignore */ }
     }
 
     // 3. Fallback: scan the legacy game configs at <configDir>/games/installs/
@@ -78,11 +78,17 @@ function detectOwned() {
                 installed: false,
               });
             }
-          } catch (e) {}
+          } catch (error) {
+            // ignore
+          }
         }
-      } catch (e) {}
+      } catch (error) {
+        // ignore
+      }
     }
-  } catch (e) { /* ignore */ }
+  } catch (error) {
+    // ignore
+  }
   return owned;
 }
 
@@ -105,7 +111,7 @@ function detectInstalled() {
         const yml = fs.readFileSync(settingsYaml, 'utf-8');
         const gamesPath = yml.match(/game_installation_path:\s*(.+)/i);
         if (gamesPath) extraPaths.push(gamesPath[1].trim().replace(/"/g, ''));
-      } catch (e) {}
+      } catch { /* ignore */ }
     }
 
     const allDirs = [...new Set([...ubiDirs, ...extraPaths])].filter(d => fs.existsSync(d));
@@ -127,7 +133,7 @@ function detectInstalled() {
             const files = fs.readdirSync(gameDir);
             const exeFile = files.find(f => f.endsWith('.exe') && !/(unins|setup|redist|vcredist|dxsetup|uplay|crash)/i.test(f));
             if (exeFile) exe = path.join(gameDir, exeFile);
-          } catch (e) {}
+          } catch { /* ignore */ }
 
           games.push({
             name: gameName, platform: 'ubisoft', platformId: '',
@@ -135,7 +141,7 @@ function detectInstalled() {
             categories: [], source: 'auto-detected', installed: true,
           });
         }
-      } catch (e) {}
+      } catch { /* ignore */ }
     }
 
     const launcherInstalls = path.join(configDir, 'games', 'installs');
@@ -160,9 +166,9 @@ function detectInstalled() {
                 });
               }
             }
-          } catch (e) {}
+          } catch { /* ignore */ }
         }
-      } catch (e) {}
+      } catch { /* ignore */ }
     }
   } catch (err) {
     return { games: [], error: err.message };

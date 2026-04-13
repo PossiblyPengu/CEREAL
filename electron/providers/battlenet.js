@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { canonicalize, findExisting, makeGameEntry, updateAccountSync } = require('./utils');
-const log = require('../modules/logger');
+const _log = require('../modules/logger');
 
 const BNET_PRODUCTS = {
   'wow': { name: 'World of Warcraft', id: 'wow' },
@@ -39,7 +39,7 @@ function detectOwned() {
     let productDbBuf = null;
     for (const p of productDbPaths) {
       if (fs.existsSync(p)) {
-        try { productDbBuf = fs.readFileSync(p); break; } catch (e) {}
+        try { productDbBuf = fs.readFileSync(p); break; } catch { /* ignore */ }
       }
     }
 
@@ -63,7 +63,7 @@ function detectOwned() {
         }
       }
     }
-  } catch (e) { /* ignore */ }
+  } catch { /* ignore */ }
   return owned;
 }
 
@@ -76,7 +76,7 @@ function detectInstalled() {
     let config = null;
     for (const cp of [configPath, configPath2]) {
       if (fs.existsSync(cp)) {
-        try { config = JSON.parse(fs.readFileSync(cp, 'utf-8')); break; } catch (e) {}
+        try { config = JSON.parse(fs.readFileSync(cp, 'utf-8')); break; } catch { /* ignore */ }
       }
     }
 

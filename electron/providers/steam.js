@@ -3,7 +3,7 @@ const path = require('path');
 const os = require('os');
 const { httpGet, httpGetJson } = require('./http');
 const { findExisting, makeGameEntry, updateAccountSync } = require('./utils');
-const log = require('../modules/logger');
+const _log = require('../modules/logger');
 
 function steamCoverUrl(appId) {
   return `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${appId}/library_600x900.jpg`;
@@ -26,7 +26,7 @@ function detectLocalLibrary() {
 
   let steamRoot = null;
   for (const p of steamPaths) {
-    try { if (fs.existsSync(p)) { steamRoot = p; break; } } catch (e) {}
+    try { if (fs.existsSync(p)) { steamRoot = p; break; } } catch { /* ignore */ }
   }
   if (!steamRoot) return null;
 
@@ -42,12 +42,12 @@ function detectLocalLibrary() {
         if (fs.existsSync(appsDir) && !libraryFolders.includes(appsDir)) libraryFolders.push(appsDir);
       }
     }
-  } catch (e) {}
+  } catch { /* ignore */ }
 
   const games = [];
   for (const libFolder of libraryFolders) {
     let files;
-    try { files = fs.readdirSync(libFolder).filter(f => f.endsWith('.acf')); } catch (e) { continue; }
+    try { files = fs.readdirSync(libFolder).filter(f => f.endsWith('.acf')); } catch { continue; }
     for (const file of files) {
       try {
         const content = fs.readFileSync(path.join(libFolder, file), 'utf-8');
@@ -63,7 +63,7 @@ function detectLocalLibrary() {
             headerUrl: steamHeaderUrl(appid[1]),
           });
         }
-      } catch (e) {}
+      } catch { /* ignore parse errors */ }
     }
   }
   return games.length > 0 ? games : null;
@@ -108,7 +108,7 @@ function extractJsArray(html, varName) {
     }
   }
   if (depth !== 0) return null;
-  try { return JSON.parse(html.slice(begin, i + 1)); } catch (e) { return null; }
+  try { return JSON.parse(html.slice(begin, i + 1)); } catch { return null; }
 }
 
 // Fetch the authenticated /games/ HTML page and parse embedded game data.
@@ -169,7 +169,7 @@ async function importViaSession(steamId, sessionFetch) {
       const hours = hoursM ? parseFloat(hoursM[1].replace(',', '')) : 0;
       return { appId, name, minutes: Math.round(hours * 60), coverUrl: steamCoverUrl(appId), headerUrl: steamHeaderUrl(appId) };
     }).filter(Boolean);
-  } catch (e) {
+  } catch {
     return null;
   }
 }
