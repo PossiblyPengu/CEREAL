@@ -1,18 +1,10 @@
 const { httpGetJson } = require('./http');
-const { refreshXboxTokens } = require('./auth');
 const { findExisting, makeGameEntry, updateAccountSync } = require('./utils');
 
 async function importLibrary({ db, saveDB }) {
   const acct = (db.accounts || {}).xbox;
   if (!acct?.xuid && !acct?.msAccessToken) return { error: 'Xbox account not connected' };
   try {
-    if (acct.msExpiresAt && Date.now() > acct.msExpiresAt - 60000) {
-      if (!acct.msRefreshToken) return { error: 'Token expired. Please sign in again.' };
-      const tokens = await refreshXboxTokens(acct.msRefreshToken);
-      if (!tokens) return { error: 'Token expired. Please sign in again.' };
-      Object.assign(acct, tokens);
-      saveDB(db);
-    }
     const xAuth = 'XBL3.0 x=' + acct.userHash + ';' + acct.xstsToken;
     const r = await httpGetJson(
       `https://titlehub.xboxlive.com/users/xuid(${acct.xuid})/titles/titlehistory/decoration/GamePass,Achievement,Image`,

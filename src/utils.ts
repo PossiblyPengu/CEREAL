@@ -45,6 +45,8 @@ export function platformLabel(p: string): string {
   const PLATFORMS_LABELS: Record<string, string> = {
     steam: 'Steam', epic: 'Epic Games', gog: 'GOG',
     psn: 'PlayStation', xbox: 'Xbox', custom: 'Custom',
+    ea: 'EA', battlenet: 'Battle.net', itchio: 'itch.io',
+    ubisoft: 'Ubisoft', psremote: 'PlayStation',
   };
   return PLATFORMS_LABELS[p] ?? p;
 }
@@ -69,7 +71,7 @@ export function fmtDate(d: string | number | undefined): string {
 export function resolveGameImage(game: Game | null | undefined, field: 'coverUrl' | 'headerUrl'): string {
   if (!game) return '';
   // Steam: always build from platformId using reliable Akamai CDN
-  const pid = (game as any).platformId;
+  const pid = game.platformId;
   if (game.platform === 'steam' && pid) {
     if (field === 'coverUrl') return `https://cdn.akamai.steamstatic.com/steam/apps/${pid}/library_600x900.jpg`;
     if (field === 'headerUrl') return `https://cdn.akamai.steamstatic.com/steam/apps/${pid}/header.jpg`;
@@ -80,7 +82,7 @@ export function resolveGameImage(game: Game | null | undefined, field: 'coverUrl
 
 export function steamImgFallback(game: Game | null | undefined, e: React.SyntheticEvent<HTMLImageElement>): void {
   const img = e.currentTarget;
-  const pid = (game as any)?.platformId;
+  const pid = game?.platformId;
   if (game?.platform !== 'steam' || !pid) { img.style.display = 'none'; return; }
   const fallback = `https://cdn.akamai.steamstatic.com/steam/apps/${pid}/header.jpg`;
   if (img.src !== fallback) { img.src = fallback; } else { img.style.display = 'none'; }

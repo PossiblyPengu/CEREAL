@@ -1259,8 +1259,8 @@ export default function App() {
             const saved = await window.api?.saveSettings?.({ accentColor: c });
             onSettingsChange(saved || { accentColor: c });
           };
-          const dots = (
-            <div className="theme-picker-popover" style={{ flexDirection: 'column', width: 'auto', ...(tbPos === 'bottom' ? { bottom: 'calc(100% + 6px)', left: 0 } : { top: 'calc(100% + 6px)', left: 0 }) }} onClick={e => e.stopPropagation()}>
+          const themeDotsContent = (
+            <>
               <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', width: 128 }}>
                 {Object.entries(THEMES).map(([key, t]) => (
                   <button key={key} className={'theme-dot' + ((settings.theme || 'midnight') === key ? ' active' : '')} style={{ background: t.accent }} title={t.label}
@@ -1281,7 +1281,7 @@ export default function App() {
                 />
                 <span style={{ fontSize: 10, color: 'var(--text-3)', whiteSpace: 'nowrap' }}>Custom accent</span>
               </div>
-            </div>
+            </>
           );
           return (
             <div className="theme-picker-wrap" style={{ position: 'relative' }}>
@@ -1293,31 +1293,14 @@ export default function App() {
                 ? ReactDOM.createPortal(
                     <div style={{ position: 'fixed', zIndex: 400, [tbPos === 'left' ? 'left' : 'right']: 76, top: '50%', transform: 'translateY(-50%)' }} onClick={() => setShowThemePicker(false)}>
                       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--glass-border)', borderRadius: 12, padding: 8, boxShadow: '0 8px 32px rgba(0,0,0,0.6)', display: 'flex', flexDirection: 'column', gap: 0, width: 'auto', animation: 'popoverIn 0.15s cubic-bezier(0.16,1,0.3,1)' }}>
-                        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', width: 128 }}>
-                          {Object.entries(THEMES).map(([key, t]) => (
-                            <button key={key} className={'theme-dot' + ((settings.theme || 'midnight') === key ? ' active' : '')} style={{ background: t.accent }} title={t.label}
-                              onClick={async () => { const saved = await window.api?.saveSettings?.({ theme: key, accentColor: '' }); onSettingsChange(saved || { theme: key, accentColor: '' }); applyTheme(key); setShowThemePicker(false); }} />
-                          ))}
-                        </div>
-                        <div style={{ height: 1, background: 'var(--glass-border)', margin: '6px 0' }} />
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <input type="color" className="settings-color" style={{ width: 28, height: 22 }}
-                            value={accentVal}
-                            onChange={e => {
-                              const c = e.target.value;
-                              document.documentElement.style.setProperty('--accent', c);
-                              document.documentElement.style.setProperty('--accent-soft', c + '1f');
-                              document.documentElement.style.setProperty('--accent-border', c + '4d');
-                            }}
-                            onBlur={e => applyCustomAccent(e.target.value)}
-                          />
-                          <span style={{ fontSize: 10, color: 'var(--text-3)' }}>Custom accent</span>
-                        </div>
+                        {themeDotsContent}
                       </div>
                     </div>,
                     document.body
                   )
-                : dots
+                : <div className="theme-picker-popover" style={{ flexDirection: 'column', width: 'auto', ...(tbPos === 'bottom' ? { bottom: 'calc(100% + 6px)', left: 0 } : { top: 'calc(100% + 6px)', left: 0 }) }} onClick={e => e.stopPropagation()}>
+                    {themeDotsContent}
+                  </div>
               )}
             </div>
           );

@@ -104,7 +104,7 @@ async function refreshGogToken(refreshToken) {
 }
 
 // ─── Epic ────────────────────────────────────────────────────────────────────
-function buildEpicAuthUrl(state) {
+function buildEpicAuthUrl() {
   const c = CONFIG.epic;
   const redirectUrl = `${c.redirectApiUrl}?clientId=${c.clientId}&responseType=code`;
   return `${c.authUrl}?redirectUrl=${encodeURIComponent(redirectUrl)}`;

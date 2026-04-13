@@ -84,7 +84,7 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
     if (step === 6 && chiakiStatus && chiakiStatus.status !== 'missing' && consoles.length === 0 && !discovering) {
       discoverConsoles();
     }
-  }, [step, chiakiStatus]);
+  }, [step, chiakiStatus]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Persist all wizard choices on step change or nav
   const saveWizardSettings = async (extra?: Partial<Settings>) => {
