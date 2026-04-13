@@ -1,6 +1,6 @@
 // ─── Discord Rich Presence ─────────────────────────────────────────────────────
 const ctx = require('./context');
-const log = require('./logger');
+const _log = require('./logger');
 
 const DISCORD_CLIENT_ID = '1338877643523145789'; // Cereal Launcher app ID
 let discordRpc = null;
@@ -20,16 +20,16 @@ function connectDiscord() {
       console.log('[Discord] Could not connect:', err.message);
       discordRpc = null;
     });
-  } catch (e) {
-    console.log('[Discord] Init error:', e.message);
+  } catch (err) {
+    console.log('[Discord] Init error:', err.message);
     discordRpc = null;
   }
 }
 
 function disconnectDiscord() {
   if (discordRpc) {
-    try { discordRpc.clearActivity(); } catch(e) {}
-    try { discordRpc.destroy(); } catch(e) {}
+    try { discordRpc.clearActivity(); } catch { /* ignore */ }
+    try { discordRpc.destroy(); } catch { /* ignore */ }
     discordRpc = null;
     discordReady = false;
     discordCurrentGame = null;
@@ -55,13 +55,13 @@ function setDiscordPresence(gameName, platform, startTimestamp) {
       smallImageText: PLATFORM_LABELS[platform] || 'Game',
       instance: false,
     });
-  } catch (e) { console.log('[Discord] Presence error:', e.message); }
+  } catch (err) { console.log('[Discord] Presence error:', err.message); }
 }
 
 function clearDiscordPresence() {
   discordCurrentGame = null;
   if (!discordRpc || !discordReady) return;
-  try { discordRpc.clearActivity(); } catch(e) {}
+  try { discordRpc.clearActivity(); } catch { /* ignore */ }
 }
 
 function isDiscordEnabled() {

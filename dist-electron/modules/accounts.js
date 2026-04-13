@@ -6,31 +6,23 @@ const fs = require('fs');
 const ctx = require('./context');
 const { ACCOUNT_SECRET_FIELDS } = require('./constants');
 const { scanEpicInstalled, scanGogInstalled } = require('./detection');
-const log = require('./logger');
-
-// Resolve providers directory - works in both dev and dist
-function getProvidersDir() {
-  const candidates = [
-    path.join(__dirname, '..', 'providers'),
-    path.join(__dirname, 'providers'),
-    path.join(process.cwd(), 'electron', 'providers'),
-  ];
-  for (const candidate of candidates) {
-    if (fs.existsSync(path.join(candidate, 'index.js'))) return candidate;
-  }
-  throw new Error('Cannot find providers directory. Tried: ' + candidates.join(', '));
-}
+const _log = require('./logger');
 
 // Lazy-loaded — these are resolved at call time (after app.whenReady)
 let providers = null;
 let auth = null;
 
+function resolveProvidersPath() {
+  const devPath = path.join(__dirname, '..', 'providers');
+  const bundledPath = path.join(__dirname, 'providers');
+  return fs.existsSync(devPath) ? devPath : bundledPath;
+}
 function getProviders() {
-  if (!providers) providers = require(getProvidersDir());
+  if (!providers) providers = require(resolveProvidersPath());
   return providers;
 }
 function getAuth() {
-  if (!auth) auth = require(path.join(getProvidersDir(), 'auth'));
+  if (!auth) auth = require(path.join(resolveProvidersPath(), 'auth'));
   return auth;
 }
 
@@ -45,7 +37,7 @@ function loadAccountSecrets(platform) {
     const raw = ctx.safeStore.getPassword(accountSecretService(platform), 'tokens');
     if (!raw) return {};
     return JSON.parse(raw);
-  } catch (e) {
+  } catch {
     return {};
   }
 }
@@ -216,14 +208,14 @@ function runOAuthFlow({ partition, width, height, authUrl, redirectMatch, onRedi
     const cleanup = () => {
       if (authTimeout) { clearTimeout(authTimeout); authTimeout = null; }
       if (!keepSession) {
-        try { authSession.clearStorageData(); } catch (e) {}
+        try { authSession.clearStorageData(); } catch { /* ignore */ }
       }
     };
     const finish = (result) => {
       if (resolved) return;
       resolved = true;
       cleanup();
-      try { authWin.close(); } catch (e) {}
+      try { authWin.close(); } catch { /* ignore */ }
       resolve(result);
     };
     authTimeout = setTimeout(() => finish({ error: 'Authentication timed out' }), AUTH_TIMEOUT_MS);
@@ -272,7 +264,7 @@ async function refreshAccountToken(platform) {
     if (!tokens) return false;
     persistAccountData(platform, tokens);
     return true;
-  } catch (e) { return false; }
+  } catch { return false; }
   finally { releaseSecrets(); }
 }
 
@@ -280,7 +272,7 @@ async function refreshAccountToken(platform) {
 function emitImportProgress(providerId, evt) {
   try {
     ctx.sendToRenderer('import:progress', { provider: providerId, ...evt });
-  } catch (e) { /* ignore */ }
+  } catch { /* ignore */ }
 }
 
 function importCount(value) {
@@ -391,7 +383,7 @@ async function handleLocalProviderAuth(providerId, displayName) {
 async function handleProviderImport(providerId) {
   let apiKey = null;
   if (providerId === 'itchio') {
-    try { apiKey = ctx.safeStore.getPassword('cereal-itchio', 'default') || null; } catch (e) { /* ignore */ }
+    try { apiKey = ctx.safeStore.getPassword('cereal-itchio', 'default') || null; } catch { /* ignore */ }
   }
   return runProviderImportWithProgress(providerId, apiKey ? { apiKey } : {});
 }
@@ -439,7 +431,7 @@ function registerAccountIpcHandlers() {
       delete ctx.db.accounts[platform];
     }
     if (platform === 'steam') {
-      try { session.fromPartition('persist:steam-auth').clearStorageData(); } catch (e) {}
+      try { session.fromPartition('persist:steam-auth').clearStorageData(); } catch { /* ignore */ }
     }
     ctx.saveDB(ctx.db);
     return sanitizeAccountsForRenderer(ctx.db.accounts);
@@ -468,7 +460,7 @@ function registerAccountIpcHandlers() {
   ipcMain.handle('accounts:steam:import', async () => {
     if (!p?.steam?.importLibrary) return { error: 'Steam provider not available' };
     let apiKey = null;
-    try { const r = ctx.safeStore.getPassword('cereal-steam', 'default'); if (r) apiKey = r; } catch (e) {}
+    try { const r = ctx.safeStore.getPassword('cereal-steam', 'default'); if (r) apiKey = r; } catch { /* ignore */ }
     const steamSession = session.fromPartition('persist:steam-auth');
     const sessionFetch = steamSession.fetch.bind(steamSession);
     return runProviderImportWithProgress('steam', { apiKey, sessionFetch });

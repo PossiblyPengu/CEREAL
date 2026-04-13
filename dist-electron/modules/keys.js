@@ -2,31 +2,10 @@
 const { ipcMain, dialog, shell, clipboard } = require('electron');
 const crypto = require('crypto');
 const path = require('path');
-const fs = require('fs');
 const ctx = require('./context');
 const { ALLOWED_KEY_SERVICES } = require('./constants');
-
-// Resolve providers directory - works in both dev and dist
-function getProvidersDir() {
-  const candidates = [
-    path.join(__dirname, '..', 'providers'),
-    path.join(__dirname, 'providers'),
-    path.join(process.cwd(), 'electron', 'providers'),
-  ];
-  for (const candidate of candidates) {
-    if (fs.existsSync(path.join(candidate, 'index.js'))) return candidate;
-  }
-  throw new Error('Cannot find providers directory. Tried: ' + candidates.join(', '));
-}
-
-// Lazy-load providers
-let providers = null;
-function getProviders() {
-  if (!providers) providers = require(getProvidersDir());
-  return providers;
-}
-
-const { httpGetJson } = require(path.join(getProvidersDir(), 'http'));
+const { httpGetJson } = require('../providers/http');
+const log = require('./logger');
 
 function summarizeSecret(secret) {
   if (!secret) return { hasSecret: false, fingerprint: null };
@@ -39,7 +18,7 @@ function summarizeSecret(secret) {
 }
 
 async function validateProviderKey(provider, apiKey) {
-  const providers = getProviders();
+  const providers = require(path.join(__dirname, '..', 'providers'));
   if (!apiKey) return { ok: false, provider, error: 'missing-key' };
   if (providers && providers[provider] && typeof providers[provider].validateKey === 'function') {
     try {

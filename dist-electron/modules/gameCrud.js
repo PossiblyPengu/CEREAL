@@ -1,23 +1,8 @@
 // ─── Game CRUD + Category IPC handlers ────────────────────────────────────────
 const { ipcMain } = require('electron');
 const fs = require('fs');
-const path = require('path');
 const ctx = require('./context');
-
-// Resolve providers directory - works in both dev and dist
-function getProvidersDir() {
-  const candidates = [
-    path.join(__dirname, '..', 'providers'),
-    path.join(__dirname, 'providers'),
-    path.join(process.cwd(), 'electron', 'providers'),
-  ];
-  for (const candidate of candidates) {
-    if (fs.existsSync(path.join(candidate, 'index.js'))) return candidate;
-  }
-  throw new Error('Cannot find providers directory. Tried: ' + candidates.join(', '));
-}
-
-const { canonicalize: canonicalizeName } = require(path.join(getProvidersDir(), 'utils'));
+const { canonicalize: canonicalizeName } = require('../providers/utils');
 const { enqueueCoverFetch } = require('./covers');
 const { fetchGameMetadata, applyMetadataToGame } = require('./metadata');
 const log = require('./logger');

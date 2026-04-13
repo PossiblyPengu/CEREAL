@@ -8,21 +8,12 @@ const { findSteamRoot, scanSteamInstalled, scanEpicInstalled, scanGogInstalled, 
 const { getBundledChiakiExe, getBundledChiakiVersion } = require('./chiaki');
 
 function registerDetectionIpcHandlers() {
-  // Resolve providers directory - try multiple paths for dev vs dist compatibility
-  let providersDir;
-  const candidates = [
-    path.join(__dirname, '..', 'providers'),      // dev: electron/modules/../providers
-    path.join(__dirname, 'providers'),          // dist: dist-electron/providers
-    path.join(process.cwd(), 'electron', 'providers'), // fallback
-  ];
-  for (const candidate of candidates) {
-    if (fs.existsSync(path.join(candidate, 'index.js'))) {
-      providersDir = candidate;
-      break;
-    }
-  }
-  if (!providersDir) throw new Error('Cannot find providers directory. Tried: ' + candidates.join(', '));
-  const providers = require(providersDir);
+  // Support both development (electron/modules/) and bundled (dist-electron/) paths
+  const providersPath = path.join(__dirname, '..', 'providers');
+  const providersPathBundled = path.join(__dirname, 'providers');
+  const providers = fs.existsSync(providersPath)
+    ? require(providersPath)
+    : require(providersPathBundled);
 
   ipcMain.handle('detect:steam', async () => {
     try { return scanSteamInstalled(); }
@@ -80,7 +71,7 @@ function registerDetectionIpcHandlers() {
             env: { ...process.env, PATH: `${path.dirname(result.executablePath)};${process.env.PATH}` },
           }).toString();
           result.consoles = listOutput.trim().split('\n').filter(l => l.trim());
-        } catch (_e) {
+        } catch {
           result.consoles = [];
         }
       }
@@ -167,7 +158,7 @@ function registerDetectionIpcHandlers() {
           // GOG stores playtime in SQLite — we'd need better-sqlite3 or similar
           // For now, skip GOG DB playtime (would need native module)
         }
-      } catch (_e) { /* skip GOG playtime */ }
+      } catch { /* skip GOG playtime */ }
 
       // ── Epic Games — no local playtime file available ──
       // Epic doesn't store local playtime data in an accessible format

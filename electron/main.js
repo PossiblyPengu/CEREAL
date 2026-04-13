@@ -21,7 +21,6 @@ const { spawn } = require('child_process');
 const os = require('os');
 const { autoUpdater } = require('electron-updater');
 
-
 // ─── Constants (extracted to modules/constants.js) ────────────────────────────
 const { ACCOUNT_SECRET_FIELDS } = require('./modules/constants');
 const log = require('./modules/logger');
@@ -42,6 +41,10 @@ const { chiakiSessions, resolveChiakiExe, buildChiakiArgs, startChiakiSession, s
 
 // ─── xCloud (extracted to modules/xcloud.js) ─────────────────────────────────
 const { xcloudSessions, updateAllXcloudBounds, startXcloudSession } = require('./modules/xcloud');
+
+// ─── Game CRUD + Categories (extracted to modules/gameCrud.js) ────────────────────
+const { registerGameCrudIpcHandlers } = require('./modules/gameCrud');
+registerGameCrudIpcHandlers();
 
 // ─── Database (extracted to modules/database.js) ─────────────────────────────
 const { DB_PATH, loadDB, saveDB, flushDB } = require('./modules/database');
@@ -97,7 +100,7 @@ function createWindow() {
 
   mainWindow = new BrowserWindow(winOpts);
   if (savedBounds && savedBounds.isMaximized) {
-    try { mainWindow.maximize(); } catch { /* ignore */ }
+    try { mainWindow.maximize(); } catch (_e) { /* ignore */ }
   }
 
   if (process.env.VITE_DEV_SERVER_URL) {
@@ -149,22 +152,22 @@ function createWindow() {
   mainWindow.on('minimize', () => {
     for (const session of chiakiSessions.values()) {
       if (session.embedProcess && !session.embedProcess.killed) {
-        try { session.embedProcess.stdin.write('hide\n'); } catch { /* ok */ }
+        try { session.embedProcess.stdin.write('hide\n'); } catch (_e) { /* ok */ }
       }
     }
     for (const sess of xcloudSessions.values()) {
-      try { sess.view.setVisible(false); } catch { /* ok */ }
+      try { sess.view.setVisible(false); } catch (_e) { /* ok */ }
     }
   });
 
   mainWindow.on('focus', () => {
     for (const session of chiakiSessions.values()) {
       if (session.embedded && session.embedProcess && !session.embedProcess.killed) {
-        try { session.embedProcess.stdin.write('show\n'); } catch { /* ok */ }
+        try { session.embedProcess.stdin.write('show\n'); } catch (_e) { /* ok */ }
       }
     }
     for (const sess of xcloudSessions.values()) {
-      try { sess.view.setVisible(true); } catch { /* ok */ }
+      try { sess.view.setVisible(true); } catch (_e) { /* ok */ }
     }
   });
 }
@@ -183,7 +186,7 @@ if (!gotLock) { app.quit(); } else {
 
 function destroyTray() {
   if (!trayIcon) return;
-  try { trayIcon.destroy(); } catch { /* ok */ }
+  try { trayIcon.destroy(); } catch (_e) { /* ok */ }
   trayIcon = null;
 }
 
@@ -254,7 +257,7 @@ app.whenReady().then(() => {
             game.localCoverPath = null;
             coversCleaned++;
           }
-        } catch { game.localCoverPath = null; coversCleaned++; }
+        } catch (_e) { game.localCoverPath = null; coversCleaned++; }
       }
       if (game.localHeaderPath) {
         try {
@@ -263,7 +266,7 @@ app.whenReady().then(() => {
             game.localHeaderPath = null;
             coversCleaned++;
           }
-        } catch { game.localHeaderPath = null; coversCleaned++; }
+        } catch (_e) { game.localHeaderPath = null; coversCleaned++; }
       }
     }
     if (coversCleaned > 0) console.log('[CoverFetcher] Cleaned', coversCleaned, 'corrupt cover references');
@@ -273,10 +276,10 @@ app.whenReady().then(() => {
       let purged = 0;
       for (const f of fs.readdirSync(coversDir)) {
         const fp = path.join(coversDir, f);
-        try { if (fs.statSync(fp).size < 1024) { fs.unlinkSync(fp); purged++; } } catch (e) { console.error('Error purging file:', e.message); }
+        try { if (fs.statSync(fp).size < 1024) { fs.unlinkSync(fp); purged++; } } catch (_e) { /* ignore */ }
       }
       if (purged > 0) console.log('[CoverFetcher] Purged', purged, 'corrupt files from covers directory');
-    } catch (e) { console.error('Error reading covers directory:', e.message); }
+    } catch (_e) { /* ignore */ }
   }
   if (lastMigration < 2) {
     // Migration 2: backfill headerUrl for Steam games
@@ -373,7 +376,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   isQuitting = true;
-  try { saveWindowBounds(); } catch { /* ok */ }
+  try { saveWindowBounds(); } catch (_e) { /* ok */ }
   flushDB(db);
 });
 
@@ -382,11 +385,11 @@ app.on('will-quit', () => {
   // Cleanup any active xcloud sessions
   try {
     for (const [_gameId, sess] of xcloudSessions) {
-      try { mainWindow?.contentView?.removeChildView(sess.view); } catch { log.debug('xcloud', 'cleanup removeChildView failed'); }
-      try { sess.view?.webContents?.close(); } catch { log.debug('xcloud', 'cleanup webContents close failed'); }
+      try { mainWindow?.contentView?.removeChildView(sess.view); } catch (_e) { log.debug('xcloud', 'cleanup removeChildView failed'); }
+      try { sess.view?.webContents?.close(); } catch (_e) { log.debug('xcloud', 'cleanup webContents close failed'); }
     }
     xcloudSessions.clear();
-  } catch { log.debug('xcloud', 'session cleanup error'); }
+  } catch (_e) { log.debug('xcloud', 'session cleanup error'); }
 });
 
 // ─── Window Controls ──────────────────────────────────────────────────────────
@@ -404,7 +407,7 @@ ipcMain.handle('shell:openExternal', (event, url) => {
     const parsed = new URL(url);
     const safeProtocols = ['http:', 'https:', 'mailto:', 'steam:', 'epicgames:', 'com.epicgames.launcher:', 'goggalaxy:', 'origin:', 'origin2:', 'uplay:', 'battlenet:', 'xbox:', 'msxbox:', 'ms-xbl-multiplayer:'];
     if (!safeProtocols.includes(parsed.protocol)) return { error: 'Blocked protocol: ' + parsed.protocol };
-  } catch { return { error: 'Invalid URL' }; }
+  } catch (_e) { /* Invalid URL */ return { error: 'Invalid URL' }; }
   return shell.openExternal(url);
 });
 ipcMain.handle('system:getSpecs', async () => {
@@ -417,7 +420,7 @@ ipcMain.handle('system:getSpecs', async () => {
     const gpuInfo = await app.getGPUInfo('basic');
     const gpu = gpuInfo?.gpuDevice?.[0];
     if (gpu?.description) gpuName = gpu.description;
-  } catch (e) { log.debug('system', 'GPU info unavailable', e); }
+  } catch (_e) { log.debug('system', 'GPU info unavailable', _e); }
   return { ramGb, cpuCount, cpuModel, gpuName };
 });
 
@@ -456,10 +459,6 @@ function onWindowBoundsChanged() {
   }, 50);
   scheduleSaveWindowBounds();
 }
-
-// ─── Game CRUD + Categories (extracted to modules/gameCrud.js) ────────────────
-const { registerGameCrudIpcHandlers } = require('./modules/gameCrud');
-registerGameCrudIpcHandlers();
 
 // ─── Key Storage & Validation (extracted to modules/keys.js) ──────────────────
 const { registerKeysIpcHandlers } = require('./modules/keys');

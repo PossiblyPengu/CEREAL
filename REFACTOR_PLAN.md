@@ -82,10 +82,65 @@
 
 ---
 
-## File Size Results
-| File | Before | Target | Actual | 
-|------|--------|--------|--------|
-| main.js | ~2029 lines | ~1000–1200 lines | 1407 lines |
-| chiaki.js | 581 lines | ~1050 lines | 1048 lines |
-| metadataSearch.js | 220 lines (broken) | ~210 lines (fixed) | 214 lines |
-| settings.js | 148 lines | 148 lines | 145 lines |
+## Extraction Round — E4 (Session 3) ✅
+
+### Core Infrastructure Modules
+- [x] **credentials.js** — Secure credential store using Electron safeStorage
+  - Exports: `safeStore` with `setPassword`, `getPassword`, `deletePassword`
+  - Handles atomic writes to `credentials.json` with temp file pattern
+- [x] **database.js** — Database persistence (games.json)
+  - Exports: `DB_PATH`, `loadDB`, `saveDB`, `flushDB`, `writeDBSync`
+  - Atomic writes with `.bak` fallback for corruption recovery
+
+### IPC Handler Modules
+- [x] **keys.js** — API key storage and validation
+  - Handlers: `keys:set/get/delete/validate/validateStored`, `steamgriddb:login`, `clipboard:readText`
+  - Includes `summarizeSecret` and `validateProviderKey` helpers
+- [x] **gameCrud.js** — Game CRUD + Categories + Tabs
+  - Handlers: `games:getAll/getCategories/add/update/delete/toggleFavorite`, `covers:fetchNow`
+  - Handlers: `categories:add/remove`, `tabs:switch/close`
+  - Handles image cache cleanup on cover/header URL changes
+- [x] **metadataIpc.js** — Metadata fetch/apply handlers
+  - Handlers: `metadata:fetch/apply/fetchForName/fetchAll`
+  - Includes `registerMetadataSearchHandlers` from metadataSearch.js
+  - Batch processing with throttled renderer refreshes (500ms interval)
+- [x] **detectionIpc.js** — Platform detection + playtime sync
+  - Handlers: `detect:steam/epic/gog/psremote/xbox` + generic provider factory
+  - Handler: `playtime:sync` (Steam VDF localconfig parsing, GOG/Epic stubs)
+  - Includes chiaki-ng bundled/system detection and console listing
+- [x] **media.js** — xCloud + SMTC media controls
+  - Handlers: `xcloud:startDirect/start/stop/getSessions`
+  - Handlers: `media:getInfo/control` (native SMTC addon, lazy-loaded)
+
+### main.js Cleanup
+- [x] Removed unused imports: `crypto`, `clipboard`, `httpGetJson`, `canonicalizeName`, `ALLOWED_KEY_SERVICES`, `CONTROL_BAR_HEIGHT`
+- [x] Updated `ctx.flushDB` to wrap and pass `db` explicitly
+- [x] All inline handlers replaced with module imports
+
+---
+
+## Verification Checklist (V2) ✅
+1. [x] `node -c electron/main.js` — syntax check passed
+2. [x] `node -c electron/modules/*.js` — all 17 modules passed
+3. [x] `vite build` — client + electron + preload all built successfully
+4. [x] `npx tsc --noEmit` — TypeScript compilation clean
+5. [x] `vitest run` — 14/14 tests passing
+6. [ ] Manual smoke test: launch app, verify settings, metadata search, chiaki status
+
+---
+
+## File Size Results (E4)
+| File | Before (E3) | After (E4) | Reduction |
+|------|-------------|------------|-----------|
+| main.js | 1407 lines | 641 lines | **−766 (54%)** |
+| chiaki.js | 1048 lines | 1048 lines | unchanged |
+| metadataSearch.js | 214 lines | 214 lines | unchanged |
+| settings.js | 145 lines | 145 lines | unchanged |
+| **New modules (E4)** | — | — | — |
+| credentials.js | — | 44 lines | new |
+| database.js | — | 69 lines | new |
+| keys.js | — | 91 lines | new |
+| gameCrud.js | — | 150 lines | new |
+| metadataIpc.js | — | 102 lines | new |
+| detectionIpc.js | — | 139 lines | new |
+| media.js | — | 76 lines | new |

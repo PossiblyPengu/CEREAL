@@ -1,25 +1,4633 @@
-var e=(e,t)=>()=>(t||e((t={exports:{}}).exports,t),t.exports),t=e(((e,t)=>{var n=require(`path`);t.exports={CONTROL_BAR_HEIGHT:40,ALLOWED_KEY_SERVICES:[`cereal-steam`,`cereal-steamgriddb`,`cereal-itchio`,`cereal-account-steam`,`cereal-account-gog`,`cereal-account-epic`,`cereal-account-xbox`,`cereal-account-ea`,`cereal-account-battlenet`,`cereal-account-itchio`,`cereal-account-ubisoft`,`cereal-account-psn`],CHIAKI_SYSTEM_PATHS:[n.join(process.env.ProgramFiles||``,`chiaki-ng`,`chiaki.exe`),n.join(process.env[`ProgramFiles(x86)`]||``,`chiaki-ng`,`chiaki.exe`),n.join(process.env.LOCALAPPDATA||``,`chiaki-ng`,`chiaki.exe`)],ACCOUNT_SECRET_FIELDS:[`accessToken`,`refreshToken`,`msAccessToken`,`msRefreshToken`,`xblToken`,`xstsToken`,`userHash`]}})),n=e(((e,t)=>{t.exports={db:null,mainWindow:null,saveDB:null,flushDB:null,sendToRenderer:null,safeStore:null}})),r=e(((e,t)=>{var n=require(`path`),r=require(`fs`);function i(){let e=[`C:\\Program Files (x86)\\Steam`,`C:\\Program Files\\Steam`,n.join(process.env.HOME||process.env.USERPROFILE||``,`Steam`)];for(let t of e)if(r.existsSync(t))return t;return null}function a(){let e=[],t=i();if(!t)return{games:[],error:`Steam not found`};let a=[n.join(t,`steamapps`)],o=n.join(t,`steamapps`,`libraryfolders.vdf`);if(r.existsSync(o)){let e=r.readFileSync(o,`utf-8`).match(/"path"\s+"([^"]+)"/g);e&&e.forEach(e=>{let t=e.match(/"path"\s+"([^"]+)"/)[1].replace(/\\\\/g,`\\`),i=n.join(t,`steamapps`);r.existsSync(i)&&!a.includes(i)&&a.push(i)})}for(let t of a){if(!r.existsSync(t))continue;let i=r.readdirSync(t).filter(e=>e.endsWith(`.acf`));for(let a of i)try{let i=r.readFileSync(n.join(t,a),`utf-8`),o=i.match(/"appid"\s+"(\d+)"/),s=i.match(/"name"\s+"([^"]+)"/),c=i.match(/"installdir"\s+"([^"]+)"/);if(o&&s&&c){let r=n.join(t,`common`,c[1]);e.push({name:s[1],platform:`steam`,platformId:o[1],installPath:r,executablePath:``,coverUrl:`https://shared.steamstatic.com/store_item_assets/steam/apps/${o[1]}/library_600x900_2x.jpg`,heroUrl:`https://shared.steamstatic.com/store_item_assets/steam/apps/${o[1]}/library_hero.jpg`,categories:[],source:`auto-detected`,installed:!0})}}catch{}}return{games:e}}function o(){let e=[];try{let t=n.join(process.env.PROGRAMDATA||`C:\\ProgramData`,`Epic`,`EpicGamesLauncher`,`Data`,`Manifests`);if(!r.existsSync(t))return e;let i=r.readdirSync(t).filter(e=>e.endsWith(`.item`));for(let a of i)try{let i=JSON.parse(r.readFileSync(n.join(t,a),`utf-8`));i.DisplayName&&i.InstallLocation&&e.push({name:i.DisplayName,platform:`epic`,platformId:i.CatalogNamespace||i.AppName,installPath:i.InstallLocation,executablePath:i.LaunchExecutable?n.join(i.InstallLocation,i.LaunchExecutable):``,coverUrl:``,categories:[],source:`auto-detected`,installed:!0})}catch{}}catch{}return e}function s(){let e=[];try{let t=[`C:\\GOG Games`,n.join(process.env[`ProgramFiles(x86)`]||`C:\\Program Files (x86)`,`GOG Galaxy`,`Games`)].filter(e=>{try{return r.existsSync(e)}catch{return!1}});for(let i of t){let t=r.readdirSync(i,{withFileTypes:!0});for(let a of t)if(a.isDirectory()){let t=n.join(i,a.name),o=r.readdirSync(t).filter(e=>e.startsWith(`goggame-`)&&e.endsWith(`.info`));for(let i of o)try{let a=JSON.parse(r.readFileSync(n.join(t,i),`utf-8`));a.name&&e.push({name:a.name,platform:`gog`,platformId:a.gameId||``,installPath:t,executablePath:a.playTasks?.[0]?.path?n.join(t,a.playTasks[0].path):``,coverUrl:``,categories:[],source:`auto-detected`,installed:!0})}catch{}}}}catch{}return e}function c(){let e=[],t=`C:\\XboxGames`;if(r.existsSync(t)){let i=r.readdirSync(t,{withFileTypes:!0});for(let r of i)r.isDirectory()&&r.name!==`Content`&&e.push({name:r.name.replace(/([A-Z])/g,` $1`).trim(),platform:`xbox`,platformId:``,installPath:n.join(t,r.name),executablePath:``,coverUrl:``,categories:[],source:`auto-detected`})}let i=[n.join(process.env.LOCALAPPDATA||``,`Microsoft`,`WindowsApps`,`XboxApp.exe`),n.join(process.env.ProgramFiles||``,`WindowsApps`,`Microsoft.GamingApp_*`)],a=!1;for(let e of i)if(e.includes(`*`)){let t=n.dirname(e),i=n.basename(e).replace(`*`,``);r.existsSync(t)&&r.readdirSync(t).filter(e=>e.startsWith(i)).length>0&&(a=!0)}else r.existsSync(e)&&(a=!0);return{games:e,xboxAppFound:a,cloudGamingUrl:`https://www.xbox.com/play`}}t.exports={findSteamRoot:i,scanSteamInstalled:a,scanEpicInstalled:o,scanGogInstalled:s,scanXboxInstalled:c}})),i=e(((e,i)=>{var{BrowserWindow:a,session:o,ipcMain:s}=require(`electron`),c=require(`crypto`),l=require(`path`),u=n(),{ACCOUNT_SECRET_FIELDS:d}=t(),{scanEpicInstalled:f,scanGogInstalled:p}=r(),m=null,h=null;function g(){return m||=require(l.join(__dirname,`..`,`providers`)),m}function _(){return h||=require(l.join(__dirname,`..`,`providers`,`auth`)),h}function v(e){return`cereal-account-${e}`}function y(e){try{let t=u.safeStore.getPassword(v(e),`tokens`);return t?JSON.parse(t):{}}catch{return{}}}function b(e,t){try{let n=v(e);t&&Object.keys(t).length?u.safeStore.setPassword(n,`tokens`,JSON.stringify(t)):u.safeStore.deletePassword(n,`tokens`)}catch(t){console.error(`account secret store error`,e,t&&t.message)}}function x(e,{save:t=!0}={}){let n=u.db?.accounts?.[e];if(!n)return b(e,null),!1;let r={},i=!1;for(let e of d)n[e]!==void 0&&n[e]!==null&&(r[e]=n[e],delete n[e],i=!0);return b(e,i?r:null),n.hasCredentials===i?i&&t&&u.saveDB(u.db):(n.hasCredentials=i,t&&u.saveDB(u.db)),i}function S(e){let t=u.db?.accounts?.[e];if(!t)return()=>{};let n=y(e);return Object.keys(n).length&&(Object.assign(t,n),t.hasCredentials=!0),()=>x(e)}function C(e,t={}){if(!e)return;u.db.accounts||(u.db.accounts={});let n=u.db.accounts[e]||{},r=y(e),i=!1,a=!1;for(let[e,o]of Object.entries(t))if(d.includes(e)){if(o===void 0)continue;o===null?r[e]!==void 0&&(delete r[e],i=!0,a=!0):r[e]!==o&&(r[e]=o,i=!0)}else o!==void 0&&(n[e]=o);t.connected===void 0?n.connected===void 0&&(n.connected=!0):n.connected=t.connected;let o=Object.keys(r).length>0;return n.hasCredentials=o,u.db.accounts[e]=n,(i||a)&&b(e,o?r:null),Object.keys(t).length&&u.saveDB(u.db),n}var w=new Map,T=300*1e3;function E(){let e=Date.now();for(let[t,n]of w)e-n.timestamp>=T&&w.delete(t);let t=c.randomBytes(32).toString(`hex`);return w.set(t,{timestamp:e}),t}function D(e){if(!e||!w.has(e))return!1;let t=w.get(e);return w.delete(e),Date.now()-t.timestamp<T}function O(e){if(!e)return{};let t={},n=[`accessToken`,`refreshToken`,`xblToken`,`xstsToken`,`msAccessToken`,`msRefreshToken`,`userHash`];for(let[r,i]of Object.entries(e))if(!(!i||typeof i!=`object`)){t[r]={};for(let[e,a]of Object.entries(i))n.includes(e)||(t[r][e]=a);t[r].hasCredentials=!!i.hasCredentials}return t}var k=[`steamcommunity.com`,`store.steampowered.com`,`login.steampowered.com`,`login.gog.com`,`auth.gog.com`,`embed.gog.com`,`gog.com`,`epicgames.com`,`www.epicgames.com`,`microsoftonline.com`,`live.com`,`microsoft.com`,`msauth.net`,`msftauth.net`,`localhost`,`cereal-launcher.local`];function A(e){try{let t=new URL(e).hostname;return k.some(e=>t===e||t.endsWith(`.`+e))}catch{return!1}}function j(e,t,n){let r=new a({width:e,height:t,parent:u.mainWindow,modal:!0,webPreferences:{nodeIntegration:!1,contextIsolation:!0,sandbox:!0,session:n}});return r.setMenuBarVisibility(!1),r.webContents.setWindowOpenHandler(()=>({action:`deny`})),r}function M({partition:e,width:t,height:n,authUrl:r,redirectMatch:i,onRedirect:a,allowNavigate:s,keepSession:c}){return new Promise(l=>{let u=c?e:e+`:`+Date.now(),d=o.fromPartition(u),f=j(t||700,n||700,d),p=!1,m=null,h=()=>{if(m&&=(clearTimeout(m),null),!c)try{d.clearStorageData()}catch{}},g=e=>{if(!p){p=!0,h();try{f.close()}catch{}l(e)}};m=setTimeout(()=>g({error:`Authentication timed out`}),T);let _=e=>{p||i(e)&&a(e,g,{win:f,session:d})};f.webContents.on(`will-navigate`,(e,t)=>{if(i(t)){s||e.preventDefault(),_(t);return}A(t)||e.preventDefault()}),f.webContents.on(`will-redirect`,(e,t)=>{i(t)&&(s||e.preventDefault(),_(t))}),f.webContents.on(`did-navigate`,(e,t)=>_(t)),f.on(`closed`,()=>{h(),p||(p=!0,l({error:`cancelled`}))}),f.loadURL(r)})}async function N(e){let t=_(),n=(u.db.accounts||{})[e];if(!n)return!1;let r=S(e);try{let r;if(e===`gog`){if(!n.refreshToken)return!1;r=await t.refreshGogToken(n.refreshToken)}else if(e===`epic`){if(!n.refreshToken)return!1;r=await t.refreshEpicToken(n.refreshToken)}else if(e===`xbox`){if(!n.msRefreshToken)return!1;r=await t.refreshXboxTokens(n.msRefreshToken)}return r?(C(e,r),!0):!1}catch{return!1}finally{r()}}function P(e,t){try{u.sendToRenderer(`import:progress`,{provider:e,...t})}catch{}}function F(e){return Array.isArray(e)?e.length:typeof e==`number`&&Number.isFinite(e)?e:0}async function I(e,t={}){let n=g()?.[e];if(!n||typeof n.importLibrary!=`function`)return{error:`${e} provider not available`};let r=S(e),i={processed:0,imported:0,updated:0},a=!1,o=(t={})=>{let n={...t};typeof n.processed==`number`&&Number.isFinite(n.processed)&&(i.processed=n.processed),typeof n.imported==`number`&&Number.isFinite(n.imported)&&(i.imported=n.imported),typeof n.updated==`number`&&Number.isFinite(n.updated)&&(i.updated=n.updated),(n.status===`done`||n.status===`error`)&&(a=!0),P(e,{status:n.status||`progress`,processed:i.processed,imported:i.imported,updated:i.updated,message:n.message})};o({status:`start`,processed:0,imported:0,updated:0});try{let r=await n.importLibrary({db:u.db,saveDB:u.saveDB,notify:o,...t}),s=F(r?.imported),c=F(r?.updated),l=typeof r?.processed==`number`&&Number.isFinite(r.processed)?r.processed:typeof r?.total==`number`&&Number.isFinite(r.total)?r.total:s+c,d=!!r?.error;return a||P(e,{status:d?`error`:`done`,processed:Math.max(i.processed,l),imported:Math.max(i.imported,s),updated:Math.max(i.updated,c),message:d?String(r.error||``):void 0}),r}catch(t){return P(e,{status:`error`,processed:i.processed,imported:i.imported,updated:i.updated,message:t.message}),{error:`${e} import failed: `+t.message}}finally{r()}}async function L(e){let t=(u.db.accounts||{})[e],n=t?.msExpiresAt??t?.expiresAt;if(n&&Date.now()>n-6e4&&!await N(e))return{error:`${e} session expired. Please sign in again.`};let r=await I(e);if(r?.error&&/(401|403|unauthor|token|expired)/i.test(String(r.error||``))){if(!await N(e))return r;r=await I(e)}return r}async function R(e,t){let n=g()?.[e];if(!n||typeof n.detectInstalled!=`function`)return{error:`${t} provider not available`};let r=n.detectInstalled();if(r?.error)return{error:r.error};let i={connected:!0,displayName:t,gameCount:Array.isArray(r?.games)?r.games.length:0,lastSync:new Date().toISOString()};return C(e,i),{success:!0,displayName:t,gameCount:i.gameCount,localOnly:!0}}async function z(e){let t=null;if(e===`itchio`)try{t=u.safeStore.getPassword(`cereal-itchio`,`default`)||null}catch{}return I(e,t?{apiKey:t}:{})}function B(e){let t=new URL(e),n=t.searchParams.get(`code`),r=t.searchParams.get(`error`),i=t.searchParams.get(`state`);return r?{error:t.searchParams.get(`error_description`)||r}:i&&!D(i)?{error:`Security validation failed (state mismatch)`}:n?{code:n}:{error:`No authorization code received`}}function V(e,t){C(e,{...t,connected:!0})}function ee(){let e=_(),t=g();s.handle(`accounts:get`,()=>O(u.db.accounts)),s.handle(`accounts:save`,(e,t,n)=>{if(!t||typeof t!=`string`)return O(u.db.accounts||{});let r=[`connected`,`displayName`,`gamertag`,`avatarUrl`,`lastSync`,`gameCount`],i={};for(let[e,t]of Object.entries(n||{}))r.includes(e)&&(i[e]=t);return C(t,i),O(u.db.accounts)}),s.handle(`accounts:remove`,(e,t)=>{if(u.db.accounts||(u.db.accounts={}),u.db.accounts[t]&&(x(t),delete u.db.accounts[t]),t===`steam`)try{o.fromPartition(`persist:steam-auth`).clearStorageData()}catch{}return u.saveDB(u.db),O(u.db.accounts)}),s.handle(`accounts:steam:auth`,async()=>{let t=e.CONFIG.steam;return M({partition:`persist:steam-auth`,...t.windowSize,authUrl:e.buildSteamAuthUrl(),redirectMatch:e=>e.startsWith(t.returnUrl),keepSession:!0,onRedirect:async(t,n)=>{try{let r=e.extractSteamId(t);if(!r){n({error:`Could not extract Steam ID`});return}let i=await e.fetchSteamProfile(r);V(`steam`,{steamId:r,...i}),n({success:!0,steamId:r,...i})}catch(e){n({error:e.message})}}})}),s.handle(`accounts:steam:import`,async()=>{if(!t?.steam?.importLibrary)return{error:`Steam provider not available`};let e=null;try{let t=u.safeStore.getPassword(`cereal-steam`,`default`);t&&(e=t)}catch{}let n=o.fromPartition(`persist:steam-auth`),r=n.fetch.bind(n);return I(`steam`,{apiKey:e,sessionFetch:r})}),s.handle(`accounts:gog:auth`,async()=>{let t=e.CONFIG.gog,n=E();return M({partition:`auth:gog`,...t.windowSize,authUrl:e.buildGogAuthUrl(n),redirectMatch:e=>e.includes(`on_login_success`)&&e.includes(`code=`),onRedirect:async(t,n)=>{try{let{code:r,error:i}=B(t);if(i){n({error:i});return}let a=await e.exchangeGogCode(r);if(a.error){n(a);return}V(`gog`,a),n({success:!0,userId:a.userId})}catch(e){n({error:e.message})}}})}),s.handle(`accounts:gog:import`,async()=>{if(!t?.gog?.importLibrary)return{error:`GOG provider not available`};let e=await L(`gog`);if(!e?.error){let e=p();if(e.length>0){let t=new Set(e.map(e=>e.platformId).filter(Boolean)),n=!1;for(let e of u.db.games)if(e.platform===`gog`){let r=!!(e.platformId&&t.has(e.platformId));r&&!e.installed?(e.installed=!0,n=!0):!r&&e.installed===void 0&&(e.installed=!1,n=!0)}n&&u.saveDB(u.db)}}return e}),s.handle(`accounts:epic:auth`,async()=>{let t=e.CONFIG.epic;return M({partition:`auth:epic`,...t.windowSize,authUrl:e.buildEpicAuthUrl(),redirectMatch:e=>e.includes(`epicgames.com/id/api/redirect`),allowNavigate:!0,onRedirect:async(t,n,{session:r})=>{try{let i=await r.fetch(t);if(!i.ok){n({error:`Epic redirect fetch failed: `+i.status});return}let a=await i.json(),o=a.exchangeCode||a.redirectUrl&&new URL(a.redirectUrl).searchParams.get(`code`);if(!o){n({error:`No exchange code in Epic response`});return}let s=await e.exchangeEpicCode(o);if(s.error){n(s);return}V(`epic`,s),n({success:!0,displayName:s.displayName})}catch(e){n({error:e.message})}}})}),s.handle(`accounts:epic:import`,async()=>{if(!t?.epic?.importLibrary)return{error:`Epic provider not available`};let e=await L(`epic`);if(!e?.error){let e=f();if(e.length>0){let t=new Set(e.map(e=>e.platformId).filter(Boolean)),n=!1;for(let e of u.db.games)if(e.platform===`epic`){let r=!!(e.platformId&&t.has(e.platformId));r&&!e.installed?(e.installed=!0,n=!0):!r&&e.installed===void 0&&(e.installed=!1,n=!0)}n&&u.saveDB(u.db)}}return e}),s.handle(`accounts:xbox:auth`,async()=>{let t=e.CONFIG.xbox,n=E();return M({partition:`auth:xbox`,...t.windowSize,authUrl:e.buildXboxAuthUrl(n),redirectMatch:e=>e.startsWith(t.redirectUri),onRedirect:async(t,n)=>{try{let{code:r,error:i}=B(t);if(i){n({error:i});return}let a=await e.exchangeXboxCode(r);if(a.error){n(a);return}V(`xbox`,a),n({success:!0,gamertag:a.gamertag,avatarUrl:a.avatarUrl})}catch(e){n({error:`Xbox auth chain failed: `+e.message})}}})}),s.handle(`accounts:xbox:import`,async()=>t?.xbox?.importLibrary?L(`xbox`):{error:`Xbox provider not available`}),s.handle(`accounts:ea:auth`,async()=>R(`ea`,`EA App`)),s.handle(`accounts:battlenet:auth`,async()=>R(`battlenet`,`Battle.net`)),s.handle(`accounts:itchio:auth`,async()=>R(`itchio`,`itch.io`)),s.handle(`accounts:ubisoft:auth`,async()=>R(`ubisoft`,`Ubisoft Connect`)),s.handle(`accounts:ea:import`,async()=>z(`ea`)),s.handle(`accounts:battlenet:import`,async()=>z(`battlenet`)),s.handle(`accounts:itchio:import`,async()=>z(`itchio`)),s.handle(`accounts:ubisoft:import`,async()=>z(`ubisoft`))}i.exports={detachAccountSecrets:x,registerAccountIpcHandlers:ee}})),a=e(((e,t)=>{var r=n(),i=`1338877643523145789`,a=null,o=!1,s=null;function c(){if(!a)try{a=new(require(`discord-rpc`)).Client({transport:`ipc`}),a.on(`ready`,()=>{o=!0,console.log(`[Discord] RPC ready`)}),a.login({clientId:i}).catch(e=>{console.log(`[Discord] Could not connect:`,e.message),a=null})}catch(e){console.log(`[Discord] Init error:`,e.message),a=null}}function l(){if(a){try{a.clearActivity()}catch{}try{a.destroy()}catch{}a=null,o=!1,s=null}}var u={steam:`Steam`,epic:`Epic Games`,gog:`GOG`,psn:`PlayStation`,xbox:`Xbox`,custom:`PC`,psremote:`PlayStation`};function d(e,t,n){if(s={name:e,platform:t,startTimestamp:n||Date.now()},!(!a||!o))try{a.setActivity({details:e,state:`via `+(u[t]||`Cereal Launcher`),startTimestamp:s.startTimestamp,largeImageKey:`cereal_logo`,largeImageText:`Cereal Launcher`,smallImageKey:t||`custom`,smallImageText:u[t]||`Game`,instance:!1})}catch(e){console.log(`[Discord] Presence error:`,e.message)}}function f(){if(s=null,!(!a||!o))try{a.clearActivity()}catch{}}function p(){return!!(r.db&&r.db.settings&&r.db.settings.discordPresence)}function m(){return{ready:o,connected:!!a}}t.exports={connectDiscord:c,disconnectDiscord:l,setDiscordPresence:d,clearDiscordPresence:f,isDiscordEnabled:p,getDiscordStatus:m}})),o=e(((e,t)=>{var{net:r}=require(`electron`),i=n(),a=new Map,o=10080*60*1e3;function s(){let e=i.db&&i.db.settings||{},t=e.steamGridDbKey||``;if(!t)try{t=i.safeStore.getPassword(`cereal-steamgriddb`,`default`)||``}catch{}return{source:e.metadataSource||`steam`,steamGridDbKey:t}}async function c(e){let t=await r.fetch(e,{headers:{"User-Agent":`Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36`,Accept:`application/json, text/json, */*`}});if(!t.ok)throw Error(`HTTP `+t.status+` from `+e);let n=await t.text();return JSON.parse(n)}async function l(e){try{let t=(await c(`https://store.steampowered.com/api/appdetails?appids=${e}&l=english`))?.[e]?.data;if(!t)return null;let n=!1;if(t.type&&typeof t.type==`string`&&t.type.toLowerCase()!==`game`&&(n=!0),!n&&t.categories&&Array.isArray(t.categories))try{t.categories.some(e=>(e.description||``).toLowerCase().includes(`software`)||(e.description||``).toLowerCase().includes(`utility`)||(e.description||``).toLowerCase().includes(`application`))&&(n=!0)}catch{}if(!n&&t.genres&&Array.isArray(t.genres))try{t.genres.some(e=>(e.description||``).toLowerCase().includes(`software`))&&(n=!0)}catch{}let i=``,a=[`https://shared.steamstatic.com/store_item_assets/steam/apps/${e}/library_600x900_2x.jpg`,`https://shared.steamstatic.com/store_item_assets/steam/apps/${e}/library_600x900.jpg`];for(let e of a)try{if((await r.fetch(e,{method:`HEAD`})).ok){i=e;break}}catch{}return{description:(t.short_description||``).slice(0,500),developer:(t.developers||[])[0]||``,publisher:(t.publishers||[])[0]||``,releaseDate:t.release_date?.date||``,genres:(t.genres||[]).map(e=>e.description),coverUrl:i,headerUrl:t.header_image||`https://shared.steamstatic.com/store_item_assets/steam/apps/${e}/library_hero.jpg`,screenshots:(t.screenshots||[]).slice(0,4).map(e=>e.path_full),metacritic:t.metacritic?.score||null,website:t.website||``,_source:`steam`,isSoftware:n}}catch(t){return console.log(`[Metadata] Steam fetch failed for`,e,t.message),null}}async function u(e){try{let t=await c(`https://store.steampowered.com/api/storesearch/?term=${encodeURIComponent(e)}&l=english&cc=US`);if(!t?.items?.length)return null;let n=e.toLowerCase().replace(/[^a-z0-9]/g,``),r=t.items[0];for(let e of t.items)if((e.name||``).toLowerCase().replace(/[^a-z0-9]/g,``)===n){r=e;break}return await l(String(r.id))}catch(t){return console.log(`[Metadata] Steam search failed for`,e,t.message),null}}async function d(e){try{let t=await c(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(e+` video game`)}&srnamespace=0&srlimit=5&format=json`);if(!t?.query?.search?.length)return null;let n=e.toLowerCase().replace(/[^a-z0-9]/g,``),r=t.query.search[0].title;for(let e of t.query.search)if(e.title.toLowerCase().replace(/[^a-z0-9]/g,``).replace(/videogame$/,``)===n){r=e.title;break}let i=encodeURIComponent(r),a=(await c(`https://en.wikipedia.org/w/api.php?action=query&titles=${i}&prop=extracts|pageimages|revisions&exintro=true&explaintext=true&pithumbsize=600&rvprop=content&rvslots=main&rvsection=0&format=json`))?.query?.pages;if(!a)return null;let o=Object.values(a)[0];if(!o||o.missing!==void 0)return null;let s=(o.extract||``).slice(0,500),l=o.thumbnail?.source||``,u=o.revisions?.[0]?.slots?.main?.[`*`]||``,d=e=>{let t=RegExp(`\\|\\s*`+e+`\\s*=\\s*(.+)`,`i`),n=u.match(t);return n?n[1].replace(/\[\[([^|\]]*\|)?([^\]]*)\]\]/g,`$2`).replace(/\{\{[^}]*\}\}/g,``).replace(/<[^>]+>/g,``).trim():``},f=d(`developer`),p=d(`publisher`),m=d(`released`)||d(`release_date`),h=d(`genre`),g=h?h.split(/[,;]/).map(e=>e.trim()).filter(Boolean).slice(0,5):[];return!s&&!f?null:{description:s,developer:f,publisher:p,releaseDate:m.replace(/\{\{.*?\}\}/g,``).trim().slice(0,30),genres:g,coverUrl:l,headerUrl:``,screenshots:[],metacritic:null,website:`https://en.wikipedia.org/wiki/${i}`,_source:`wikipedia`}}catch(t){return console.log(`[Metadata] Wikipedia fetch failed for`,e,t.message),null}}async function f(e,t){if(!t)return null;try{let n=encodeURIComponent(e),i=async e=>{let n=await r.fetch(e,{headers:{Authorization:`Bearer `+t}});if(!n.ok)throw Error(`SGDB HTTP `+n.status);return n.json()},a=await i(`https://www.steamgriddb.com/api/v2/search/autocomplete/${n}`);if(!a?.success||!a?.data?.length)return null;let o=a.data[0].id,[s,c]=await Promise.allSettled([i(`https://www.steamgriddb.com/api/v2/grids/game/${o}?dimensions=600x900&limit=1`),i(`https://www.steamgriddb.com/api/v2/heroes/game/${o}?limit=1`)]),l=s.status===`fulfilled`&&s.value?.data?.[0]?.url||``,u=c.status===`fulfilled`&&c.value?.data?.[0]?.url||``;return l||u?{coverUrl:l,headerUrl:u}:null}catch(t){return console.log(`[Metadata] SteamGridDB art fetch failed for`,e,t.message),null}}async function p(e){if(!e||!e.name)return null;let t=(e.platform||``)+`:`+(e.platformId||e.name),n=a.get(t);if(n&&Date.now()-n.timestamp<o)return n.data;let r=s(),i=null;if(e.platform===`steam`&&(e.platformId&&(i=await l(e.platformId)),i||=await u(e.name)),i||(r.source===`wikipedia`?(i=await d(e.name),i||=await u(e.name)):(i=await u(e.name),i||=await d(e.name))),i&&r.steamGridDbKey)try{let t=await f(e.name,r.steamGridDbKey);t&&(t.coverUrl&&!i.coverUrl?i.coverUrl=t.coverUrl:t.coverUrl&&(i.sgdbCoverUrl=t.coverUrl),t.headerUrl&&(i.headerUrl=t.headerUrl))}catch{}return i&&a.set(t,{data:i,timestamp:Date.now()}),i}function m(e,t){if(!t)return!1;let n=!1;if(!e.coverUrl&&t.coverUrl&&(e.coverUrl=t.coverUrl,n=!0),!e.sgdbCoverUrl&&t.sgdbCoverUrl&&(e.sgdbCoverUrl=t.sgdbCoverUrl,n=!0),!e.description&&t.description&&(e.description=t.description,n=!0),!e.developer&&t.developer&&(e.developer=t.developer,n=!0),!e.publisher&&t.publisher&&(e.publisher=t.publisher,n=!0),!e.releaseDate&&t.releaseDate&&(e.releaseDate=t.releaseDate,n=!0),(!e.categories||e.categories.length===0)&&t.genres?.length&&(e.categories=t.genres,n=!0),!e.headerUrl){let r=t.headerUrl||t.coverUrl||t.screenshots&&t.screenshots[0]||``;r&&(e.headerUrl=r,n=!0)}(!e.screenshots||e.screenshots.length===0)&&t.screenshots?.length&&(e.screenshots=t.screenshots,n=!0),e.metacritic==null&&t.metacritic!=null&&(e.metacritic=t.metacritic,n=!0),!e.website&&t.website&&(e.website=t.website,n=!0);try{let r=(e.categories||[]).filter(Boolean).map(e=>String(e).trim()),i=[];if(t.genres&&Array.isArray(t.genres))for(let e of t.genres)e&&i.push(String(e).trim());if(t.categories&&Array.isArray(t.categories))for(let e of t.categories)e&&i.push(String(e).trim());if(t.type&&typeof t.type==`string`){let e=t.type.trim();e&&e.toLowerCase()!==`game`&&i.push(e.charAt(0).toUpperCase()+e.slice(1))}if(i.length>0){let t=Array.from(new Map([...r,...i].map(e=>[e.toLowerCase(),e])).values()),a=r.map(e=>e.toLowerCase()).join(`|`);t.map(e=>e.toLowerCase()).join(`|`)!==a&&(e.categories=t,n=!0)}}catch{}if(t._source===`steam`&&t.isSoftware){e.software||(e.software=!0,n=!0);try{let t=e.categories||[];t.some(e=>typeof e==`string`&&e.toLowerCase()===`software`)||(e.categories=[...t,`Software`],n=!0)}catch{}}return n}function h(e){a.delete(e)}t.exports={httpGet:c,fetchSteamMetadata:l,fetchSteamSearchMetadata:u,fetchWikipediaMetadata:d,fetchSteamGridDBArt:f,fetchGameMetadata:p,applyMetadataToGame:m,getMetadataSettings:s,invalidateMetadataCache:h}})),s=e(((e,t)=>{var{app:r,net:i}=require(`electron`),a=require(`path`),s=require(`fs`),c=n(),{fetchGameMetadata:l,applyMetadataToGame:u}=o();function d(){let e=a.join(r.getPath(`userData`),`covers`);try{s.existsSync(e)||s.mkdirSync(e,{recursive:!0})}catch{}return e}async function f(e,t){try{let n=await i.fetch(e);if(!n.ok)throw Error(`HTTP `+n.status);let r=Buffer.from(await n.arrayBuffer());if(r.length<1024)throw Error(`File too small (`+r.length+` bytes)`);return s.writeFileSync(t,r),!0}catch(e){throw p(t),e}}function p(e){try{s.existsSync(e)&&s.unlinkSync(e)}catch{}}var m=new Set,h=new Map,g=2,_=!1,v=null;function y(){return v||(v=d(),v)}function b(e){e&&(m.add(e),_||x())}async function x(){_=!0;let e=y(),t=c.db;for(;m.size>0;){let n=[];for(let e of m)if(n.push(e),n.length>=5)break;for(let e of n)m.delete(e);let r=!1;await Promise.allSettled(n.map(async n=>{try{let i=t.games.find(e=>e.id===n);if(!i)return;if(!(i.localCoverPath&&s.existsSync(i.localCoverPath)&&(()=>{try{return s.statSync(i.localCoverPath).size>=1024}catch{return!1}})())){i.localCoverPath&&=(p(i.localCoverPath),null);let t=[i.coverUrl,i.sgdbCoverUrl].filter(Boolean),o=!1;for(let s of t)try{let t=a.extname(new URL(s).pathname).split(`?`)[0]||`.jpg`,c=a.join(e,`cover_`+n+t);await f(s,c),i.localCoverPath=c,i._imgStamp=Date.now(),r=!0,h.delete(n),o=!0;break}catch{}if(!o&&!i.headerUrl)try{let s=await l(i);if(s&&(u(i,s),r=!0,i.coverUrl&&!t.includes(i.coverUrl)))try{let t=a.extname(new URL(i.coverUrl).pathname).split(`?`)[0]||`.jpg`,r=a.join(e,`cover_`+n+t);await f(i.coverUrl,r),i.localCoverPath=r,i._imgStamp=Date.now(),h.delete(n),o=!0}catch{}}catch{}if(!o){let e=[i.coverUrl].filter(Boolean).length;if(e>0)throw Error(`All cover URLs failed (`+e+` candidates)`)}}if(!(i.localHeaderPath&&s.existsSync(i.localHeaderPath)&&(()=>{try{return s.statSync(i.localHeaderPath).size>=1024}catch{return!1}})())){i.localHeaderPath&&=(p(i.localHeaderPath),null);let t=i.headerUrl;if(t){let o=a.extname(new URL(t).pathname).split(`?`)[0]||`.jpg`,s=a.join(e,`header_`+n+o);await f(t,s),i.localHeaderPath=s,i._imgStamp=Date.now(),r=!0}}}catch(e){console.log(`[CoverFetcher] download failed for`,n,e&&e.message);let t=(h.get(n)||0)+1;t<=g?(h.set(n,t),m.add(n)):h.delete(n)}})),r&&(c.saveDB(t),c.sendToRenderer(`games:refresh`,t.games)),c.sendToRenderer(`cover:progress`,{remaining:m.size,downloaded:r?n.length:0}),m.size>0&&await new Promise(e=>setTimeout(e,150))}c.sendToRenderer(`cover:progress`,{remaining:0,done:!0}),_=!1}t.exports={getCoversDir:d,downloadToFile:f,cleanupFile:p,enqueueCoverFetch:b,processCoverQueue:x}})),c=e(((e,r)=>{var i=require(`path`),o=require(`fs`),s=require(`readline`),{spawn:c}=require(`child_process`),l=require(`dgram`),u=require(`os`),{screen:d,app:f,ipcMain:p,net:m}=require(`electron`),h=n(),{CONTROL_BAR_HEIGHT:g,CHIAKI_SYSTEM_PATHS:_}=t(),{connectDiscord:v,setDiscordPresence:y,clearDiscordPresence:b,isDiscordEnabled:x}=a();function S(){let e=i.join(f.getPath(`userData`),`chiaki-ng`);if(o.existsSync(e))return e;let t=i.join(__dirname,`..`,`resources`,`chiaki-ng`);return o.existsSync(t)?t:null}function C(){let e=S();if(!e)return null;let t=[`chiaki.exe`,`chiaki-ng.exe`];for(let n of t){let t=i.join(e,n);if(o.existsSync(t))return t}try{let n=o.readdirSync(e,{withFileTypes:!0});for(let r of n)if(r.isDirectory())for(let n of t){let t=i.join(e,r.name,n);if(o.existsSync(t))return t}}catch{}return null}function w(){let e=S();if(!e)return null;let t=i.join(e,`.version`);try{return o.readFileSync(t,`utf-8`).trim()}catch{return null}}var T=new Map;function E(e){return C()||[..._,i.join(process.env.ProgramFiles||``,`chiaki-ng`,`chiaki-ng.exe`),i.join(process.env.LOCALAPPDATA||``,`chiaki-ng`,`chiaki-ng.exe`),e].filter(Boolean).find(e=>e&&o.existsSync(e))||null}function D(e,t){let n=e.chiakiNickname||e.chiakiProfile||``,r=e.chiakiHost||``;if(!r)return[];let i=[`stream`];i.push(n||`default`),i.push(r),e.chiakiRegistKey&&i.push(`--registkey`,e.chiakiRegistKey),e.chiakiMorning&&i.push(`--morning`,e.chiakiMorning),e.chiakiProfile&&i.push(`--profile`,e.chiakiProfile),i.push(`--exit-app-on-stream-exit`);let a=e.chiakiDisplayMode||t?.displayMode||`fullscreen`;return a===`zoom`?i.push(`--zoom`):a===`stretch`?i.push(`--stretch`):i.push(`--fullscreen`),(e.chiakiDualsense||t?.dualsense)&&i.push(`--dualsense`),e.chiakiPasscode&&i.push(`--passcode`,e.chiakiPasscode),i}function O(e,t,n){h.sendToRenderer(`chiaki:event`,{gameId:e,type:t,...n})}function k(e,t,n){O(e,t,{platform:`psn`,...n})}function A(e,t,n){j(e);let r=i.dirname(t),a={...process.env,PATH:`${r};${process.env.PATH}`},o={gameId:e,process:null,state:`launching`,startTime:Date.now(),streamInfo:{},quality:{},lastEvent:null,exitCode:null};if(n.length===0)return o.process=c(t,[],{cwd:r,env:a,detached:!0,stdio:`ignore`}),o.process.unref(),o.state=`gui`,T.set(e,o),k(e,`state`,{state:`gui`}),o;o.process=c(t,n,{cwd:r,env:a,stdio:[`ignore`,`pipe`,`pipe`]});let l=``,u=t=>{let n=t.trim();if(n){if(n.startsWith(`{`))try{I(e,JSON.parse(n));return}catch{}R(e,n)}};if(s.createInterface({input:o.process.stdout}).on(`line`,u),s.createInterface({input:o.process.stderr}).on(`line`,e=>{l+=e+`
-`,l.length>4096&&(l=l.slice(-4096)),u(e)}),o.process.on(`exit`,(r,i)=>{o.exitCode=r,o.state=`disconnected`,P(o);let a=`unknown`,s=!0;r===0?(a=`clean_exit`,s=!1):i?(a=`killed`,s=!1):a=`error`;let c=Math.floor((Date.now()-o.startTime)/6e4);k(e,`disconnected`,{reason:a,wasError:s,exitCode:r,signal:i,sessionMinutes:c,stderr:s?l.slice(-1024):``}),x()&&b();let u=o._currentGameId||e,d=o._titleStartTime?Math.floor((Date.now()-o._titleStartTime)/6e4):0;if(d>0&&h.db){let e=h.db.games.find(e=>e.id===u);e&&(e.playtimeMinutes=(e.playtimeMinutes||0)+d,e.lastPlayed=new Date().toISOString(),h.saveDB(h.db),h.sendToRenderer(`games:refresh`,h.db.games))}let f=l.toLowerCase().includes(`regist failed`)||l.toLowerCase().includes(`auth`)||l.toLowerCase().includes(`invalid psn`),p=o._reconnectAttempts||0;if(r!==0&&!f&&p<5){let r=p+1,i=Math.min(1e3*2**(r-1),16e3);k(e,`reconnecting`,{attempt:r,maxAttempts:5,delayMs:i});let a=r;o._reconnectTimer=setTimeout(()=>{if(T.has(e)){let r=A(e,t,n);r&&(r._reconnectAttempts=a)}},i)}else T.delete(e)}),o._reconnectAttempts=0,o._currentTitleId=null,o._currentGameId=e,o._titleStartTime=Date.now(),o.embedded=!1,T.set(e,o),k(e,`state`,{state:`launching`}),N(e,o),x()){let t=h.db.games.find(t=>t.id===e);t&&(v(),y(t.name,t.platform))}return o}function j(e){let t=T.get(e);if(!t)return!1;if(t._reconnectTimer&&clearTimeout(t._reconnectTimer),P(t),t.process&&!t.process.killed&&t.process.exitCode===null)try{process.platform===`win32`?c(`taskkill`,[`/pid`,String(t.process.pid),`/t`,`/f`],{stdio:`ignore`}):t.process.kill(`SIGTERM`),setTimeout(()=>{try{t.process.killed||t.process.kill(`SIGKILL`)}catch{}},3e3)}catch{}return T.delete(e),!0}function M(){let[e,t]=h.mainWindow?h.mainWindow.getContentSize():[1280,720],n=1;try{let e=h.mainWindow.getBounds();n=d.getDisplayNearestPoint({x:e.x+e.width/2,y:e.y+e.height/2}).scaleFactor||1}catch{}let r=Math.round(g*n);return{x:0,y:r,w:Math.round(e*n),h:Math.max(1,Math.round(t*n)-r)}}function N(e,t){if(process.platform!==`win32`||!h.mainWindow||!t.process)return;let n=h.mainWindow.getNativeWindowHandle().readBigUInt64LE(0).toString(),r=M(),a=c(`powershell.exe`,[`-NoProfile`,`-ExecutionPolicy`,`Bypass`,`-File`,i.join(__dirname,`..`,`scripts`,`win32-stream.ps1`),`-ChiakiPid`,String(t.process.pid),`-ParentHwnd`,n,`-X`,String(r.x),`-Y`,String(r.y),`-W`,String(r.w),`-H`,String(r.h)],{stdio:[`pipe`,`pipe`,`pipe`]});t.embedProcess=a,s.createInterface({input:a.stdout}).on(`line`,n=>{let r=n.trim();r===`ready`?(t.embedded=!0,k(e,`embedded`,{embedded:!0})):r.startsWith(`error:`)&&(console.error(`[win32-stream]`,r),k(e,`embedded`,{embedded:!1,error:r}))}),a.stderr.on(`data`,e=>console.error(`[win32-stream stderr]`,e.toString().trimEnd())),a.on(`exit`,()=>{t.embedProcess=null})}function P(e){if(!e.embedProcess)return;let t=e.embedProcess;e.embedProcess=null;try{t.stdin.write(`exit
-`)}catch{}setTimeout(()=>{try{t.killed||t.kill()}catch{}},500)}function F(){if(!h.mainWindow)return;let e=M();for(let t of T.values())if(t.embedProcess&&!t.embedProcess.killed)try{t.embedProcess.stdin.write(`bounds ${e.x} ${e.y} ${e.w} ${e.h}\n`)}catch{}}function I(e,t){let n=T.get(e);if(n)switch(n.lastEvent=t,t.event){case`connecting`:n.state=`connecting`,k(e,`state`,{state:`connecting`,host:t.host,console:t.console});break;case`streaming`:n.state=`streaming`,n.streamInfo={resolution:t.resolution,codec:t.codec,fps:t.fps},k(e,`state`,{state:`streaming`,...n.streamInfo});break;case`quality`:n.quality={bitrate:t.bitrate_mbps,packetLoss:t.packet_loss,fpsActual:t.fps_actual,latencyMs:t.latency_ms},k(e,`quality`,n.quality);break;case`title_change`:L(e,t);break;case`disconnected`:n.state=`disconnected`,k(e,`chiaki_disconnect`,{reason:t.reason,wasError:t.was_error});break;default:k(e,`event`,t)}}function L(e,t){let n=T.get(e);if(!n)return;let r=(t.title_id||``).trim(),i=(t.title_name||``).trim(),a=Date.now();if(n._currentTitleId===r)return;if(n._currentGameId&&n._titleStartTime){let e=Math.floor((a-n._titleStartTime)/6e4);if(e>0){let t=h.db.games.find(e=>e.id===n._currentGameId);t&&(t.playtimeMinutes=(t.playtimeMinutes||0)+e,t.lastPlayed=new Date().toISOString(),h.saveDB(h.db),h.sendToRenderer(`games:refresh`,h.db.games))}}if(n._currentTitleId=r,n._titleStartTime=a,!r){n._currentGameId=null,x()&&b(),k(e,`title_change`,{titleId:``,titleName:``,gameId:null});return}let o=h.db.games.find(e=>e.platform===`psn`&&e.platformId&&e.platformId.toUpperCase()===r.toUpperCase());if(!o&&i){let e=i.toLowerCase();o=h.db.games.find(t=>t.platform===`psn`&&t.name&&t.name.toLowerCase()===e)}!o&&i&&(o={id:Date.now().toString(36)+Math.random().toString(36).substr(2,5),name:i,platform:`psn`,platformId:r,categories:[],coverUrl:``,playtimeMinutes:0,lastPlayed:new Date().toISOString(),addedAt:new Date().toISOString(),favorite:!1,chiakiNickname:(h.db.games.find(t=>t.id===e)||{}).chiakiNickname||``,chiakiHost:(h.db.games.find(t=>t.id===e)||{}).chiakiHost||``},h.db.games.push(o),h.saveDB(h.db),h.sendToRenderer(`games:refresh`,h.db.games)),o&&!o.platformId&&r&&(o.platformId=r,h.saveDB(h.db),h.sendToRenderer(`games:refresh`,h.db.games)),n._currentGameId=o?o.id:null,x()&&o&&y(o.name,`psn`,n.startTime),k(e,`title_change`,{titleId:r,titleName:i,gameId:o?o.id:null,gameName:o?o.name:i})}function R(e,t){let n=T.get(e);if(!n)return;let r=t.toLowerCase();r.includes(`starting session request`)||r.includes(`starting ctrl`)?n.state!==`streaming`&&(n.state=`connecting`,k(e,`state`,{state:`connecting`})):r.includes(`senkusha completed successfully`)||r.includes(`streamconnection completed`)||r.includes(`stream connection started`)||r.includes(`video decoder`)?n.state!==`streaming`&&(n.state=`streaming`,n._reconnectAttempts=0,k(e,`state`,{state:`streaming`})):r.includes(`session has quit`)||r.includes(`ctrl stopped`)||(r.includes(`ctrl has failed`)||r.includes(`streamconnection run failed`)||r.includes(`remote disconnected`))&&k(e,`log`,{level:`error`,message:t})}function z(){let e={};for(let[t,n]of T)e[t]={state:n.state,startTime:n.startTime,streamInfo:n.streamInfo||{},quality:n.quality||{},exitCode:n.exitCode,reconnectAttempts:n._reconnectAttempts||0};return e}function B(){if(C()||_.some(e=>o.existsSync(e)))return;console.log(`[chiaki] Not found — starting automatic setup...`),h.sendToRenderer(`chiaki:event`,{type:`setup_started`});let e=i.join(__dirname,`..`,`scripts`,`setup-chiaki.ps1`);if(!o.existsSync(e)){console.warn(`[chiaki] setup-chiaki.ps1 not found, skipping auto-setup`);return}let t=c(`powershell`,[`-ExecutionPolicy`,`Bypass`,`-File`,e,`-InstallDir`,i.join(f.getPath(`userData`),`chiaki-ng`)],{cwd:i.join(__dirname,`..`),stdio:`pipe`}),n=``,r=!1,a=setTimeout(()=>{if(!r){r=!0;try{t.kill()}catch{}console.error(`[chiaki] Auto-setup timed out after 5 minutes`),h.sendToRenderer(`chiaki:event`,{type:`setup_failed`,error:`Setup timed out after 5 minutes`})}},3e5);t.stdout.on(`data`,e=>n+=e.toString()),t.stderr.on(`data`,e=>n+=e.toString()),t.on(`close`,e=>{if(!r)if(r=!0,clearTimeout(a),e===0){let e=w();console.log(`[chiaki] Auto-setup complete — v${e}`),h.sendToRenderer(`chiaki:event`,{type:`setup_complete`,version:e})}else console.error(`[chiaki] Auto-setup failed (exit ${e}):`,n),h.sendToRenderer(`chiaki:event`,{type:`setup_failed`,error:`Setup exited with code ${e}`})}),t.on(`error`,e=>{r||(r=!0,clearTimeout(a),console.error(`[chiaki] Auto-setup spawn error:`,e.message))})}function V(){let e=()=>h.db,t=()=>h.saveDB(h.db);p.handle(`chiaki:setStreamBounds`,(e,{gameId:t,x:n,y:r,width:i,height:a})=>{let o=T.get(t);if(o?.embedProcess&&!o.embedProcess.killed)try{o.embedProcess.stdin.write(`bounds ${n} ${r} ${i} ${a}\n`)}catch{}return{success:!0}}),p.handle(`chiaki:status`,()=>{let e=C(),t=w();if(e)return{status:`bundled`,executablePath:e,version:t,directory:S()};for(let e of _)if(o.existsSync(e))return{status:`system`,executablePath:e,version:null};return{status:`missing`,executablePath:null,version:null}}),p.handle(`chiaki:checkUpdate`,async()=>{try{let e=process.env.CHIAKI_RELEASE_REPO||`streetpea/chiaki-ng`,t=await m.fetch(`https://api.github.com/repos/${e}/releases/latest`,{headers:{"User-Agent":`cereal-launcher`}});if(!t.ok)throw Error(`GitHub API returned ${t.status}`);let n=await t.json(),r=n.tag_name||null,i=w();return{current:i,latest:r,hasUpdate:!!(r&&(!i||r!==i)),releaseName:n.name||r}}catch(e){return{error:e.message}}}),p.handle(`chiaki:update`,async()=>{try{let e=f.isPackaged?i.join(process.resourcesPath,`scripts`,`setup-chiaki.ps1`):i.join(__dirname,`..`,`scripts`,`setup-chiaki.ps1`);if(!o.existsSync(e))return{error:`setup-chiaki.ps1 not found at: `+e};let t=i.join(f.getPath(`userData`),`chiaki-ng`);return new Promise(n=>{let r=c(`powershell`,[`-ExecutionPolicy`,`Bypass`,`-File`,e,`-Force`,`-InstallDir`,t],{cwd:i.join(__dirname,`..`),stdio:`pipe`}),a=``,o=!1,s=e=>{o||(o=!0,clearTimeout(l),n(e))},l=setTimeout(()=>{try{r.kill()}catch{}s({error:`Setup timed out after 5 minutes`})},3e5);r.stdout.on(`data`,e=>a+=e.toString()),r.stderr.on(`data`,e=>a+=e.toString()),r.on(`close`,e=>{s(e===0?{ok:!0,version:w(),output:a}:{error:`Setup exited with code ${e}`,output:a})}),r.on(`error`,e=>s({error:e.message}))})}catch(e){return{error:e.message}}}),p.handle(`chiaki:getConfig`,()=>e().chiakiConfig||{executablePath:``,consoles:[]}),p.handle(`chiaki:saveConfig`,(n,r)=>{let{cerealMode:i,...a}=r||{};return e().chiakiConfig=a,t(),a}),p.handle(`games:setChiakiStream`,(n,r,i)=>{let a=e().games.find(e=>e.id===r);return a?(a.chiakiNickname=i.nickname||``,a.chiakiHost=i.host||``,a.chiakiProfile=i.profile||``,a.chiakiFullscreen=i.fullscreen!==!1,a.chiakiRegistKey=i.registKey||``,a.chiakiMorning=i.morning||``,t(),a):null}),p.handle(`chiaki:startStreamDirect`,(t,n)=>{let r=E();if(!r)return{success:!1,error:`chiaki-ng not found. Run scripts/setup-chiaki.ps1 to install it.`};let i=`console:`+(n.host||`unknown`);return{success:!0,sessionKey:i,state:A(i,r,D({chiakiHost:n.host||``,chiakiNickname:n.nickname||``,chiakiProfile:n.profile||``,chiakiRegistKey:n.registKey||``,chiakiMorning:n.morning||``,chiakiFullscreen:n.fullscreen!==!1,chiakiDisplayMode:n.displayMode||``},e().chiakiConfig||{})).state}}),p.handle(`chiaki:startStream`,(n,r)=>{let i=e().games.find(e=>e.id===r);if(!i)return{success:!1,error:`Game not found`};let a=E(i.executablePath);if(!a)return{success:!1,error:`chiaki-ng not found`};let o=A(r,a,D(i,e().chiakiConfig||{}));return i.lastPlayed=new Date().toISOString(),t(),{success:!0,state:o.state}}),p.handle(`chiaki:stopStream`,(e,t)=>({success:j(t)})),p.handle(`chiaki:getSessions`,()=>z()),p.handle(`chiaki:openGui`,()=>{let e=E();if(!e)return{success:!1,error:`chiaki-ng not found`};let t=i.dirname(e);return c(e,[],{cwd:t,env:{...process.env,PATH:`${t};${process.env.PATH}`},detached:!0,stdio:`ignore`}).unref(),{success:!0}}),p.handle(`chiaki:registerConsole`,(e,{host:t,psnAccountId:n,pin:r})=>{let a=E();return a?new Promise(e=>{let o=i.dirname(a),s={...process.env,PATH:`${o};${process.env.PATH}`},l=[`register`,`--host`,t];n&&l.push(`--psn-account-id`,n),r&&l.push(`--pin`,r);let u=``,d=!1,f=t=>{d||(d=!0,e(t))},p=c(a,l,{cwd:o,env:s,stdio:[`ignore`,`pipe`,`pipe`]});p.stdout.on(`data`,e=>u+=e.toString()),p.stderr.on(`data`,e=>u+=e.toString()),p.on(`exit`,e=>{f(e===0?{success:!0,registKey:u.match(/regist[_-]?key[=:]\s*([^\s\n]+)/i)?.[1]||``,morning:u.match(/morning[=:]\s*([^\s\n]+)/i)?.[1]||``,output:u}:{success:!1,error:u||`Registration failed (exit `+e+`)`})}),setTimeout(()=>{try{p.kill()}catch{}f({success:!1,error:`Registration timed out (30s)`})},3e4)}):{success:!1,error:`chiaki-ng not found`}}),p.handle(`chiaki:discoverConsoles`,()=>{let e=[{port:987,srch:Buffer.from(`SRCH * HTTP/1.1
-device-discovery-protocol-version:00020020
-`)},{port:9302,srch:Buffer.from(`SRCH * HTTP/1.1
-device-discovery-protocol-version:00030010
-`)}];return new Promise(t=>{let n=new Map;function r(e,t){let r=e.toString(),i=r.match(/^HTTP\/1\.1\s+(\d+)/);if(!i)return;let a=parseInt(i[1],10);if(a!==200&&a!==620)return;console.log(`[discovery] response from`,t.address,`status:`,a);let o=a===200?`ready`:`standby`,s={host:t.address,state:o};for(let e of r.split(`
-`)){let t=e.indexOf(`:`);if(t===-1)continue;let n=e.substring(0,t).trim().toLowerCase(),r=e.substring(t+1).trim();n===`host-name`&&(s.name=r),n===`host-type`&&(s.type=r),n===`host-id`&&(s.hostId=r),n===`system-version`&&(s.firmwareVersion=r),n===`running-app-titleid`&&(s.runningTitleId=r),n===`running-app-name`&&(s.runningTitle=r),n===`device-discovery-protocol-version`&&(s.protocolVersion=r)}let c=n.get(t.address);c?Object.assign(c,Object.fromEntries(Object.entries(s).filter(([,e])=>e!=null&&e!==``))):n.set(t.address,s)}let i=[];for(let e=9303;e<=9319;e++)i.push(e);i.push(0);function a(e){let n=l.createSocket({type:`udp4`,reuseAddr:!0});n.on(`message`,r),n.on(`error`,r=>{if(r.code===`EADDRINUSE`&&e+1<i.length){try{n.close()}catch{}a(e+1)}else{console.error(`[discovery] bind failed:`,r.message);try{n.close()}catch{}t({success:!1,consoles:[],error:r.message})}}),n.bind(i[e],()=>{console.log(`[discovery] bound to port`,i[e]||`(random)`),o(n)})}a(0);function o(r){r.setBroadcast(!0);let i=new Set([`255.255.255.255`]);for(let e of Object.values(u.networkInterfaces()))for(let t of e)if(!(t.family!==`IPv4`||t.internal))if(t.netmask){let e=t.address.split(`.`).map(Number),n=t.netmask.split(`.`).map(Number),r=e.map((e,t)=>e|~n[t]&255).join(`.`);i.add(r)}else{let e=t.address.split(`.`);e[3]=`255`,i.add(e.join(`.`))}console.log(`[discovery] broadcasting to:`,[...i]);let a=()=>{for(let t of i)for(let{port:n,srch:i}of e)r.send(i,n,t,e=>{e&&console.error(`[discovery] send error:`,t,n,e.message)})};a(),setTimeout(a,500),setTimeout(a,1500),setTimeout(()=>{console.log(`[discovery] done, found`,n.size,`console(s)`);try{r.close()}catch{}t({success:!0,consoles:[...n.values()]})},4e3)}})}),p.handle(`chiaki:wakeConsole`,(e,{host:t,credentials:n})=>new Promise(e=>{let r=n?.registKey||``;if(!r)return e({success:!1,error:`No registration key — register the console first`});let a=!1,o=t=>{a||(a=!0,e(t))},s=E();if(s){let e=i.dirname(s),n={...process.env,PATH:`${e};${process.env.PATH}`},a=c(s,[`wakeup`,`--host`,t,`--regist-key`,r],{cwd:e,env:n,stdio:[`ignore`,`pipe`,`pipe`]}),l=``;a.stdout.on(`data`,e=>l+=e.toString()),a.stderr.on(`data`,e=>l+=e.toString()),a.on(`exit`,e=>{o({success:e===0,output:l,method:`chiaki-cli`})}),a.on(`error`,()=>{u()}),setTimeout(()=>{try{a.kill()}catch{}o({success:!1,error:`Wake CLI timed out (10s)`,method:`chiaki-cli`})},1e4);return}u();function u(){let e=[{port:987,msg:Buffer.from(`WAKEUP * HTTP/1.1
-client-type:vr
-auth-type:R
-model:w
-app-type:r
-user-credential:`+r+`
-device-discovery-protocol-version:00020020
-`)},{port:9302,msg:Buffer.from(`WAKEUP * HTTP/1.1
-client-type:vr
-auth-type:R
-model:w
-app-type:r
-user-credential:`+r+`
-device-discovery-protocol-version:00030010
-`)}],n=l.createSocket(`udp4`);n.on(`error`,e=>{console.error(`[wake] socket error:`,e.message);try{n.close()}catch{}o({success:!1,error:e.message,method:`udp`})}),n.bind(0,()=>{n.setBroadcast(!0);let r=[t],i=t.split(`.`);i.length===4&&(i[3]=`255`,r.push(i.join(`.`)));let a=r.length*e.length,s=0;for(let i of r)for(let{port:r,msg:c}of e)n.send(c,r,i,e=>{e&&console.error(`[wake] send error:`,i,r,e.message),s++,s===a&&setTimeout(()=>{try{n.close()}catch{}console.log(`[wake] sent to`,t,`(both ports)`),o({success:!0,method:`udp`})},500)})})}}))}r.exports={getChiakiDir:S,getBundledChiakiExe:C,getBundledChiakiVersion:w,chiakiSessions:T,resolveChiakiExe:E,buildChiakiArgs:D,startChiakiSession:A,stopChiakiSession:j,getStreamBounds:M,startEmbedHelper:N,stopEmbedHelper:P,sendEmbedBoundsToAll:F,sendStreamEvent:O,sendChiakiEvent:k,getActiveSessions:z,autoSetupChiakiIfMissing:B,registerChiakiIpcHandlers:V}})),l=e(((e,r)=>{var{WebContentsView:i,session:a}=require(`electron`),o=n(),{CONTROL_BAR_HEIGHT:s}=t(),c=new Map;function l(e,t,n){o.sendToRenderer(`chiaki:event`,{gameId:e,type:t,...n})}function u(){let[e,t]=o.mainWindow?o.mainWindow.getContentSize():[1280,720];return{x:0,y:s,width:e,height:Math.max(1,t-s)}}function d(e){if(!e||!e.view)return;let t=u();try{e.view.setBounds(t)}catch{}}function f(){for(let e of c.values())d(e)}function p(e,t){m(e);let n=new i({webPreferences:{session:a.fromPartition(`persist:xcloud`),contextIsolation:!0,sandbox:!0}}),r=n.webContents.getUserAgent().replace(/Electron\/\S+\s*/,``)+` Edg/120.0.0.0`;n.webContents.setUserAgent(r),o.mainWindow.contentView.addChildView(n);let s={gameId:e,view:n,state:`loading`,startTime:Date.now()};return c.set(e,s),d(s),n.webContents.loadURL(t||`https://www.xbox.com/play`),n.webContents.on(`dom-ready`,()=>{s.state=`streaming`,l(e,`state`,{state:`streaming`,platform:`xbox`})}),n.webContents.on(`did-fail-load`,(t,n,r)=>{s.state=`disconnected`,l(e,`disconnected`,{reason:r,platform:`xbox`})}),l(e,`state`,{state:`connecting`,platform:`xbox`}),s}function m(e){let t=c.get(e);if(!t||t._stopping)return!1;t._stopping=!0;try{try{o.mainWindow&&!o.mainWindow.isDestroyed()&&o.mainWindow.contentView.removeChildView(t.view)}catch{}if(c.delete(e),l(e,`disconnected`,{reason:`stopped`,platform:`xbox`}),t.view?.webContents&&!t.view.webContents.isDestroyed())try{t.view.webContents.loadURL(`https://www.xbox.com/play`)}catch{}return setTimeout(()=>{if(t.view?.webContents?.session&&!t.view.webContents.isDestroyed())try{t.view.webContents.session.clearStorageData({origin:`https://www.xbox.com`,storages:[`cookies`,`localstorage`,`sessionstorage`,`cachestorage`]}).catch(()=>{})}catch{}try{t.view?.webContents&&!t.view.webContents.isDestroyed()&&t.view.webContents.close()}catch{}t.view=null,console.log(`[xcloud] Session ${e} stopped gracefully`)},500),!0}catch(n){console.error(`[xcloud] Error stopping session:`,n);try{o.mainWindow?.contentView?.removeChildView(t.view)}catch{}try{t.view?.webContents?.close()}catch{}return c.delete(e),l(e,`disconnected`,{reason:`error`,platform:`xbox`,error:n.message}),!1}}function h(){let e={};for(let[t,n]of c)e[t]={state:n.state,platform:`xbox`,startTime:n.startTime};return e}r.exports={xcloudSessions:c,getXcloudBounds:u,updateXcloudBounds:d,updateAllXcloudBounds:f,startXcloudSession:p,stopXcloudSession:m,getActiveXcloudSessions:h}})),u=e(((e,t)=>{var{net:n,ipcMain:r}=require(`electron`),i=require(`crypto`),{getMetadataSettings:a,httpGet:s}=o();async function c(e){let t=[],n=await s(`https://store.steampowered.com/api/storesearch/?term=${encodeURIComponent(e)}&l=english&cc=US`);if(n?.items?.length)for(let e of n.items.slice(0,3)){let n=e.id,r=e.name||``;try{let e=(await s(`https://store.steampowered.com/api/appdetails?appids=${n}&l=english`))?.[String(n)]?.data;if(e&&(t.push({url:`https://shared.steamstatic.com/store_item_assets/steam/apps/${n}/library_600x900_2x.jpg`,type:`cover`,source:`Steam`,label:r+` - Portrait (HD)`}),e.header_image&&t.push({url:e.header_image,type:`header`,source:`Steam`,label:r+` - Header`}),t.push({url:`https://shared.steamstatic.com/store_item_assets/steam/apps/${n}/library_hero.jpg`,type:`header`,source:`Steam`,label:r+` - Hero`}),e.screenshots))for(let n of e.screenshots.slice(0,2))t.push({url:n.path_full,type:`screenshot`,source:`Steam`,label:r+` - Screenshot`})}catch{}}return t}async function l(e){let t=[],n=await s(`https://api.duckduckgo.com/?q=${encodeURIComponent(e+` video game`)}&format=json&no_redirect=1`);if(n?.Image){let r=n.Image.startsWith(`http`)?n.Image:`https://duckduckgo.com`+n.Image;t.push({url:r,type:`cover`,source:`DuckDuckGo`,label:n.Heading||e})}if(n?.RelatedTopics){for(let e of n.RelatedTopics.slice(0,4))if(e?.Icon?.URL){let n=e.Icon.URL.startsWith(`http`)?e.Icon.URL:`https://duckduckgo.com`+e.Icon.URL;t.push({url:n,type:`screenshot`,source:`DuckDuckGo`,label:(e.Text||``).slice(0,60)})}}return t}async function u(e){let t=[],n=await s(`https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(e)}&language=en&format=json&limit=3`);if(n?.search?.length)for(let e of n.search.slice(0,2)){let n=(e.description||``).toLowerCase();if(!(n&&!n.includes(`game`)&&!n.includes(`video`)&&!n.includes(`software`)))try{let n=(await s(`https://www.wikidata.org/w/api.php?action=wbgetclaims&entity=${e.id}&property=P18&format=json`))?.claims?.P18;if(n?.length)for(let r of n.slice(0,2)){let n=r?.mainsnak?.datavalue?.value;if(n){let r=n.replace(/ /g,`_`),a=i.createHash(`md5`).update(r).digest(`hex`),o=`https://upload.wikimedia.org/wikipedia/commons/${a[0]}/${a[0]}${a[1]}/${encodeURIComponent(r)}`,s=`https://upload.wikimedia.org/wikipedia/commons/thumb/${a[0]}/${a[0]}${a[1]}/${encodeURIComponent(r)}/600px-${encodeURIComponent(r)}`;t.push({url:s,type:`header`,source:`Wikidata`,label:e.label+` (Commons)`}),t.push({url:o,type:`screenshot`,source:`Wikidata`,label:e.label+` (Full)`})}}}catch{}}return t}async function d(e){let t=[],n=await s(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(e+` video game`)}&srnamespace=0&srlimit=3&format=json`);if(n?.query?.search?.length)for(let e of n.query.search.slice(0,2)){let n=encodeURIComponent(e.title);try{let r=(await s(`https://en.wikipedia.org/w/api.php?action=query&titles=${n}&prop=pageimages&piprop=thumbnail|original&pithumbsize=600&format=json`))?.query?.pages;if(r){let n=Object.values(r)[0];n?.thumbnail?.source&&t.push({url:n.thumbnail.source,type:`cover`,source:`Wikipedia`,label:e.title}),n?.original?.source&&t.push({url:n.original.source,type:`header`,source:`Wikipedia`,label:e.title+` (Full)`})}}catch{}try{let e=(await s(`https://en.wikipedia.org/w/api.php?action=query&titles=${n}&prop=images&format=json`))?.query?.pages;if(e){let n=(Object.values(e)[0].images||[]).filter(e=>{let t=e.title.toLowerCase();return(t.endsWith(`.jpg`)||t.endsWith(`.png`))&&!t.includes(`logo`)&&!t.includes(`icon`)&&!t.includes(`symbol`)&&!t.includes(`commons`)&&!t.includes(`edit`)});for(let e of n.slice(0,3))try{let n=(await s(`https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(e.title)}&prop=imageinfo&iiprop=url&iiurlwidth=600&format=json`))?.query?.pages;if(n){let r=Object.values(n)[0]?.imageinfo?.[0];r?.thumburl&&t.push({url:r.thumburl,type:`screenshot`,source:`Wikipedia`,label:e.title.replace(`File:`,``)})}}catch{}}}catch{}}return t}async function f(e,t){if(!t)return[];let r=[],i=encodeURIComponent(e),a=async e=>{let r=await n.fetch(e,{headers:{Authorization:`Bearer `+t}});if(!r.ok)throw Error(`SGDB HTTP `+r.status);return r.json()},o=await a(`https://www.steamgriddb.com/api/v2/search/autocomplete/${i}`);if(!o?.success||!o?.data?.length)return r;let s=o.data[0].id,c=o.data[0].name||e,[l,u,d,f]=await Promise.allSettled([a(`https://www.steamgriddb.com/api/v2/grids/game/${s}?dimensions=600x900&limit=8`),a(`https://www.steamgriddb.com/api/v2/grids/game/${s}?dimensions=460x215,920x430&limit=4`),a(`https://www.steamgriddb.com/api/v2/heroes/game/${s}?limit=4`),a(`https://www.steamgriddb.com/api/v2/logos/game/${s}?limit=2`)]);if(l.status===`fulfilled`&&l.value?.data)for(let e of l.value.data.slice(0,8))e.url&&r.push({url:e.url,type:`cover`,source:`SteamGridDB`,label:c+` - Cover`});if(u.status===`fulfilled`&&u.value?.data)for(let e of u.value.data.slice(0,4))e.url&&r.push({url:e.url,type:`header`,source:`SteamGridDB`,label:c+` - Header`});if(d.status===`fulfilled`&&d.value?.data)for(let e of d.value.data.slice(0,4))e.url&&r.push({url:e.url,type:`header`,source:`SteamGridDB`,label:c+` - Hero`});if(f.status===`fulfilled`&&f.value?.data)for(let e of f.value.data.slice(0,2))e.url&&r.push({url:e.url,type:`logo`,source:`SteamGridDB`,label:c+` - Logo`});return r}async function p(e,t,n){if(!t)return{images:[]};let r=a(),[i,o]=await Promise.allSettled([f(t,r.steamGridDbKey),c(t)]),s=i.status===`fulfilled`?i.value:(console.log(`[ArtSearch] SteamGridDB failed:`,i.reason?.message),[]),l=o.status===`fulfilled`?o.value:(console.log(`[ArtSearch] Steam failed:`,o.reason?.message),[]),u=[],d=new Set;for(let e of s)e.url&&!d.has(e.url)&&(d.add(e.url),u.push(e));if(u.length===0)for(let e of l)e.url&&!d.has(e.url)&&(d.add(e.url),u.push(e));return{images:u}}function m(){r.handle(`metadata:searchArt`,p)}t.exports={registerMetadataSearchHandlers:m,searchSteam:c,searchDuckDuckGo:l,searchWikidata:u,searchWikipedia:d,searchSteamGridDB:f}})),d=e(((e,t)=>{var n=require(`path`),r=require(`fs`),{shell:i}=require(`electron`),{spawn:a}=require(`child_process`);function o(e){return e===`psremote`?`psn`:e}function s(e){switch(e){case`steam`:return[n.join(process.env[`ProgramFiles(x86)`]||``,`Steam`,`Steam.exe`),n.join(process.env.ProgramFiles||``,`Steam`,`Steam.exe`)];case`epic`:return[n.join(process.env[`ProgramFiles(x86)`]||``,`Epic Games`,`Launcher`,`Portal`,`Binaries`,`Win64`,`EpicGamesLauncher.exe`),n.join(process.env.ProgramFiles||``,`Epic Games`,`Launcher`,`Portal`,`Binaries`,`Win64`,`EpicGamesLauncher.exe`)];case`gog`:return[n.join(process.env[`ProgramFiles(x86)`]||``,`GOG Galaxy`,`GalaxyClient.exe`),n.join(process.env.ProgramFiles||``,`GOG Galaxy`,`GalaxyClient.exe`)];case`ea`:return[n.join(process.env.ProgramFiles||``,`Electronic Arts`,`EA Desktop`,`EA Desktop`,`EADesktop.exe`),n.join(process.env.LOCALAPPDATA||``,`Electronic Arts`,`EA Desktop`,`EA Desktop`,`EADesktop.exe`),n.join(process.env[`ProgramFiles(x86)`]||``,`Origin`,`Origin.exe`)];case`battlenet`:return[n.join(process.env.ProgramFiles||``,`Battle.net`,`Battle.net.exe`),n.join(process.env[`ProgramFiles(x86)`]||``,`Battle.net`,`Battle.net.exe`)];case`ubisoft`:return[n.join(process.env.ProgramFiles||``,`Ubisoft`,`Ubisoft Game Launcher`,`UbisoftConnect.exe`),n.join(process.env[`ProgramFiles(x86)`]||``,`Ubisoft`,`Ubisoft Game Launcher`,`UbisoftConnect.exe`),n.join(process.env.ProgramFiles||``,`Ubisoft`,`Ubisoft Game Launcher`,`Uplay.exe`),n.join(process.env[`ProgramFiles(x86)`]||``,`Ubisoft`,`Ubisoft Game Launcher`,`Uplay.exe`)];case`itchio`:{let e=n.join(process.env.LOCALAPPDATA||``,`itch`);try{return r.readdirSync(e,{withFileTypes:!0}).filter(e=>e.isDirectory()&&e.name.startsWith(`app-`)).sort((e,t)=>t.name.localeCompare(e.name,void 0,{numeric:!0})).map(t=>n.join(e,t.name,`itch.exe`))}catch{return[]}}case`xbox`:return[n.join(process.env.LOCALAPPDATA||``,`Microsoft`,`WindowsApps`,`XboxApp.exe`)];default:return[]}}function c(e,t){let n=o(e.platform),r=e.platformId?String(e.platformId):``,i=e.storeUrl||``,a=(()=>{let e=String(i).match(/\/app\/(\d+)/i);return e?e[1]:``})(),s=r||a,c=e.epicAppName||r,l=e.epicNamespace||``,u=e.epicCatalogItemId||``,d=e.eaOfferId||r,f=e.ubisoftGameId||r,p=r||(()=>{let e=String(i).match(/\/openGameView\/(\d+)/i);return e?e[1]:``})(),m=e=>Array.from(new Set(e.filter(Boolean)));return n===`steam`&&s?t===`install`?m([`steam://install/${s}`,`steam://nav/games/details/${s}`,i]):t===`client`?[`steam://open/games`,`steam://nav/library`]:m([`steam://rungameid/${s}`,`steam://nav/games/details/${s}`]):n===`epic`?m(t===`install`?[c?`com.epicgames.launcher://apps/${c}?action=install&silent=true`:``,r?`com.epicgames.launcher://apps/${r}?action=install&silent=true`:``,l&&u?`com.epicgames.launcher://store/product/${l}/${u}`:``,i]:t===`client`?[c?`com.epicgames.launcher://apps/${c}`:``,r?`com.epicgames.launcher://apps/${r}`:``,i]:[c?`com.epicgames.launcher://apps/${c}?action=launch&silent=true`:``,r?`com.epicgames.launcher://apps/${r}?action=launch&silent=true`:``,i]):n===`gog`&&p?m(t===`install`?[i,`goggalaxy://openGameView/${p}`]:[`goggalaxy://openGameView/${p}`,i]):n===`ea`?d?m(t===`install`?[`origin2://store/open?offerId=${d}`,`origin2://store/open?offerIds=${d}`,i]:[`origin2://game/launch?offerIds=${d}`,`origin2://library/open`,i]):[`origin2://library/open`]:n===`battlenet`?r?[`battlenet://${r}`]:[`battlenet://`]:n===`ubisoft`?f?m(t===`install`?[`uplay://launch/${f}/1`,i]:[`uplay://launch/${f}/0`,i]):[`uplay://`]:n===`itchio`?i?[i]:[`https://itch.io/my-purchases`]:n===`xbox`?t===`install`?[`msxbox://`,`https://www.xbox.com/en-US/games`]:t===`client`?[`msxbox://`]:[`https://www.xbox.com/play`]:i?[i]:[]}async function l(e,t){let n=c(e,t),l=null;for(let e of n)try{return await i.openExternal(e),{success:!0,opened:e}}catch(e){l=e}let u=s(o(e.platform));for(let e of u)if(!(!e||!r.existsSync(e)))try{return a(e,[],{detached:!0,stdio:`ignore`}).unref(),{success:!0,opened:e}}catch(e){l=e}return{success:!1,error:l&&l.message||`Could not open platform client`}}t.exports={normalizePlatform:o,getLauncherExecutableCandidates:s,buildPlatformUris:c,openInPlatformClient:l}})),f=e(((e,t)=>{var{app:r,ipcMain:i,dialog:o}=require(`electron`),c=require(`fs`),l=n(),{connectDiscord:u,disconnectDiscord:d}=a(),{cleanupFile:f}=s(),p={defaultView:`orbit`,accentColor:`#d4a853`,starDensity:`normal`,showAnimations:!0,rememberWindowBounds:!0,autoSyncPlaytime:!1,minimizeOnLaunch:!1,closeToTray:!1,defaultTab:`all`,discordPresence:!1,metadataSource:`steam`,launchOnStartup:!1,startMinimized:!1};function m(){return{...p,...l.db.settings||{}}}function h({createTray:e,destroyTray:t,DB_PATH:n}){i.handle(`settings:get`,()=>m()),i.handle(`settings:save`,(n,i)=>{if(l.db.settings={...p,...l.db.settings||{},...i},l.saveDB(l.db),l.db.settings.discordPresence?u():d(),`launchOnStartup`in i)try{r.setLoginItemSettings({openAtLogin:!!i.launchOnStartup})}catch{}return`closeToTray`in i&&(i.closeToTray?e():t()),l.db.settings}),i.handle(`settings:reset`,()=>(l.db.settings={...p},l.saveDB(l.db),l.db.settings)),i.handle(`settings:exportLibrary`,async()=>{let e=await o.showSaveDialog(l.mainWindow,{title:`Export Library`,defaultPath:`cereal-library.json`,filters:[{name:`JSON`,extensions:[`json`]}]});if(e.canceled||!e.filePath)return{cancelled:!0};try{let t={games:l.db.games,categories:l.db.categories,exportedAt:new Date().toISOString()};return c.writeFileSync(e.filePath,JSON.stringify(t,null,2)),{success:!0,path:e.filePath}}catch(e){return{error:e.message}}}),i.handle(`settings:importLibrary`,async()=>{let e=await o.showOpenDialog(l.mainWindow,{title:`Import Library`,filters:[{name:`JSON`,extensions:[`json`]}],properties:[`openFile`]});if(e.canceled||!e.filePaths.length)return{cancelled:!0};try{let t=c.readFileSync(e.filePaths[0],`utf-8`),n=JSON.parse(t),r=0;if(n.games&&Array.isArray(n.games)){let e=new Set(l.db.games.map(e=>e.name+`|`+e.platform));for(let t of n.games){let n=t.name+`|`+t.platform;e.has(n)||(t.id=Date.now().toString(36)+Math.random().toString(36).substr(2,5),l.db.games.push(t),e.add(n),r++)}}if(n.categories&&Array.isArray(n.categories)){let e=new Set(l.db.categories);n.categories.forEach(t=>e.add(t)),l.db.categories=[...e]}return l.saveDB(l.db),{success:!0,added:r,games:l.db.games,categories:l.db.categories}}catch(e){return{error:e.message}}}),i.handle(`settings:clearCovers`,()=>{for(let e of l.db.games)e.localCoverPath&&=(f(e.localCoverPath),null),e.localHeaderPath&&=(f(e.localHeaderPath),null),e._imgStamp=Date.now(),e.platform===`steam`&&e.platformId?(e.coverUrl=`https://shared.steamstatic.com/store_item_assets/steam/apps/${e.platformId}/library_600x900_2x.jpg`,e.headerUrl=`https://shared.steamstatic.com/store_item_assets/steam/apps/${e.platformId}/library_hero.jpg`):(e.coverUrl=``,e.headerUrl=``);return l.saveDB(l.db),{success:!0,games:l.db.games}}),i.handle(`settings:clearAllGames`,()=>(l.db.games=[],l.saveDB(l.db),{success:!0})),i.handle(`settings:getDataPath`,()=>n),i.handle(`settings:getAppVersion`,()=>r.getVersion())}t.exports={DEFAULT_SETTINGS:p,getSettings:m,registerSettingsIpcHandlers:h}})),{app:p,BrowserWindow:m,ipcMain:h,dialog:g,shell:_,session:v,Tray:y,Menu:b,nativeImage:x,net:S,protocol:C,safeStorage:w,clipboard:T}=require(`electron`),E=require(`path`),D=require(`fs`);p.commandLine.appendSwitch(`enable-gpu-rasterization`),p.commandLine.appendSwitch(`enable-zero-copy`),p.commandLine.appendSwitch(`ignore-gpu-blocklist`),p.commandLine.appendSwitch(`enable-hardware-overlays`,`single-fullscreen,single-on-top,underlay`),p.commandLine.appendSwitch(`enable-features`,`VaapiVideoDecodeLinuxGL,VaapiVideoEncoder,CanvasOopRasterization,UseSkiaRenderer`),C.registerSchemesAsPrivileged([{scheme:`local-image`,privileges:{standard:!1,supportFetchAPI:!0,stream:!0,bypassCSP:!1}}]);var O=()=>E.join(p.getPath(`userData`),`credentials.json`);function k(){try{return JSON.parse(D.readFileSync(O(),`utf-8`))}catch{return{}}}function A(e){let t=O(),n=t+`.tmp`;D.writeFileSync(n,JSON.stringify(e,null,2),`utf-8`),D.renameSync(n,t)}var j={setPassword(e,t,n){if(!w.isEncryptionAvailable())throw Error(`Encryption not available`);let r=k(),i=`${e}/${t}`;r[i]=w.encryptString(n).toString(`base64`),A(r)},getPassword(e,t){let n=k(),r=`${e}/${t}`;return n[r]?w.decryptString(Buffer.from(n[r],`base64`)):null},deletePassword(e,t){let n=k(),r=`${e}/${t}`;return n[r]?(delete n[r],A(n),!0):!1}},{spawn:M}=require(`child_process`),N=require(`crypto`),P=require(`os`),{autoUpdater:F}=require(`electron-updater`),I=require(E.join(__dirname,`providers`)),{CONTROL_BAR_HEIGHT:L,ALLOWED_KEY_SERVICES:R,CHIAKI_SYSTEM_PATHS:z,ACCOUNT_SECRET_FIELDS:B}=t(),{detachAccountSecrets:V,registerAccountIpcHandlers:ee}=i(),{connectDiscord:te,disconnectDiscord:ne,setDiscordPresence:re,clearDiscordPresence:ie,isDiscordEnabled:ae,getDiscordStatus:oe}=a();h.handle(`discord:status`,()=>oe());var{httpGetJson:se}=require(`./providers/http`),{getCoversDir:ce,cleanupFile:le,enqueueCoverFetch:H}=s(),{getBundledChiakiExe:ue,getBundledChiakiVersion:de,chiakiSessions:fe,resolveChiakiExe:pe,buildChiakiArgs:me,startChiakiSession:he,sendEmbedBoundsToAll:ge,autoSetupChiakiIfMissing:_e,registerChiakiIpcHandlers:ve}=c(),{xcloudSessions:U,updateAllXcloudBounds:ye,startXcloudSession:be,stopXcloudSession:xe,getActiveXcloudSessions:Se}=l(),W=E.join(p?p.getPath(`userData`):`.`,`games.json`);function Ce(){for(let e of[W,W+`.bak`])try{if(!D.existsSync(e))continue;let t=JSON.parse(D.readFileSync(e,`utf-8`));if(e!==W&&console.warn(`[DB] Loaded from backup — primary was corrupt`),t.games){let e=t.games.length;t.games=t.games.filter(e=>e.platform!==`psn`&&e.platform!==`psremote`),t.games.length!==e&&K(t)}return t}catch(t){console.error(`[DB] Failed to load`,e,t.message)}let e={categories:[`Action`,`Adventure`,`RPG`,`Strategy`,`Puzzle`,`Simulation`,`Sports`,`FPS`,`Indie`,`Multiplayer`],playtime:{},games:[]};return K(e),e}var G=null;function K(e){clearTimeout(G),G=setTimeout(()=>{G=null;try{try{D.existsSync(W)&&D.copyFileSync(W,W+`.bak`)}catch{}let t=W+`.tmp`;D.writeFileSync(t,JSON.stringify(e,null,2)),D.renameSync(t,W)}catch(e){console.error(`Failed to save DB:`,e.message)}},150)}function we(){if(G){clearTimeout(G),G=null;try{try{D.existsSync(W)&&D.copyFileSync(W,W+`.bak`)}catch{}let e=W+`.tmp`;D.writeFileSync(e,JSON.stringify(q,null,2)),D.renameSync(e,W)}catch(e){console.error(`Failed to flush DB:`,e.message)}}}var q=null,J,Y=null,Te=!1;function X(e,...t){J&&!J.isDestroyed()&&J.webContents.send(e,...t)}function Ee(){if(!J||J.isDestroyed())return;let e=J.webContents;e&&(e.isDevToolsOpened()?e.closeDevTools():e.openDevTools({mode:`detach`}))}function De(){let e=q&&q.settings&&q.settings.rememberWindowBounds&&q.settings.windowBounds?q.settings.windowBounds:null,t={width:1280,height:800,minWidth:900,minHeight:600,frame:!1,show:!0,backgroundColor:`#0a0a0f`,webPreferences:{preload:E.join(__dirname,`preload.js`),contextIsolation:!0,nodeIntegration:!1,backgroundThrottling:!1}};if(e&&(typeof e.x==`number`&&typeof e.y==`number`&&(t.x=e.x,t.y=e.y),typeof e.width==`number`&&typeof e.height==`number`&&(t.width=e.width,t.height=e.height)),J=new m(t),e&&e.isMaximized)try{J.maximize()}catch{}process.env.VITE_DEV_SERVER_URL?J.loadURL(process.env.VITE_DEV_SERVER_URL):J.loadFile(E.join(__dirname,`../dist/index.html`)),process.env.CEREAL_DEVTOOLS===`1`&&J.webContents.once(`did-finish-load`,()=>{try{Ee()}catch(e){console.error(`Auto DevTools failed:`,e.message)}}),h.on(`window:ready`,()=>{}),J.webContents.on(`will-navigate`,(e,t)=>{let n=process.env.VITE_DEV_SERVER_URL;n&&t.startsWith(n)||t.startsWith(`file://`)||e.preventDefault()}),J.webContents.setWindowOpenHandler(()=>({action:`deny`})),J.webContents.on(`before-input-event`,(e,t)=>{t.type===`keyDown`&&(t.control&&t.shift&&t.code===`KeyI`||t.code===`F12`)&&(e.preventDefault(),Ee())}),J.on(`resize`,Z),J.on(`move`,Z),J.on(`restore`,Z),J.on(`maximize`,Z),J.on(`unmaximize`,Z),J.on(`close`,e=>{Ne(),!Te&&q&&q.settings&&q.settings.closeToTray&&(e.preventDefault(),J.hide())}),J.on(`minimize`,()=>{for(let e of fe.values())if(e.embedProcess&&!e.embedProcess.killed)try{e.embedProcess.stdin.write(`hide
-`)}catch{}for(let e of U.values())try{e.view.setVisible(!1)}catch{}}),J.on(`focus`,()=>{for(let e of fe.values())if(e.embedded&&e.embedProcess&&!e.embedProcess.killed)try{e.embedProcess.stdin.write(`show
-`)}catch{}for(let e of U.values())try{e.view.setVisible(!0)}catch{}})}p.requestSingleInstanceLock()?p.on(`second-instance`,()=>{J&&(J.isVisible()||J.show(),J.isMinimized()&&J.restore(),J.focus())}):p.quit();function Oe(){if(Y){try{Y.destroy()}catch{}Y=null}}function ke(){if(Y)return;Y=new y(x.createFromDataURL(`data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAY0lEQVR42mP4z8BQz0BAwAADTAxEAqpawMRAAYAa8J+BgQEkTbQBjFiEGYgxgJGBgYERqoERp9OhhjBS0wsoF7AwkOYFcn0BdQHRvsBnAMVeGIAGdCAL4AFixu8FBgYGBgC3+y+Mfb/haQAAAABJRU5ErkJggg==`)),Y.setToolTip(`Cereal Launcher`);let e=b.buildFromTemplate([{label:`Show Cereal`,click:()=>{J&&(J.show(),J.focus())}},{type:`separator`},{label:`Quit`,click:()=>{Te=!0,p.quit()}}]);Y.setContextMenu(e),Y.on(`click`,()=>{J&&(J.show(),J.focus())})}p.whenReady().then(()=>{C.handle(`local-image`,e=>{let t=decodeURIComponent(new URL(e.url).pathname);process.platform===`win32`&&t.startsWith(`/`)&&(t=t.slice(1));let n=ce(),r=E.resolve(t);return r.startsWith(n)?S.fetch(`file:///`+r.replace(/\\/g,`/`)):new Response(`Forbidden`,{status:403})}),q=Ce();let e=n();if(e.db=q,e.safeStore=j,e.saveDB=K,e.flushDB=we,e.sendToRenderer=X,q.accounts&&typeof q.accounts==`object`){let e=!1;for(let t of Object.keys(q.accounts)){let n=q.accounts[t];n&&B.some(e=>n[e]!=null)&&(V(t,{save:!1}),e=!0)}e&&K(q)}let t=0;for(let e of q.games||[]){if(e.localCoverPath)try{(!D.existsSync(e.localCoverPath)||D.statSync(e.localCoverPath).size<1024)&&(le(e.localCoverPath),e.localCoverPath=null,t++)}catch{e.localCoverPath=null,t++}if(e.localHeaderPath)try{(!D.existsSync(e.localHeaderPath)||D.statSync(e.localHeaderPath).size<1024)&&(le(e.localHeaderPath),e.localHeaderPath=null,t++)}catch{e.localHeaderPath=null,t++}}t>0&&(console.log(`[CoverFetcher] Cleaned`,t,`corrupt cover references`),K(q));try{let e=ce(),t=0;for(let n of D.readdirSync(e)){let r=E.join(e,n);try{D.statSync(r).size<1024&&(D.unlinkSync(r),t++)}catch{}}t>0&&console.log(`[CoverFetcher] Purged`,t,`corrupt files from covers directory`)}catch{}setTimeout(()=>{let e=0;for(let t of q.games||[])t.platform===`steam`&&t.platformId&&!t.headerUrl&&(t.headerUrl=`https://shared.steamstatic.com/store_item_assets/steam/apps/${t.platformId}/header.jpg`,e++);e>0&&K(q);let t=0;for(let e of q.games||[]){let n=!e.localCoverPath&&(e.coverUrl||e.headerUrl||e.screenshots&&e.screenshots.length),r=!e.localHeaderPath&&e.headerUrl;(n||r)&&(H(e.id),t++)}t>0&&console.log(`[CoverFetcher] Re-enqueued`,t,`games for cover download`)},3e3),v.defaultSession.setPermissionRequestHandler((e,t,n)=>{n([`clipboard-read`,`clipboard-sanitized-write`,`fullscreen`].includes(t))}),v.defaultSession.webRequest.onHeadersReceived((e,t)=>{t({responseHeaders:{...e.responseHeaders,"Content-Security-Policy":[`default-src 'self'`,`script-src 'self' 'unsafe-inline'`,`style-src 'self' 'unsafe-inline'`,`img-src 'self' data: local-image: https: http:`,`font-src 'self' data:`,`connect-src 'self' https://*.steampowered.com https://*.steamstatic.com https://store.steampowered.com https://api.steampowered.com https://steamcdn-a.akamaihd.net https://*.steamgriddb.com https://*.gog.com https://*.epicgames.com https://*.xbox.com https://*.xboxlive.com https://*.wikipedia.org https://*.wikidata.org https://*.wikimedia.org https://*.duckduckgo.com https://localhost ws://localhost wss://localhost`].join(`; `)}})}),De(),e.mainWindow=J,q.settings&&q.settings.closeToTray&&ke(),q.settings&&q.settings.startMinimized&&J.hide(),ae()&&setTimeout(te,8e3),setTimeout(_e,6e3),F.autoDownload=!0,F.autoInstallOnAppQuit=!0,setTimeout(()=>{F.checkForUpdates().catch(()=>{})},5e3);for(let e of[`checking-for-update`,`update-available`,`update-not-available`,`download-progress`,`update-downloaded`,`error`])F.on(e,t=>{X(`update:event`,{type:e,data:e===`error`?t&&t.message||String(t):t})})}),p.on(`window-all-closed`,()=>{ne(),!(q&&q.settings&&q.settings.closeToTray)&&process.platform!==`darwin`&&p.quit()}),p.on(`before-quit`,()=>{Te=!0;try{Ne()}catch{}we()}),p.on(`will-quit`,()=>{try{for(let[e,t]of U){try{J?.contentView?.removeChildView(t.view)}catch{}try{t.view?.webContents?.close()}catch{}}U.clear()}catch{}}),h.handle(`window:minimize`,()=>J.minimize()),h.handle(`window:maximize`,()=>(J.isMaximized()?J.unmaximize():J.maximize(),J.isMaximized())),h.handle(`window:close`,()=>J.close()),h.handle(`window:fullscreen`,()=>(J.setFullScreen(!J.isFullScreen()),J.isFullScreen())),h.handle(`window:isFullscreen`,()=>J.isFullScreen()),h.handle(`shell:openExternal`,(e,t)=>{try{let e=new URL(t);if(![`http:`,`https:`,`mailto:`,`steam:`,`epicgames:`,`com.epicgames.launcher:`,`goggalaxy:`,`origin:`,`origin2:`,`uplay:`,`battlenet:`,`xbox:`,`msxbox:`,`ms-xbl-multiplayer:`].includes(e.protocol))return{error:`Blocked protocol: `+e.protocol}}catch{return{error:`Invalid URL`}}return _.openExternal(t)}),h.handle(`system:getSpecs`,async()=>{let e=Math.round(P.totalmem()/(1024*1024*1024)),t=P.cpus(),n=t.length,r=t[0]?.model?.trim()||``,i=``;try{let e=(await p.getGPUInfo(`basic`))?.gpuDevice?.[0];e?.description&&(i=e.description)}catch{}return{ramGb:e,cpuCount:n,cpuModel:r,gpuName:i}});var Ae=null,je=null;function Me(){clearTimeout(je),je=setTimeout(Ne,500)}function Ne(){try{if(!J||J.isDestroyed()||q&&q.settings&&q.settings.rememberWindowBounds===!1)return;let e=J.isMaximized?J.isMaximized():!1,t=e?q.settings&&q.settings.windowBounds?q.settings.windowBounds:{}:J.getBounds();q.settings=q.settings||{},q.settings.windowBounds={x:t.x||0,y:t.y||0,width:t.width||1280,height:t.height||800,isMaximized:!!e},K(q)}catch(e){console.error(`Failed saving window bounds`,e&&e.message)}}function Z(){clearTimeout(Ae),Ae=setTimeout(()=>{ge(),ye()},50),Me()}var{httpGet:Pe,fetchGameMetadata:Q,applyMetadataToGame:Fe,getMetadataSettings:Ie,invalidateMetadataCache:Le}=o();h.handle(`games:getAll`,()=>q.games),h.handle(`games:getCategories`,()=>q.categories),h.handle(`games:add`,(e,t)=>{if(!t||typeof t!=`object`)return{error:`Invalid game data`};if(!t.name||typeof t.name!=`string`||!t.name.trim())return{error:`Game name is required`};t.name=t.name.trim();function n(e){return e?String(e).toLowerCase().replace(/\s*[-–:]\s*(deluxe|ultimate|gold|collector's|special|limited|complete|season pass|dlc|edition).*/i,``).replace(/[^a-z0-9]+/g,` `).trim():``}let r=null;try{if(t.platform&&t.platformId&&(r=q.games.find(e=>e.platform===t.platform&&e.platformId&&e.platformId===t.platformId)),!r){let e=n(t.name||``);e&&(r=q.games.find(r=>n(r.name)===e&&(!t.platform||r.platform===t.platform)))}}catch{r=null}if(r){let e=r,n={...e,...t};try{let r=typeof t.coverUrl==`string`&&t.coverUrl!==e.coverUrl,i=typeof t.headerUrl==`string`&&t.headerUrl!==e.headerUrl;r||i?n._imgStamp=Date.now():n._imgStamp=e._imgStamp}catch{n._imgStamp=e._imgStamp}n.platform||=e.platform,n.platformId||=e.platformId,e.installed===!0&&n.installed===!1&&(n.installed=!0),q.games[q.games.findIndex(t=>t.id===e.id)]=n,K(q),X(`games:refresh`,q.games);try{H(n.id)}catch{}return n}t.id=Date.now().toString(36)+Math.random().toString(36).substr(2,5),t.addedAt=new Date().toISOString(),t.lastPlayed=null,t.playtimeMinutes=0,t.favorite=!1,t.coverUrl&&(t._imgStamp=Date.now()),q.games.push(t),K(q);try{H(t.id)}catch{}return Q(t).then(e=>{if(e&&Fe(t,e)){K(q),X(`games:refresh`,q.games);try{H(t.id)}catch{}}}).catch(()=>{}),t}),h.handle(`games:update`,(e,t)=>{if(!t||typeof t!=`object`||!t.id||t.name!==void 0&&(typeof t.name!=`string`||!t.name.trim()))return null;let n=q.games.findIndex(e=>e.id===t.id);if(n!==-1){let e=q.games[n],r={...e,...t};try{let n=typeof t.coverUrl==`string`&&t.coverUrl!==e.coverUrl,i=typeof t.headerUrl==`string`&&t.headerUrl!==e.headerUrl;if(n){if(e.localCoverPath)try{D.unlinkSync(e.localCoverPath)}catch{}r.localCoverPath=null,r._imgStamp=Date.now()}if(i){if(e.localHeaderPath)try{D.unlinkSync(e.localHeaderPath)}catch{}r.localHeaderPath=null,r._imgStamp=Date.now()}!n&&!i&&(r._imgStamp=e._imgStamp)}catch{r._imgStamp=e._imgStamp}q.games[n]=r,K(q),X(`games:refresh`,q.games);try{H(t.id)}catch{}return q.games[n]}return null}),h.handle(`games:delete`,(e,t)=>(q.games=q.games.filter(e=>e.id!==t),K(q),X(`games:refresh`,q.games),!0)),h.handle(`games:toggleFavorite`,(e,t)=>{let n=q.games.find(e=>e.id===t);return n?(n.favorite=!n.favorite,K(q),X(`games:refresh`,q.games),n):null}),h.handle(`covers:fetchNow`,async(e,t)=>{try{return H(t),{queued:!0}}catch(e){return{error:e.message}}});function $(e){if(!e)return{hasSecret:!1,fingerprint:null};try{return{hasSecret:!0,fingerprint:N.createHash(`sha256`).update(e).digest(`hex`).slice(0,8)}}catch{return{hasSecret:!0,fingerprint:`unknown`}}}async function Re(e,t){if(!t)return{ok:!1,provider:e,error:`missing-key`};if(I&&I[e]&&typeof I[e].validateKey==`function`)try{let n=await I[e].validateKey(t);return{ok:!!n.ok,provider:e,info:n.info,error:n.error}}catch(t){return{ok:!1,provider:e,error:t&&t.message}}if(e===`steam`){let e=await se(`https://api.steampowered.com/ISteamWebAPIUtil/GetServerInfo/v1/?key=${encodeURIComponent(t)}`);return e&&e.status===200&&e.data?{ok:!0,provider:`steam`,info:e.data}:{ok:!1,provider:`steam`,error:e&&(e.data||e.raw||`Steam API error`)}}return{ok:!1,provider:e,error:`unknown-provider`}}h.handle(`keys:set`,async(e,{service:t,account:n,secret:r})=>{if(!R.includes(t))return{ok:!1,error:`Unauthorized service: `+t};try{return j.setPassword(t,n,r),{ok:!0,...$(r)}}catch(e){return console.error(`keys:set error`,e),{ok:!1,error:e&&e.message}}}),h.handle(`keys:get`,async(e,{service:t,account:n})=>{if(!R.includes(t))return{ok:!1,error:`Unauthorized service: `+t};try{return{ok:!0,...$(j.getPassword(t,n))}}catch(e){return console.error(`keys:get error`,e),{ok:!1,error:e&&e.message}}}),h.handle(`keys:delete`,async(e,{service:t,account:n})=>{if(!R.includes(t))return{ok:!1,error:`Unauthorized service: `+t};try{return{ok:j.deletePassword(t,n)}}catch(e){return console.error(`keys:delete error`,e),{ok:!1,error:e&&e.message}}}),h.handle(`keys:validate`,async(e,{provider:t,apiKey:n})=>{try{return await Re(t,n)}catch(e){return console.error(`keys:validate error`,e),{ok:!1,error:e&&e.message}}}),h.handle(`keys:validateStored`,async(e,{provider:t,service:n,account:r})=>{if(!R.includes(n))return{ok:!1,error:`Unauthorized service: `+n};try{let e=j.getPassword(n,r);return e?await Re(t,e):{ok:!1,error:`no-secret`,provider:t}}catch(e){return console.error(`keys:validateStored error`,e),{ok:!1,error:e&&e.message}}});var{registerMetadataSearchHandlers:ze}=u();ze(),h.handle(`metadata:fetch`,async(e,t)=>{let n=q.games.find(e=>e.id===t);if(!n)return{error:`Game not found`};try{let e=await Q(n);return e?{success:!0,metadata:e}:{error:`No metadata found`}}catch(e){return{error:e.message}}}),h.handle(`metadata:apply`,async(e,t,n)=>{let r=q.games.find(e=>e.id===t);if(!r)return{error:`Game not found`};try{Le((r.platform||``)+`:`+(r.platformId||r.name));let e=await Q(r);if(!e)return{error:`No metadata found`};if(n){let t=r.coverUrl,n=r.headerUrl;r.coverUrl=e.coverUrl||e.headerUrl||e.screenshots&&e.screenshots[0]||r.coverUrl,e.description&&(r.description=e.description),e.developer&&(r.developer=e.developer),e.publisher&&(r.publisher=e.publisher),e.releaseDate&&(r.releaseDate=e.releaseDate),e.genres?.length&&(r.categories=e.genres),r.headerUrl=e.headerUrl||e.coverUrl||e.screenshots&&e.screenshots[0]||r.headerUrl,e.screenshots?.length&&(r.screenshots=e.screenshots),e.metacritic!=null&&(r.metacritic=e.metacritic),e.website&&(r.website=e.website),r.coverUrl!==t&&(r.localCoverPath=null,r._imgStamp=Date.now()),r.headerUrl!==n&&(r.localHeaderPath=null,r._imgStamp=Date.now()),K(q),X(`games:refresh`,q.games);try{H(r.id)}catch{}return{success:!0,game:r}}else{if(Fe(r,e)){K(q),X(`games:refresh`,q.games);try{H(r.id)}catch{}}return{success:!0,game:r}}}catch(e){return{error:e.message}}}),h.handle(`metadata:fetchForName`,async(e,t,n,r)=>{if(!t)return{error:`No name provided`};try{let e=await Q({name:t,platform:n||`custom`,platformId:r||void 0});return e?{success:!0,meta:e}:{error:`No metadata found`}}catch(e){return{error:e.message}}}),h.handle(`metadata:fetchAll`,async()=>{let e=0,t=0,n=[...q.games].sort((e,t)=>(e.installed===!1?1:0)-(t.installed===!1?1:0)),r=n.length,i=0,a=!1;for(let o=0;o<r;o+=3){let s=n.slice(o,o+3),c=await Promise.allSettled(s.map(async e=>({game:e,meta:await Q(e)}))),l=0;for(let n of c)if(n.status===`fulfilled`&&n.value.meta){if(Fe(n.value.game,n.value.meta)){e++,l++;try{H(n.value.game.id)}catch{}}}else t++;l>0&&(K(q),a=!0);let u=Date.now();a&&u-i>=500&&(X(`games:refresh`,q.games),i=u,a=!1),X(`metadata:progress`,{current:Math.min(o+3,r),total:r,updated:e,failed:t,name:s[s.length-1].name,phase:`metadata`}),o+3<r&&await new Promise(e=>setTimeout(e,200))}return e>0&&(K(q),X(`games:refresh`,q.games)),{updated:e,failed:t,total:r}}),h.handle(`steamgriddb:login`,async()=>{try{await _.openExternal(`https://www.steamgriddb.com/profile/preferences/api`);let{response:e}=await g.showMessageBox(J,{type:`info`,buttons:[`Paste API Key`,`Cancel`],defaultId:0,message:`SteamGridDB Login`,detail:`Copy your API key from the SteamGridDB page that opened, then click "Paste API Key".`});if(e!==0)return{cancelled:!0};let t=T.readText().trim();if(!t)return{error:`Clipboard is empty. Copy your SteamGridDB API key first, then try again.`};let n=await Re(`steamgriddb`,t);return n?.ok?(j.setPassword(`cereal-steamgriddb`,`default`,t),{ok:!0,...$(t)}):{error:`API key appears invalid: `+(n?.error||`unknown error`)}}catch(e){return{error:e.message}}}),h.handle(`clipboard:readText`,()=>{try{return T.readText()}catch{return``}});var{normalizePlatform:Be,openInPlatformClient:Ve}=d();h.handle(`games:launch`,async(e,t)=>{let n=q.games.find(e=>e.id===t);if(!n)return{success:!1,error:`Game not found`};try{let e=n.executablePath;if(n.platform===`psremote`||n.platform===`psn`){let r=pe(e);if(!r)return{success:!1,error:`chiaki-ng not found. It should download automatically — try again in a moment, or check Settings > PlayStation.`};let i=q.chiakiConfig||{},a=i.consoles||[],o=n;if(!n.chiakiHost||!n.chiakiRegistKey){let e=n.chiakiHost?a.find(e=>e.host===n.chiakiHost):a.find(e=>e.registKey&&e.morning);if(e)o={...n,chiakiHost:n.chiakiHost||e.host,chiakiNickname:n.chiakiNickname||e.nickname||``,chiakiProfile:n.chiakiProfile||e.profile||``,chiakiRegistKey:n.chiakiRegistKey||e.registKey||``,chiakiMorning:n.chiakiMorning||e.morning||``};else if(!n.chiakiHost)return{success:!1,error:`No registered PlayStation console found. Open Remote Play to add and register a console first.`}}he(t,r,me(o,i))}else if(n.platform===`xbox`)be(t,n.streamUrl||`https://www.xbox.com/play`);else if([`steam`,`epic`,`gog`,`ea`,`battlenet`,`ubisoft`,`itchio`].includes(Be(n.platform))){let e=await Ve(n,`play`);if(!e.success)return e}else if(e&&D.existsSync(e))M(e,[],{cwd:E.dirname(e),detached:!0,stdio:`ignore`}).unref();else return{success:!1,error:`Executable not found`};return[`psn`,`psremote`,`xbox`].includes(n.platform)||(n.lastPlayed=new Date().toISOString(),K(q)),q.settings&&q.settings.minimizeOnLaunch&&J&&J.minimize(),ae()&&(te(),re(n.name,n.platform)),{success:!0,lastPlayed:n.lastPlayed}}catch(e){return{success:!1,error:e.message}}}),h.handle(`games:install`,async(e,t)=>{let n=q.games.find(e=>e.id===t);if(!n)return{success:!1,error:`Game not found`};try{return Be(n.platform)===`psn`?{success:!1,error:`Install is not supported for Remote Play titles`}:Be(n.platform)===`custom`?{success:!1,error:`Custom games must be installed manually`}:await Ve(n,`install`)}catch(e){return{success:!1,error:e.message}}}),h.handle(`games:openInClient`,async(e,t)=>{let n=q.games.find(e=>e.id===t);if(!n)return{success:!1,error:`Game not found`};try{return await Ve(n,`client`)}catch(e){return{success:!1,error:e.message}}}),h.handle(`dialog:pickExecutable`,async()=>{let e=await g.showOpenDialog(J,{properties:[`openFile`],filters:[{name:`Executables`,extensions:[`exe`,`bat`,`cmd`,`lnk`]},{name:`All Files`,extensions:[`*`]}]});return!e.canceled&&e.filePaths.length>0?e.filePaths[0]:null}),h.handle(`dialog:pickImage`,async()=>{let e=await g.showOpenDialog(J,{properties:[`openFile`],filters:[{name:`Images`,extensions:[`png`,`jpg`,`jpeg`,`webp`,`gif`,`bmp`]}]});if(!e.canceled&&e.filePaths.length>0){let t=e.filePaths[0],n=E.extname(t),r=`cover_${Date.now()}${n}`,i=E.join(p.getPath(`userData`),`covers`);D.existsSync(i)||D.mkdirSync(i,{recursive:!0});let a=E.join(i,r);return D.copyFileSync(t,a),a}return null});var{findSteamRoot:He,scanSteamInstalled:Ue,scanEpicInstalled:We,scanGogInstalled:Ge,scanXboxInstalled:Ke}=r();h.handle(`detect:steam`,async()=>{try{return Ue()}catch(e){return{games:[],error:e.message}}}),h.handle(`detect:epic`,async()=>{let e=We();return e.length?{games:e}:{games:[],error:`Epic Games not found`}}),h.handle(`detect:gog`,async()=>{let e=Ge();return e.length?{games:e}:{games:[],error:`GOG not found`}}),h.handle(`detect:psremote`,async()=>{let e={found:!1,bundled:!1,executablePath:null,version:null,consoles:[]};try{let t=ue();if(t&&(e.found=!0,e.bundled=!0,e.executablePath=t,e.version=de()),!e.found){let t=z;for(let n of t)if(D.existsSync(n)){e.found=!0,e.bundled=!1,e.executablePath=n;break}}if(e.executablePath)try{e.consoles=require(`child_process`).execFileSync(e.executablePath,[`list`],{timeout:5e3,env:{...process.env,PATH:`${E.dirname(e.executablePath)};${process.env.PATH}`}}).toString().trim().split(`
-`).filter(e=>e.trim())}catch{e.consoles=[]}}catch(t){e.error=t.message}return e}),h.handle(`detect:xbox`,async()=>{try{return Ke()}catch(e){return{games:[],xboxAppFound:!1,error:e.message}}}),h.handle(`detect:ea`,async()=>{try{if(!I?.ea?.detectInstalled)return{games:[],appFound:!1,error:`EA provider not available`};let e=I.ea.detectInstalled();return{games:e?.games||[],appFound:I.ea.isAppInstalled?!!I.ea.isAppInstalled():!1,error:e?.error}}catch(e){return{games:[],appFound:!1,error:e.message}}}),h.handle(`detect:battlenet`,async()=>{try{if(!I?.battlenet?.detectInstalled)return{games:[],appFound:!1,error:`Battle.net provider not available`};let e=I.battlenet.detectInstalled();return{games:e?.games||[],appFound:I.battlenet.isAppInstalled?!!I.battlenet.isAppInstalled():!1,error:e?.error}}catch(e){return{games:[],appFound:!1,error:e.message}}}),h.handle(`detect:itchio`,async()=>{try{if(!I?.itchio?.detectInstalled)return{games:[],appFound:!1,error:`itch.io provider not available`};let e=I.itchio.detectInstalled();return{games:e?.games||[],appFound:I.itchio.isAppInstalled?!!I.itchio.isAppInstalled():!1,error:e?.error}}catch(e){return{games:[],appFound:!1,error:e.message}}}),h.handle(`detect:ubisoft`,async()=>{try{if(!I?.ubisoft?.detectInstalled)return{games:[],appFound:!1,error:`Ubisoft provider not available`};let e=I.ubisoft.detectInstalled();return{games:e?.games||[],appFound:I.ubisoft.isAppInstalled?!!I.ubisoft.isAppInstalled():!1,error:e?.error}}catch(e){return{games:[],appFound:!1,error:e.message}}}),h.handle(`playtime:sync`,async()=>{let e=[];try{let t=He();if(t){let n=E.join(t,`userdata`);if(D.existsSync(n)){let t=D.readdirSync(n).filter(e=>D.statSync(E.join(n,e)).isDirectory()&&/^\d+$/.test(e));for(let r of t){let t=E.join(n,r,`config`,`localconfig.vdf`);if(!D.existsSync(t))continue;let i=D.readFileSync(t,`utf-8`),a=i.matchAll(/"(\d+)"\s*\{[^}]*?"playtime_forever"\s+"(\d+)"[^}]*?\}/gs);for(let t of a){let n=t[1],r=parseInt(t[2],10);if(r>0){let t=q.games.find(e=>e.platform===`steam`&&e.platformId===n);t&&r>(t.playtimeMinutes||0)&&(t.playtimeMinutes=r,e.push({id:t.id,name:t.name,minutes:r,source:`steam`}))}}let o=i.match(/"apps"\s*\{([\s\S]*?)\n\t\t\t\}/m);if(o){let t=o[1].matchAll(/"(\d+)"\s*\{([\s\S]*?)\}/g);for(let n of t){let t=n[1],r=n[2].match(/"playtime_forever"\s+"(\d+)"/);if(r){let n=parseInt(r[1],10);if(n>0){let r=q.games.find(e=>e.platform===`steam`&&e.platformId===t);r&&n>(r.playtimeMinutes||0)&&(r.playtimeMinutes=n,e.find(e=>e.id===r.id)||e.push({id:r.id,name:r.name,minutes:n,source:`steam`}))}}}}}}}try{let e=E.join(process.env.PROGRAMDATA||`C:\\ProgramData`,`GOG.com`,`Galaxy`,`storage`,`galaxy-2.0.db`);D.existsSync(e)}catch{}e.length>0&&(K(q),X(`games:refresh`,q.games))}catch(e){return{updated:[],error:e.message}}return{updated:e,games:q.games}});var{DEFAULT_SETTINGS:qe,registerSettingsIpcHandlers:Je}=f();Je({createTray:ke,destroyTray:Oe,DB_PATH:W}),h.handle(`update:check`,()=>F.checkForUpdates().catch(e=>({error:e.message}))),h.handle(`update:install`,()=>{F.quitAndInstall()}),ee(),ve(),h.handle(`xcloud:startDirect`,(e,{url:t})=>{try{return be(`xbox:cloud`,t||`https://www.xbox.com/play`),{success:!0,sessionKey:`xbox:cloud`}}catch(e){return{success:!1,error:e.message}}}),h.handle(`xcloud:start`,(e,{gameId:t,url:n})=>{try{return be(t,n),{success:!0}}catch(e){return{success:!1,error:e.message}}}),h.handle(`xcloud:stop`,(e,t)=>({success:xe(t)})),h.handle(`xcloud:getSessions`,()=>Se());var Ye=null;function Xe(){if(!Ye)try{Ye=require(`./native/smtc`),console.log(`[media] native addon loaded`)}catch(e){console.log(`[media] failed to load native addon:`,e.message)}return Ye}h.handle(`media:getInfo`,async()=>{let e=Xe();if(!e)return{};try{let t=await e.getMediaInfo();return console.log(`[media] native result:`,t),t.error?(console.log(`[media] error:`,t.error),{}):{title:t.title||``,artist:t.artist||``,album:t.album||``,thumbnail:t.thumbnail||``,playing:t.playing,position:Math.floor(t.position||0),duration:Math.floor(t.duration||0)}}catch(e){return console.log(`[media] exception:`,e.message),{}}}),h.handle(`media:control`,async(e,t)=>{let n=Xe();if(!n)return!1;try{return await n.sendMediaKey(t),!0}catch(e){return console.log(`[media] control error:`,e.message),!1}}),h.handle(`categories:add`,(e,t)=>(q.categories.includes(t)||(q.categories.push(t),K(q)),q.categories)),h.handle(`categories:remove`,(e,t)=>(q.categories=q.categories.filter(e=>e!==t),q.games.forEach(e=>{e.categories=(e.categories||[]).filter(e=>e!==t)}),K(q),q.categories));
+//#region \0rolldown/runtime.js
+var __commonJSMin = (cb, mod) => () => (mod || cb((mod = { exports: {} }).exports, mod), mod.exports);
+//#endregion
+//#region electron/modules/credentials.js
+var require_credentials = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	var { safeStorage } = require("electron");
+	var { app: app$5 } = require("electron");
+	var path$12 = require("path");
+	var fs$11 = require("fs");
+	var credStorePath = () => path$12.join(app$5.getPath("userData"), "credentials.json");
+	function loadCredStore() {
+		try {
+			return JSON.parse(fs$11.readFileSync(credStorePath(), "utf-8"));
+		} catch {
+			return {};
+		}
+	}
+	function saveCredStore(store) {
+		const target = credStorePath();
+		const tmp = target + ".tmp";
+		fs$11.writeFileSync(tmp, JSON.stringify(store, null, 2), "utf-8");
+		fs$11.renameSync(tmp, target);
+	}
+	module.exports = { safeStore: {
+		setPassword(service, account, secret) {
+			if (!safeStorage.isEncryptionAvailable()) throw new Error("Encryption not available");
+			const store = loadCredStore();
+			const key = `${service}/${account}`;
+			store[key] = safeStorage.encryptString(secret).toString("base64");
+			saveCredStore(store);
+		},
+		getPassword(service, account) {
+			const store = loadCredStore();
+			const key = `${service}/${account}`;
+			if (!store[key]) return null;
+			return safeStorage.decryptString(Buffer.from(store[key], "base64"));
+		},
+		deletePassword(service, account) {
+			const store = loadCredStore();
+			const key = `${service}/${account}`;
+			if (!store[key]) return false;
+			delete store[key];
+			saveCredStore(store);
+			return true;
+		}
+	} };
+}));
+//#endregion
+//#region electron/modules/constants.js
+var require_constants = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	var path$11 = require("path");
+	module.exports = {
+		CONTROL_BAR_HEIGHT: 40,
+		ALLOWED_KEY_SERVICES: [
+			"cereal-steam",
+			"cereal-steamgriddb",
+			"cereal-itchio",
+			"cereal-account-steam",
+			"cereal-account-gog",
+			"cereal-account-epic",
+			"cereal-account-xbox",
+			"cereal-account-ea",
+			"cereal-account-battlenet",
+			"cereal-account-itchio",
+			"cereal-account-ubisoft",
+			"cereal-account-psn"
+		],
+		CHIAKI_SYSTEM_PATHS: [
+			path$11.join(process.env.ProgramFiles || "", "chiaki-ng", "chiaki.exe"),
+			path$11.join(process.env["ProgramFiles(x86)"] || "", "chiaki-ng", "chiaki.exe"),
+			path$11.join(process.env.LOCALAPPDATA || "", "chiaki-ng", "chiaki.exe")
+		],
+		ACCOUNT_SECRET_FIELDS: [
+			"accessToken",
+			"refreshToken",
+			"msAccessToken",
+			"msRefreshToken",
+			"xblToken",
+			"xstsToken",
+			"userHash"
+		]
+	};
+}));
+//#endregion
+//#region electron/modules/logger.js
+var require_logger = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	var DEBUG = process.env.CEREAL_DEBUG === "1";
+	function info(tag, ...args) {
+		console.log(`[${tag}]`, ...args);
+	}
+	function warn(tag, ...args) {
+		console.warn(`[${tag}]`, ...args);
+	}
+	function error(tag, ...args) {
+		console.error(`[${tag}]`, ...args);
+	}
+	function debug(tag, ...args) {
+		if (DEBUG) console.log(`[${tag}]`, ...args);
+	}
+	module.exports = {
+		info,
+		warn,
+		error,
+		debug,
+		DEBUG
+	};
+}));
+//#endregion
+//#region electron/modules/context.js
+var require_context = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	module.exports = {
+		db: null,
+		mainWindow: null,
+		saveDB: null,
+		flushDB: null,
+		sendToRenderer: null,
+		safeStore: null
+	};
+}));
+//#endregion
+//#region electron/modules/detection.js
+var require_detection = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	var path$10 = require("path");
+	var fs$10 = require("fs");
+	function findSteamRoot() {
+		const steamPaths = [
+			"C:\\Program Files (x86)\\Steam",
+			"C:\\Program Files\\Steam",
+			path$10.join(process.env.HOME || process.env.USERPROFILE || "", "Steam")
+		];
+		for (const p of steamPaths) if (fs$10.existsSync(p)) return p;
+		return null;
+	}
+	function scanSteamInstalled() {
+		const games = [];
+		const steamRoot = findSteamRoot();
+		if (!steamRoot) return {
+			games: [],
+			error: "Steam not found"
+		};
+		const libraryFolders = [path$10.join(steamRoot, "steamapps")];
+		const vdfPath = path$10.join(steamRoot, "steamapps", "libraryfolders.vdf");
+		if (fs$10.existsSync(vdfPath)) {
+			const pathMatches = fs$10.readFileSync(vdfPath, "utf-8").match(/"path"\s+"([^"]+)"/g);
+			if (pathMatches) pathMatches.forEach((m) => {
+				const p = m.match(/"path"\s+"([^"]+)"/)[1].replace(/\\\\/g, "\\");
+				const appsDir = path$10.join(p, "steamapps");
+				if (fs$10.existsSync(appsDir) && !libraryFolders.includes(appsDir)) libraryFolders.push(appsDir);
+			});
+		}
+		for (const libFolder of libraryFolders) {
+			if (!fs$10.existsSync(libFolder)) continue;
+			const files = fs$10.readdirSync(libFolder).filter((f) => f.endsWith(".acf"));
+			for (const file of files) try {
+				const content = fs$10.readFileSync(path$10.join(libFolder, file), "utf-8");
+				const appid = content.match(/"appid"\s+"(\d+)"/);
+				const name = content.match(/"name"\s+"([^"]+)"/);
+				const installdir = content.match(/"installdir"\s+"([^"]+)"/);
+				if (appid && name && installdir) {
+					const gamePath = path$10.join(libFolder, "common", installdir[1]);
+					games.push({
+						name: name[1],
+						platform: "steam",
+						platformId: appid[1],
+						installPath: gamePath,
+						executablePath: "",
+						coverUrl: `https://shared.steamstatic.com/store_item_assets/steam/apps/${appid[1]}/library_600x900_2x.jpg`,
+						heroUrl: `https://shared.steamstatic.com/store_item_assets/steam/apps/${appid[1]}/library_hero.jpg`,
+						categories: [],
+						source: "auto-detected",
+						installed: true
+					});
+				}
+			} catch (e) {}
+		}
+		return { games };
+	}
+	function scanEpicInstalled() {
+		const games = [];
+		try {
+			const manifestDir = path$10.join(process.env.PROGRAMDATA || "C:\\ProgramData", "Epic", "EpicGamesLauncher", "Data", "Manifests");
+			if (!fs$10.existsSync(manifestDir)) return games;
+			const files = fs$10.readdirSync(manifestDir).filter((f) => f.endsWith(".item"));
+			for (const file of files) try {
+				const content = JSON.parse(fs$10.readFileSync(path$10.join(manifestDir, file), "utf-8"));
+				if (content.DisplayName && content.InstallLocation) games.push({
+					name: content.DisplayName,
+					platform: "epic",
+					platformId: content.CatalogNamespace || content.AppName,
+					installPath: content.InstallLocation,
+					executablePath: content.LaunchExecutable ? path$10.join(content.InstallLocation, content.LaunchExecutable) : "",
+					coverUrl: "",
+					categories: [],
+					source: "auto-detected",
+					installed: true
+				});
+			} catch (e) {}
+		} catch (e) {}
+		return games;
+	}
+	function scanGogInstalled() {
+		const games = [];
+		try {
+			const dirsToScan = ["C:\\GOG Games", path$10.join(process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)", "GOG Galaxy", "Games")].filter((d) => {
+				try {
+					return fs$10.existsSync(d);
+				} catch {
+					return false;
+				}
+			});
+			for (const dir of dirsToScan) {
+				const entries = fs$10.readdirSync(dir, { withFileTypes: true });
+				for (const entry of entries) if (entry.isDirectory()) {
+					const gameDir = path$10.join(dir, entry.name);
+					const infoFiles = fs$10.readdirSync(gameDir).filter((f) => f.startsWith("goggame-") && f.endsWith(".info"));
+					for (const infoFile of infoFiles) try {
+						const info = JSON.parse(fs$10.readFileSync(path$10.join(gameDir, infoFile), "utf-8"));
+						if (info.name) games.push({
+							name: info.name,
+							platform: "gog",
+							platformId: info.gameId || "",
+							installPath: gameDir,
+							executablePath: info.playTasks?.[0]?.path ? path$10.join(gameDir, info.playTasks[0].path) : "",
+							coverUrl: "",
+							categories: [],
+							source: "auto-detected",
+							installed: true
+						});
+					} catch (e) {}
+				}
+			}
+		} catch (e) {}
+		return games;
+	}
+	function scanXboxInstalled() {
+		const games = [];
+		const xboxGamesDir = "C:\\XboxGames";
+		if (fs$10.existsSync(xboxGamesDir)) {
+			const entries = fs$10.readdirSync(xboxGamesDir, { withFileTypes: true });
+			for (const entry of entries) if (entry.isDirectory() && entry.name !== "Content") games.push({
+				name: entry.name.replace(/([A-Z])/g, " $1").trim(),
+				platform: "xbox",
+				platformId: "",
+				installPath: path$10.join(xboxGamesDir, entry.name),
+				executablePath: "",
+				coverUrl: "",
+				categories: [],
+				source: "auto-detected"
+			});
+		}
+		const xboxAppPaths = [path$10.join(process.env.LOCALAPPDATA || "", "Microsoft", "WindowsApps", "XboxApp.exe"), path$10.join(process.env.ProgramFiles || "", "WindowsApps", "Microsoft.GamingApp_*")];
+		let xboxAppFound = false;
+		for (const p of xboxAppPaths) if (p.includes("*")) {
+			const dir = path$10.dirname(p);
+			const prefix = path$10.basename(p).replace("*", "");
+			if (fs$10.existsSync(dir)) {
+				if (fs$10.readdirSync(dir).filter((f) => f.startsWith(prefix)).length > 0) xboxAppFound = true;
+			}
+		} else if (fs$10.existsSync(p)) xboxAppFound = true;
+		return {
+			games,
+			xboxAppFound,
+			cloudGamingUrl: "https://www.xbox.com/play"
+		};
+	}
+	module.exports = {
+		findSteamRoot,
+		scanSteamInstalled,
+		scanEpicInstalled,
+		scanGogInstalled,
+		scanXboxInstalled
+	};
+}));
+//#endregion
+//#region electron/modules/accounts.js
+var require_accounts = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	var { BrowserWindow: BrowserWindow$1, session: session$2, ipcMain: ipcMain$9 } = require("electron");
+	var crypto$1 = require("crypto");
+	var path$9 = require("path");
+	var fs$9 = require("fs");
+	var ctx = require_context();
+	var { ACCOUNT_SECRET_FIELDS } = require_constants();
+	var { scanEpicInstalled, scanGogInstalled } = require_detection();
+	require_logger();
+	function getProvidersDir() {
+		const candidates = [
+			path$9.join(__dirname, "..", "providers"),
+			path$9.join(__dirname, "providers"),
+			path$9.join(process.cwd(), "electron", "providers")
+		];
+		for (const candidate of candidates) if (fs$9.existsSync(path$9.join(candidate, "index.js"))) return candidate;
+		throw new Error("Cannot find providers directory. Tried: " + candidates.join(", "));
+	}
+	var providers = null;
+	var auth = null;
+	function getProviders() {
+		if (!providers) providers = require(getProvidersDir());
+		return providers;
+	}
+	function getAuth() {
+		if (!auth) auth = require(path$9.join(getProvidersDir(), "auth"));
+		return auth;
+	}
+	function accountSecretService(platform) {
+		return `cereal-account-${platform}`;
+	}
+	function loadAccountSecrets(platform) {
+		try {
+			const raw = ctx.safeStore.getPassword(accountSecretService(platform), "tokens");
+			if (!raw) return {};
+			return JSON.parse(raw);
+		} catch (e) {
+			return {};
+		}
+	}
+	function storeAccountSecrets(platform, secrets) {
+		try {
+			const service = accountSecretService(platform);
+			if (secrets && Object.keys(secrets).length) ctx.safeStore.setPassword(service, "tokens", JSON.stringify(secrets));
+			else ctx.safeStore.deletePassword(service, "tokens");
+		} catch (e) {
+			console.error("account secret store error", platform, e && e.message);
+		}
+	}
+	function detachAccountSecrets(platform, { save = true } = {}) {
+		const acct = ctx.db?.accounts?.[platform];
+		if (!acct) {
+			storeAccountSecrets(platform, null);
+			return false;
+		}
+		const secrets = {};
+		let hasSecrets = false;
+		for (const key of ACCOUNT_SECRET_FIELDS) if (acct[key] !== void 0 && acct[key] !== null) {
+			secrets[key] = acct[key];
+			delete acct[key];
+			hasSecrets = true;
+		}
+		storeAccountSecrets(platform, hasSecrets ? secrets : null);
+		if (acct.hasCredentials !== hasSecrets) {
+			acct.hasCredentials = hasSecrets;
+			if (save) ctx.saveDB(ctx.db);
+		} else if (hasSecrets && save) ctx.saveDB(ctx.db);
+		return hasSecrets;
+	}
+	function hydrateAccountSecrets(platform) {
+		const acct = ctx.db?.accounts?.[platform];
+		if (!acct) return () => {};
+		const secrets = loadAccountSecrets(platform);
+		if (Object.keys(secrets).length) {
+			Object.assign(acct, secrets);
+			acct.hasCredentials = true;
+		}
+		return () => detachAccountSecrets(platform);
+	}
+	function persistAccountData(platform, data = {}) {
+		if (!platform) return;
+		if (!ctx.db.accounts) ctx.db.accounts = {};
+		const acct = ctx.db.accounts[platform] || {};
+		const secrets = loadAccountSecrets(platform);
+		let secretsChanged = false;
+		let removedSecrets = false;
+		for (const [key, val] of Object.entries(data)) if (ACCOUNT_SECRET_FIELDS.includes(key)) {
+			if (val === void 0) continue;
+			if (val === null) {
+				if (secrets[key] !== void 0) {
+					delete secrets[key];
+					secretsChanged = true;
+					removedSecrets = true;
+				}
+			} else if (secrets[key] !== val) {
+				secrets[key] = val;
+				secretsChanged = true;
+			}
+		} else if (val !== void 0) acct[key] = val;
+		if (data.connected !== void 0) acct.connected = data.connected;
+		else if (acct.connected === void 0) acct.connected = true;
+		const hasSecrets = Object.keys(secrets).length > 0;
+		acct.hasCredentials = hasSecrets;
+		ctx.db.accounts[platform] = acct;
+		if (secretsChanged || removedSecrets) storeAccountSecrets(platform, hasSecrets ? secrets : null);
+		if (Object.keys(data).length) ctx.saveDB(ctx.db);
+		return acct;
+	}
+	var pendingOAuthStates = /* @__PURE__ */ new Map();
+	var AUTH_TIMEOUT_MS = 300 * 1e3;
+	function generateOAuthState() {
+		const now = Date.now();
+		for (const [s, entry] of pendingOAuthStates) if (now - entry.timestamp >= AUTH_TIMEOUT_MS) pendingOAuthStates.delete(s);
+		const state = crypto$1.randomBytes(32).toString("hex");
+		pendingOAuthStates.set(state, { timestamp: now });
+		return state;
+	}
+	function validateOAuthState(state) {
+		if (!state || !pendingOAuthStates.has(state)) return false;
+		const entry = pendingOAuthStates.get(state);
+		pendingOAuthStates.delete(state);
+		return Date.now() - entry.timestamp < AUTH_TIMEOUT_MS;
+	}
+	function sanitizeAccountsForRenderer(accounts) {
+		if (!accounts) return {};
+		const safe = {};
+		const sensitiveKeys = [
+			"accessToken",
+			"refreshToken",
+			"xblToken",
+			"xstsToken",
+			"msAccessToken",
+			"msRefreshToken",
+			"userHash"
+		];
+		for (const [platform, data] of Object.entries(accounts)) {
+			if (!data || typeof data !== "object") continue;
+			safe[platform] = {};
+			for (const [key, val] of Object.entries(data)) if (!sensitiveKeys.includes(key)) safe[platform][key] = val;
+			safe[platform].hasCredentials = !!data.hasCredentials;
+		}
+		return safe;
+	}
+	var ALLOWED_AUTH_DOMAINS = [
+		"steamcommunity.com",
+		"store.steampowered.com",
+		"login.steampowered.com",
+		"login.gog.com",
+		"auth.gog.com",
+		"embed.gog.com",
+		"gog.com",
+		"epicgames.com",
+		"www.epicgames.com",
+		"microsoftonline.com",
+		"live.com",
+		"microsoft.com",
+		"msauth.net",
+		"msftauth.net",
+		"localhost",
+		"cereal-launcher.local"
+	];
+	function isAllowedAuthDomain(url) {
+		try {
+			const hostname = new URL(url).hostname;
+			return ALLOWED_AUTH_DOMAINS.some((d) => hostname === d || hostname.endsWith("." + d));
+		} catch {
+			return false;
+		}
+	}
+	function createAuthWindow(width, height, authSession) {
+		const win = new BrowserWindow$1({
+			width,
+			height,
+			parent: ctx.mainWindow,
+			modal: true,
+			webPreferences: {
+				nodeIntegration: false,
+				contextIsolation: true,
+				sandbox: true,
+				session: authSession
+			}
+		});
+		win.setMenuBarVisibility(false);
+		win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+		return win;
+	}
+	function runOAuthFlow({ partition, width, height, authUrl, redirectMatch, onRedirect, allowNavigate, keepSession }) {
+		return new Promise((resolve) => {
+			const partitionStr = keepSession ? partition : partition + ":" + Date.now();
+			const authSession = session$2.fromPartition(partitionStr);
+			const authWin = createAuthWindow(width || 700, height || 700, authSession);
+			let resolved = false;
+			let authTimeout = null;
+			const cleanup = () => {
+				if (authTimeout) {
+					clearTimeout(authTimeout);
+					authTimeout = null;
+				}
+				if (!keepSession) try {
+					authSession.clearStorageData();
+				} catch (e) {}
+			};
+			const finish = (result) => {
+				if (resolved) return;
+				resolved = true;
+				cleanup();
+				try {
+					authWin.close();
+				} catch (e) {}
+				resolve(result);
+			};
+			authTimeout = setTimeout(() => finish({ error: "Authentication timed out" }), AUTH_TIMEOUT_MS);
+			const handleUrl = (url) => {
+				if (resolved) return;
+				if (redirectMatch(url)) onRedirect(url, finish, {
+					win: authWin,
+					session: authSession
+				});
+			};
+			authWin.webContents.on("will-navigate", (event, url) => {
+				if (redirectMatch(url)) {
+					if (!allowNavigate) event.preventDefault();
+					handleUrl(url);
+					return;
+				}
+				if (!isAllowedAuthDomain(url)) event.preventDefault();
+			});
+			authWin.webContents.on("will-redirect", (event, url) => {
+				if (redirectMatch(url)) {
+					if (!allowNavigate) event.preventDefault();
+					handleUrl(url);
+				}
+			});
+			authWin.webContents.on("did-navigate", (event, url) => handleUrl(url));
+			authWin.on("closed", () => {
+				cleanup();
+				if (!resolved) {
+					resolved = true;
+					resolve({ error: "cancelled" });
+				}
+			});
+			authWin.loadURL(authUrl);
+		});
+	}
+	async function refreshAccountToken(platform) {
+		const a = getAuth();
+		const acct = (ctx.db.accounts || {})[platform];
+		if (!acct) return false;
+		const releaseSecrets = hydrateAccountSecrets(platform);
+		try {
+			let tokens;
+			if (platform === "gog") {
+				if (!acct.refreshToken) return false;
+				tokens = await a.refreshGogToken(acct.refreshToken);
+			} else if (platform === "epic") {
+				if (!acct.refreshToken) return false;
+				tokens = await a.refreshEpicToken(acct.refreshToken);
+			} else if (platform === "xbox") {
+				if (!acct.msRefreshToken) return false;
+				tokens = await a.refreshXboxTokens(acct.msRefreshToken);
+			}
+			if (!tokens) return false;
+			persistAccountData(platform, tokens);
+			return true;
+		} catch (e) {
+			return false;
+		} finally {
+			releaseSecrets();
+		}
+	}
+	function emitImportProgress(providerId, evt) {
+		try {
+			ctx.sendToRenderer("import:progress", {
+				provider: providerId,
+				...evt
+			});
+		} catch (e) {}
+	}
+	function importCount(value) {
+		if (Array.isArray(value)) return value.length;
+		if (typeof value === "number" && Number.isFinite(value)) return value;
+		return 0;
+	}
+	async function runProviderImportWithProgress(providerId, options = {}) {
+		const provider = getProviders()?.[providerId];
+		if (!provider || typeof provider.importLibrary !== "function") return { error: `${providerId} provider not available` };
+		const releaseSecrets = hydrateAccountSecrets(providerId);
+		const counts = {
+			processed: 0,
+			imported: 0,
+			updated: 0
+		};
+		let sawTerminalStatus = false;
+		const notify = (evt = {}) => {
+			const next = { ...evt };
+			if (typeof next.processed === "number" && Number.isFinite(next.processed)) counts.processed = next.processed;
+			if (typeof next.imported === "number" && Number.isFinite(next.imported)) counts.imported = next.imported;
+			if (typeof next.updated === "number" && Number.isFinite(next.updated)) counts.updated = next.updated;
+			if (next.status === "done" || next.status === "error") sawTerminalStatus = true;
+			emitImportProgress(providerId, {
+				status: next.status || "progress",
+				processed: counts.processed,
+				imported: counts.imported,
+				updated: counts.updated,
+				message: next.message
+			});
+		};
+		notify({
+			status: "start",
+			processed: 0,
+			imported: 0,
+			updated: 0
+		});
+		try {
+			const res = await provider.importLibrary({
+				db: ctx.db,
+				saveDB: ctx.saveDB,
+				notify,
+				...options
+			});
+			const importedCount = importCount(res?.imported);
+			const updatedCount = importCount(res?.updated);
+			const processedCount = typeof res?.processed === "number" && Number.isFinite(res.processed) ? res.processed : typeof res?.total === "number" && Number.isFinite(res.total) ? res.total : importedCount + updatedCount;
+			const hasError = !!res?.error;
+			if (!sawTerminalStatus) emitImportProgress(providerId, {
+				status: hasError ? "error" : "done",
+				processed: Math.max(counts.processed, processedCount),
+				imported: Math.max(counts.imported, importedCount),
+				updated: Math.max(counts.updated, updatedCount),
+				message: hasError ? String(res.error || "") : void 0
+			});
+			return res;
+		} catch (e) {
+			emitImportProgress(providerId, {
+				status: "error",
+				processed: counts.processed,
+				imported: counts.imported,
+				updated: counts.updated,
+				message: e.message
+			});
+			return { error: `${providerId} import failed: ` + e.message };
+		} finally {
+			releaseSecrets();
+		}
+	}
+	async function importWithTokenRefresh(providerId) {
+		const acct = (ctx.db.accounts || {})[providerId];
+		const expiry = acct?.msExpiresAt ?? acct?.expiresAt;
+		if (expiry && Date.now() > expiry - 6e4) {
+			if (!await refreshAccountToken(providerId)) return { error: `${providerId} session expired. Please sign in again.` };
+		}
+		let res = await runProviderImportWithProgress(providerId);
+		if (res?.error && /(401|403|unauthor|token|expired)/i.test(String(res.error || ""))) {
+			if (!await refreshAccountToken(providerId)) return res;
+			res = await runProviderImportWithProgress(providerId);
+		}
+		return res;
+	}
+	async function handleLocalProviderAuth(providerId, displayName) {
+		const provider = getProviders()?.[providerId];
+		if (!provider || typeof provider.detectInstalled !== "function") return { error: `${displayName} provider not available` };
+		const detected = provider.detectInstalled();
+		if (detected?.error) return { error: detected.error };
+		const accountData = {
+			connected: true,
+			displayName,
+			gameCount: Array.isArray(detected?.games) ? detected.games.length : 0,
+			lastSync: (/* @__PURE__ */ new Date()).toISOString()
+		};
+		persistAccountData(providerId, accountData);
+		return {
+			success: true,
+			displayName,
+			gameCount: accountData.gameCount,
+			localOnly: true
+		};
+	}
+	async function handleProviderImport(providerId) {
+		let apiKey = null;
+		if (providerId === "itchio") try {
+			apiKey = ctx.safeStore.getPassword("cereal-itchio", "default") || null;
+		} catch (e) {}
+		return runProviderImportWithProgress(providerId, apiKey ? { apiKey } : {});
+	}
+	function extractOAuthCode(url) {
+		const u = new URL(url);
+		const code = u.searchParams.get("code");
+		const error = u.searchParams.get("error");
+		const returnedState = u.searchParams.get("state");
+		if (error) return { error: u.searchParams.get("error_description") || error };
+		if (returnedState && !validateOAuthState(returnedState)) return { error: "Security validation failed (state mismatch)" };
+		if (!code) return { error: "No authorization code received" };
+		return { code };
+	}
+	function saveAccountAndReturn(platform, data) {
+		persistAccountData(platform, {
+			...data,
+			connected: true
+		});
+	}
+	function registerAccountIpcHandlers() {
+		const a = getAuth();
+		const p = getProviders();
+		ipcMain$9.handle("accounts:get", () => {
+			return sanitizeAccountsForRenderer(ctx.db.accounts);
+		});
+		ipcMain$9.handle("accounts:save", (event, platform, data) => {
+			if (!platform || typeof platform !== "string") return sanitizeAccountsForRenderer(ctx.db.accounts || {});
+			const allowedKeys = [
+				"connected",
+				"displayName",
+				"gamertag",
+				"avatarUrl",
+				"lastSync",
+				"gameCount"
+			];
+			const filtered = {};
+			for (const [key, val] of Object.entries(data || {})) if (allowedKeys.includes(key)) filtered[key] = val;
+			persistAccountData(platform, filtered);
+			return sanitizeAccountsForRenderer(ctx.db.accounts);
+		});
+		ipcMain$9.handle("accounts:remove", (event, platform) => {
+			if (!ctx.db.accounts) ctx.db.accounts = {};
+			if (ctx.db.accounts[platform]) {
+				detachAccountSecrets(platform);
+				delete ctx.db.accounts[platform];
+			}
+			if (platform === "steam") try {
+				session$2.fromPartition("persist:steam-auth").clearStorageData();
+			} catch (e) {}
+			ctx.saveDB(ctx.db);
+			return sanitizeAccountsForRenderer(ctx.db.accounts);
+		});
+		ipcMain$9.handle("accounts:steam:auth", async () => {
+			const c = a.CONFIG.steam;
+			return runOAuthFlow({
+				partition: "persist:steam-auth",
+				...c.windowSize,
+				authUrl: a.buildSteamAuthUrl(),
+				redirectMatch: (url) => url.startsWith(c.returnUrl),
+				keepSession: true,
+				onRedirect: async (url, finish) => {
+					try {
+						const steamId = a.extractSteamId(url);
+						if (!steamId) {
+							finish({ error: "Could not extract Steam ID" });
+							return;
+						}
+						const profile = await a.fetchSteamProfile(steamId);
+						saveAccountAndReturn("steam", {
+							steamId,
+							...profile
+						});
+						finish({
+							success: true,
+							steamId,
+							...profile
+						});
+					} catch (e) {
+						finish({ error: e.message });
+					}
+				}
+			});
+		});
+		ipcMain$9.handle("accounts:steam:import", async () => {
+			if (!p?.steam?.importLibrary) return { error: "Steam provider not available" };
+			let apiKey = null;
+			try {
+				const r = ctx.safeStore.getPassword("cereal-steam", "default");
+				if (r) apiKey = r;
+			} catch (e) {}
+			const steamSession = session$2.fromPartition("persist:steam-auth");
+			const sessionFetch = steamSession.fetch.bind(steamSession);
+			return runProviderImportWithProgress("steam", {
+				apiKey,
+				sessionFetch
+			});
+		});
+		ipcMain$9.handle("accounts:gog:auth", async () => {
+			const c = a.CONFIG.gog;
+			const oauthState = generateOAuthState();
+			return runOAuthFlow({
+				partition: "auth:gog",
+				...c.windowSize,
+				authUrl: a.buildGogAuthUrl(oauthState),
+				redirectMatch: (url) => url.includes("on_login_success") && url.includes("code="),
+				onRedirect: async (url, finish) => {
+					try {
+						const { code, error } = extractOAuthCode(url);
+						if (error) {
+							finish({ error });
+							return;
+						}
+						const tokens = await a.exchangeGogCode(code);
+						if (tokens.error) {
+							finish(tokens);
+							return;
+						}
+						saveAccountAndReturn("gog", tokens);
+						finish({
+							success: true,
+							userId: tokens.userId
+						});
+					} catch (e) {
+						finish({ error: e.message });
+					}
+				}
+			});
+		});
+		ipcMain$9.handle("accounts:gog:import", async () => {
+			if (!p?.gog?.importLibrary) return { error: "GOG provider not available" };
+			const res = await importWithTokenRefresh("gog");
+			if (!res?.error) {
+				const installed = scanGogInstalled();
+				if (installed.length > 0) {
+					const installedIds = new Set(installed.map((g) => g.platformId).filter(Boolean));
+					let changed = false;
+					for (const g of ctx.db.games) if (g.platform === "gog") {
+						const isInstalled = !!(g.platformId && installedIds.has(g.platformId));
+						if (isInstalled && !g.installed) {
+							g.installed = true;
+							changed = true;
+						} else if (!isInstalled && g.installed === void 0) {
+							g.installed = false;
+							changed = true;
+						}
+					}
+					if (changed) ctx.saveDB(ctx.db);
+				}
+			}
+			return res;
+		});
+		ipcMain$9.handle("accounts:epic:auth", async () => {
+			const c = a.CONFIG.epic;
+			return runOAuthFlow({
+				partition: "auth:epic",
+				...c.windowSize,
+				authUrl: a.buildEpicAuthUrl(),
+				redirectMatch: (url) => url.includes("epicgames.com/id/api/redirect"),
+				allowNavigate: true,
+				onRedirect: async (url, finish, { session: authSess }) => {
+					try {
+						const resp = await authSess.fetch(url);
+						if (!resp.ok) {
+							finish({ error: "Epic redirect fetch failed: " + resp.status });
+							return;
+						}
+						const data = await resp.json();
+						const exchangeCode = data.exchangeCode || data.redirectUrl && new URL(data.redirectUrl).searchParams.get("code");
+						if (!exchangeCode) {
+							finish({ error: "No exchange code in Epic response" });
+							return;
+						}
+						const tokens = await a.exchangeEpicCode(exchangeCode);
+						if (tokens.error) {
+							finish(tokens);
+							return;
+						}
+						saveAccountAndReturn("epic", tokens);
+						finish({
+							success: true,
+							displayName: tokens.displayName
+						});
+					} catch (e) {
+						finish({ error: e.message });
+					}
+				}
+			});
+		});
+		ipcMain$9.handle("accounts:epic:import", async () => {
+			if (!p?.epic?.importLibrary) return { error: "Epic provider not available" };
+			const res = await importWithTokenRefresh("epic");
+			if (!res?.error) {
+				const installed = scanEpicInstalled();
+				if (installed.length > 0) {
+					const installedIds = new Set(installed.map((g) => g.platformId).filter(Boolean));
+					let changed = false;
+					for (const g of ctx.db.games) if (g.platform === "epic") {
+						const isInstalled = !!(g.platformId && installedIds.has(g.platformId));
+						if (isInstalled && !g.installed) {
+							g.installed = true;
+							changed = true;
+						} else if (!isInstalled && g.installed === void 0) {
+							g.installed = false;
+							changed = true;
+						}
+					}
+					if (changed) ctx.saveDB(ctx.db);
+				}
+			}
+			return res;
+		});
+		ipcMain$9.handle("accounts:xbox:auth", async () => {
+			const c = a.CONFIG.xbox;
+			const oauthState = generateOAuthState();
+			return runOAuthFlow({
+				partition: "auth:xbox",
+				...c.windowSize,
+				authUrl: a.buildXboxAuthUrl(oauthState),
+				redirectMatch: (url) => url.startsWith(c.redirectUri),
+				onRedirect: async (url, finish) => {
+					try {
+						const { code, error } = extractOAuthCode(url);
+						if (error) {
+							finish({ error });
+							return;
+						}
+						const tokens = await a.exchangeXboxCode(code);
+						if (tokens.error) {
+							finish(tokens);
+							return;
+						}
+						saveAccountAndReturn("xbox", tokens);
+						finish({
+							success: true,
+							gamertag: tokens.gamertag,
+							avatarUrl: tokens.avatarUrl
+						});
+					} catch (e) {
+						finish({ error: "Xbox auth chain failed: " + e.message });
+					}
+				}
+			});
+		});
+		ipcMain$9.handle("accounts:xbox:import", async () => {
+			if (!p?.xbox?.importLibrary) return { error: "Xbox provider not available" };
+			return importWithTokenRefresh("xbox");
+		});
+		ipcMain$9.handle("accounts:ea:auth", async () => handleLocalProviderAuth("ea", "EA App"));
+		ipcMain$9.handle("accounts:battlenet:auth", async () => handleLocalProviderAuth("battlenet", "Battle.net"));
+		ipcMain$9.handle("accounts:itchio:auth", async () => handleLocalProviderAuth("itchio", "itch.io"));
+		ipcMain$9.handle("accounts:ubisoft:auth", async () => handleLocalProviderAuth("ubisoft", "Ubisoft Connect"));
+		ipcMain$9.handle("accounts:ea:import", async () => handleProviderImport("ea"));
+		ipcMain$9.handle("accounts:battlenet:import", async () => handleProviderImport("battlenet"));
+		ipcMain$9.handle("accounts:itchio:import", async () => handleProviderImport("itchio"));
+		ipcMain$9.handle("accounts:ubisoft:import", async () => handleProviderImport("ubisoft"));
+	}
+	module.exports = {
+		detachAccountSecrets,
+		registerAccountIpcHandlers
+	};
+}));
+//#endregion
+//#region electron/modules/discord.js
+var require_discord = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	var ctx = require_context();
+	require_logger();
+	var DISCORD_CLIENT_ID = "1338877643523145789";
+	var discordRpc = null;
+	var discordReady = false;
+	var discordCurrentGame = null;
+	function connectDiscord$1() {
+		if (discordRpc) return;
+		try {
+			discordRpc = new (require("discord-rpc")).Client({ transport: "ipc" });
+			discordRpc.on("ready", () => {
+				discordReady = true;
+				console.log("[Discord] RPC ready");
+			});
+			discordRpc.login({ clientId: DISCORD_CLIENT_ID }).catch((err) => {
+				console.log("[Discord] Could not connect:", err.message);
+				discordRpc = null;
+			});
+		} catch (e) {
+			console.log("[Discord] Init error:", e.message);
+			discordRpc = null;
+		}
+	}
+	function disconnectDiscord() {
+		if (discordRpc) {
+			try {
+				discordRpc.clearActivity();
+			} catch (e) {}
+			try {
+				discordRpc.destroy();
+			} catch (e) {}
+			discordRpc = null;
+			discordReady = false;
+			discordCurrentGame = null;
+		}
+	}
+	var PLATFORM_LABELS = {
+		steam: "Steam",
+		epic: "Epic Games",
+		gog: "GOG",
+		psn: "PlayStation",
+		xbox: "Xbox",
+		custom: "PC",
+		psremote: "PlayStation"
+	};
+	function setDiscordPresence(gameName, platform, startTimestamp) {
+		discordCurrentGame = {
+			name: gameName,
+			platform,
+			startTimestamp: startTimestamp || Date.now()
+		};
+		if (!discordRpc || !discordReady) return;
+		try {
+			discordRpc.setActivity({
+				details: gameName,
+				state: "via " + (PLATFORM_LABELS[platform] || "Cereal Launcher"),
+				startTimestamp: discordCurrentGame.startTimestamp,
+				largeImageKey: "cereal_logo",
+				largeImageText: "Cereal Launcher",
+				smallImageKey: platform || "custom",
+				smallImageText: PLATFORM_LABELS[platform] || "Game",
+				instance: false
+			});
+		} catch (e) {
+			console.log("[Discord] Presence error:", e.message);
+		}
+	}
+	function clearDiscordPresence() {
+		discordCurrentGame = null;
+		if (!discordRpc || !discordReady) return;
+		try {
+			discordRpc.clearActivity();
+		} catch (e) {}
+	}
+	function isDiscordEnabled() {
+		return !!(ctx.db && ctx.db.settings && ctx.db.settings.discordPresence);
+	}
+	function getDiscordStatus() {
+		return {
+			ready: discordReady,
+			connected: !!discordRpc
+		};
+	}
+	module.exports = {
+		connectDiscord: connectDiscord$1,
+		disconnectDiscord,
+		setDiscordPresence,
+		clearDiscordPresence,
+		isDiscordEnabled,
+		getDiscordStatus
+	};
+}));
+//#endregion
+//#region electron/modules/metadata.js
+var require_metadata = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	var { net: net$4 } = require("electron");
+	var ctx = require_context();
+	require_logger();
+	var METADATA_CACHE = /* @__PURE__ */ new Map();
+	var METADATA_CACHE_TTL = 10080 * 60 * 1e3;
+	function getMetadataSettings() {
+		const s = ctx.db && ctx.db.settings || {};
+		let sgdbKey = s.steamGridDbKey || "";
+		if (!sgdbKey) try {
+			sgdbKey = ctx.safeStore.getPassword("cereal-steamgriddb", "default") || "";
+		} catch (e) {}
+		return {
+			source: s.metadataSource || "steam",
+			steamGridDbKey: sgdbKey
+		};
+	}
+	async function httpGet(url) {
+		const resp = await net$4.fetch(url, { headers: {
+			"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+			"Accept": "application/json, text/json, */*"
+		} });
+		if (!resp.ok) throw new Error("HTTP " + resp.status + " from " + url);
+		const text = await resp.text();
+		return JSON.parse(text);
+	}
+	async function fetchSteamMetadata(appId) {
+		try {
+			const info = (await httpGet(`https://store.steampowered.com/api/appdetails?appids=${appId}&l=english`))?.[appId]?.data;
+			if (!info) return null;
+			let isSoftware = false;
+			if (info.type && typeof info.type === "string" && info.type.toLowerCase() !== "game") isSoftware = true;
+			if (!isSoftware && info.categories && Array.isArray(info.categories)) try {
+				if (info.categories.some((c) => (c.description || "").toLowerCase().includes("software") || (c.description || "").toLowerCase().includes("utility") || (c.description || "").toLowerCase().includes("application"))) isSoftware = true;
+			} catch (e) {}
+			if (!isSoftware && info.genres && Array.isArray(info.genres)) try {
+				if (info.genres.some((g) => (g.description || "").toLowerCase().includes("software"))) isSoftware = true;
+			} catch (e) {}
+			let coverUrl = "";
+			const capsuleUrls = [`https://shared.steamstatic.com/store_item_assets/steam/apps/${appId}/library_600x900_2x.jpg`, `https://shared.steamstatic.com/store_item_assets/steam/apps/${appId}/library_600x900.jpg`];
+			for (const url of capsuleUrls) try {
+				if ((await net$4.fetch(url, { method: "HEAD" })).ok) {
+					coverUrl = url;
+					break;
+				}
+			} catch (e) {}
+			return {
+				description: (info.short_description || "").slice(0, 500),
+				developer: (info.developers || [])[0] || "",
+				publisher: (info.publishers || [])[0] || "",
+				releaseDate: info.release_date?.date || "",
+				genres: (info.genres || []).map((g) => g.description),
+				coverUrl,
+				headerUrl: info.header_image || `https://shared.steamstatic.com/store_item_assets/steam/apps/${appId}/library_hero.jpg`,
+				screenshots: (info.screenshots || []).slice(0, 4).map((s) => s.path_full),
+				metacritic: info.metacritic?.score || null,
+				website: info.website || "",
+				_source: "steam",
+				isSoftware
+			};
+		} catch (e) {
+			console.log("[Metadata] Steam fetch failed for", appId, e.message);
+			return null;
+		}
+	}
+	async function fetchSteamSearchMetadata(gameName) {
+		try {
+			const search = await httpGet(`https://store.steampowered.com/api/storesearch/?term=${encodeURIComponent(gameName)}&l=english&cc=US`);
+			if (!search?.items?.length) return null;
+			const lower = gameName.toLowerCase().replace(/[^a-z0-9]/g, "");
+			let best = search.items[0];
+			for (const item of search.items) if ((item.name || "").toLowerCase().replace(/[^a-z0-9]/g, "") === lower) {
+				best = item;
+				break;
+			}
+			return await fetchSteamMetadata(String(best.id));
+		} catch (e) {
+			console.log("[Metadata] Steam search failed for", gameName, e.message);
+			return null;
+		}
+	}
+	async function fetchWikipediaMetadata(gameName) {
+		try {
+			const searchData = await httpGet(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(gameName + " video game")}&srnamespace=0&srlimit=5&format=json`);
+			if (!searchData?.query?.search?.length) return null;
+			const lower = gameName.toLowerCase().replace(/[^a-z0-9]/g, "");
+			let bestTitle = searchData.query.search[0].title;
+			for (const r of searchData.query.search) if (r.title.toLowerCase().replace(/[^a-z0-9]/g, "").replace(/videogame$/, "") === lower) {
+				bestTitle = r.title;
+				break;
+			}
+			const title = encodeURIComponent(bestTitle);
+			const pages = (await httpGet(`https://en.wikipedia.org/w/api.php?action=query&titles=${title}&prop=extracts|pageimages|revisions&exintro=true&explaintext=true&pithumbsize=600&rvprop=content&rvslots=main&rvsection=0&format=json`))?.query?.pages;
+			if (!pages) return null;
+			const page = Object.values(pages)[0];
+			if (!page || page.missing !== void 0) return null;
+			const extract = (page.extract || "").slice(0, 500);
+			const thumbUrl = page.thumbnail?.source || "";
+			const wikitext = page.revisions?.[0]?.slots?.main?.["*"] || "";
+			const infoField = (field) => {
+				const re = new RegExp("\\|\\s*" + field + "\\s*=\\s*(.+)", "i");
+				const m = wikitext.match(re);
+				if (!m) return "";
+				return m[1].replace(/\[\[([^|\]]*\|)?([^\]]*)\]\]/g, "$2").replace(/\{\{[^}]*\}\}/g, "").replace(/<[^>]+>/g, "").trim();
+			};
+			const developer = infoField("developer");
+			const publisher = infoField("publisher");
+			const released = infoField("released") || infoField("release_date");
+			const genreRaw = infoField("genre");
+			const genres = genreRaw ? genreRaw.split(/[,;]/).map((g) => g.trim()).filter(Boolean).slice(0, 5) : [];
+			if (!extract && !developer) return null;
+			return {
+				description: extract,
+				developer,
+				publisher,
+				releaseDate: released.replace(/\{\{.*?\}\}/g, "").trim().slice(0, 30),
+				genres,
+				coverUrl: thumbUrl,
+				headerUrl: "",
+				screenshots: [],
+				metacritic: null,
+				website: `https://en.wikipedia.org/wiki/${title}`,
+				_source: "wikipedia"
+			};
+		} catch (e) {
+			console.log("[Metadata] Wikipedia fetch failed for", gameName, e.message);
+			return null;
+		}
+	}
+	async function fetchSteamGridDBArt(gameName, apiKey) {
+		if (!apiKey) return null;
+		try {
+			const q = encodeURIComponent(gameName);
+			const sgdbFetch = async (endpoint) => {
+				const resp = await net$4.fetch(endpoint, { headers: { "Authorization": "Bearer " + apiKey } });
+				if (!resp.ok) throw new Error("SGDB HTTP " + resp.status);
+				return resp.json();
+			};
+			const searchData = await sgdbFetch(`https://www.steamgriddb.com/api/v2/search/autocomplete/${q}`);
+			if (!searchData?.success || !searchData?.data?.length) return null;
+			const gameId = searchData.data[0].id;
+			const [covers, heroes] = await Promise.allSettled([sgdbFetch(`https://www.steamgriddb.com/api/v2/grids/game/${gameId}?dimensions=600x900&limit=1`), sgdbFetch(`https://www.steamgriddb.com/api/v2/heroes/game/${gameId}?limit=1`)]);
+			const coverUrl = covers.status === "fulfilled" && covers.value?.data?.[0]?.url || "";
+			const headerUrl = heroes.status === "fulfilled" && heroes.value?.data?.[0]?.url || "";
+			if (coverUrl || headerUrl) return {
+				coverUrl,
+				headerUrl
+			};
+			return null;
+		} catch (e) {
+			console.log("[Metadata] SteamGridDB art fetch failed for", gameName, e.message);
+			return null;
+		}
+	}
+	async function fetchGameMetadata(game) {
+		if (!game || !game.name) return null;
+		const cacheKey = (game.platform || "") + ":" + (game.platformId || game.name);
+		const cached = METADATA_CACHE.get(cacheKey);
+		if (cached && Date.now() - cached.timestamp < METADATA_CACHE_TTL) return cached.data;
+		const ms = getMetadataSettings();
+		let meta = null;
+		if (game.platform === "steam") {
+			if (game.platformId) meta = await fetchSteamMetadata(game.platformId);
+			if (!meta) meta = await fetchSteamSearchMetadata(game.name);
+		}
+		if (!meta) if (ms.source === "wikipedia") {
+			meta = await fetchWikipediaMetadata(game.name);
+			if (!meta) meta = await fetchSteamSearchMetadata(game.name);
+		} else {
+			meta = await fetchSteamSearchMetadata(game.name);
+			if (!meta) meta = await fetchWikipediaMetadata(game.name);
+		}
+		if (meta && ms.steamGridDbKey) try {
+			const art = await fetchSteamGridDBArt(game.name, ms.steamGridDbKey);
+			if (art) {
+				if (art.coverUrl && !meta.coverUrl) meta.coverUrl = art.coverUrl;
+				else if (art.coverUrl) meta.sgdbCoverUrl = art.coverUrl;
+				if (art.headerUrl) meta.headerUrl = art.headerUrl;
+			}
+		} catch (e) {}
+		if (meta) METADATA_CACHE.set(cacheKey, {
+			data: meta,
+			timestamp: Date.now()
+		});
+		return meta;
+	}
+	function applyMetadataToGame(game, meta) {
+		if (!meta) return false;
+		let changed = false;
+		if (!game.coverUrl && meta.coverUrl) {
+			game.coverUrl = meta.coverUrl;
+			changed = true;
+		}
+		if (!game.sgdbCoverUrl && meta.sgdbCoverUrl) {
+			game.sgdbCoverUrl = meta.sgdbCoverUrl;
+			changed = true;
+		}
+		if (!game.description && meta.description) {
+			game.description = meta.description;
+			changed = true;
+		}
+		if (!game.developer && meta.developer) {
+			game.developer = meta.developer;
+			changed = true;
+		}
+		if (!game.publisher && meta.publisher) {
+			game.publisher = meta.publisher;
+			changed = true;
+		}
+		if (!game.releaseDate && meta.releaseDate) {
+			game.releaseDate = meta.releaseDate;
+			changed = true;
+		}
+		if ((!game.categories || game.categories.length === 0) && meta.genres?.length) {
+			game.categories = meta.genres;
+			changed = true;
+		}
+		if (!game.headerUrl) {
+			const headerFallback = meta.headerUrl || meta.coverUrl || meta.screenshots && meta.screenshots[0] || "";
+			if (headerFallback) {
+				game.headerUrl = headerFallback;
+				changed = true;
+			}
+		}
+		if ((!game.screenshots || game.screenshots.length === 0) && meta.screenshots?.length) {
+			game.screenshots = meta.screenshots;
+			changed = true;
+		}
+		if (game.metacritic == null && meta.metacritic != null) {
+			game.metacritic = meta.metacritic;
+			changed = true;
+		}
+		if (!game.website && meta.website) {
+			game.website = meta.website;
+			changed = true;
+		}
+		try {
+			const existing = (game.categories || []).filter(Boolean).map((c) => String(c).trim());
+			const add = [];
+			if (meta.genres && Array.isArray(meta.genres)) {
+				for (const g of meta.genres) if (g) add.push(String(g).trim());
+			}
+			if (meta.categories && Array.isArray(meta.categories)) {
+				for (const c of meta.categories) if (c) add.push(String(c).trim());
+			}
+			if (meta.type && typeof meta.type === "string") {
+				const t = meta.type.trim();
+				if (t && t.toLowerCase() !== "game") add.push(t.charAt(0).toUpperCase() + t.slice(1));
+			}
+			if (add.length > 0) {
+				const merged = Array.from(new Map([...existing, ...add].map((x) => [x.toLowerCase(), x])).values());
+				const existingNorm = existing.map((x) => x.toLowerCase()).join("|");
+				if (merged.map((x) => x.toLowerCase()).join("|") !== existingNorm) {
+					game.categories = merged;
+					changed = true;
+				}
+			}
+		} catch (e) {}
+		if (meta._source === "steam" && meta.isSoftware) {
+			if (!game.software) {
+				game.software = true;
+				changed = true;
+			}
+			try {
+				const cats = game.categories || [];
+				if (!cats.some((c) => typeof c === "string" && c.toLowerCase() === "software")) {
+					game.categories = [...cats, "Software"];
+					changed = true;
+				}
+			} catch (e) {}
+		}
+		return changed;
+	}
+	function invalidateMetadataCache(cacheKey) {
+		METADATA_CACHE.delete(cacheKey);
+	}
+	module.exports = {
+		httpGet,
+		fetchSteamMetadata,
+		fetchSteamSearchMetadata,
+		fetchWikipediaMetadata,
+		fetchSteamGridDBArt,
+		fetchGameMetadata,
+		applyMetadataToGame,
+		getMetadataSettings,
+		invalidateMetadataCache
+	};
+}));
+//#endregion
+//#region electron/modules/covers.js
+var require_covers = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	var { app: app$4, net: net$3 } = require("electron");
+	var path$8 = require("path");
+	var fs$8 = require("fs");
+	var ctx = require_context();
+	var { fetchGameMetadata, applyMetadataToGame } = require_metadata();
+	require_logger();
+	function getCoversDir() {
+		const dir = path$8.join(app$4.getPath("userData"), "covers");
+		try {
+			if (!fs$8.existsSync(dir)) fs$8.mkdirSync(dir, { recursive: true });
+		} catch (e) {}
+		return dir;
+	}
+	async function downloadToFile(url, destPath) {
+		try {
+			const resp = await net$3.fetch(url);
+			if (!resp.ok) throw new Error("HTTP " + resp.status);
+			const buf = Buffer.from(await resp.arrayBuffer());
+			if (buf.length < 1024) throw new Error("File too small (" + buf.length + " bytes)");
+			fs$8.writeFileSync(destPath, buf);
+			return true;
+		} catch (e) {
+			cleanupFile(destPath);
+			throw e;
+		}
+	}
+	function cleanupFile(p) {
+		try {
+			if (fs$8.existsSync(p)) fs$8.unlinkSync(p);
+		} catch (e) {}
+	}
+	var coverQueue = /* @__PURE__ */ new Set();
+	var coverRetries = /* @__PURE__ */ new Map();
+	var MAX_COVER_RETRIES = 2;
+	var coverWorkerRunning = false;
+	var _coversDirCache = null;
+	function getCoversDirCached() {
+		if (_coversDirCache) return _coversDirCache;
+		_coversDirCache = getCoversDir();
+		return _coversDirCache;
+	}
+	function enqueueCoverFetch(gameId) {
+		if (!gameId) return;
+		coverQueue.add(gameId);
+		if (!coverWorkerRunning) processCoverQueue();
+	}
+	async function processCoverQueue() {
+		coverWorkerRunning = true;
+		const coversDir = getCoversDirCached();
+		const db = ctx.db;
+		while (coverQueue.size > 0) {
+			const batch = [];
+			for (const id of coverQueue) {
+				batch.push(id);
+				if (batch.length >= 5) break;
+			}
+			for (const id of batch) coverQueue.delete(id);
+			let anyChanged = false;
+			await Promise.allSettled(batch.map(async (gid) => {
+				try {
+					const game = db.games.find((g) => g.id === gid);
+					if (!game) return;
+					if (!(game.localCoverPath && fs$8.existsSync(game.localCoverPath) && (() => {
+						try {
+							return fs$8.statSync(game.localCoverPath).size >= 1024;
+						} catch (e) {
+							return false;
+						}
+					})())) {
+						if (game.localCoverPath) {
+							cleanupFile(game.localCoverPath);
+							game.localCoverPath = null;
+						}
+						let candidates = [game.coverUrl, game.sgdbCoverUrl].filter(Boolean);
+						let downloaded = false;
+						for (const coverUrl of candidates) try {
+							const ext = path$8.extname(new URL(coverUrl).pathname).split("?")[0] || ".jpg";
+							const dest = path$8.join(coversDir, "cover_" + gid + ext);
+							await downloadToFile(coverUrl, dest);
+							game.localCoverPath = dest;
+							game._imgStamp = Date.now();
+							anyChanged = true;
+							coverRetries.delete(gid);
+							downloaded = true;
+							break;
+						} catch (e) {}
+						if (!downloaded && !game.headerUrl) try {
+							const meta = await fetchGameMetadata(game);
+							if (meta) {
+								applyMetadataToGame(game, meta);
+								anyChanged = true;
+								if (game.coverUrl && !candidates.includes(game.coverUrl)) try {
+									const ext = path$8.extname(new URL(game.coverUrl).pathname).split("?")[0] || ".jpg";
+									const dest = path$8.join(coversDir, "cover_" + gid + ext);
+									await downloadToFile(game.coverUrl, dest);
+									game.localCoverPath = dest;
+									game._imgStamp = Date.now();
+									coverRetries.delete(gid);
+									downloaded = true;
+								} catch (e) {}
+							}
+						} catch (e) {}
+						if (!downloaded) {
+							const total = [game.coverUrl].filter(Boolean).length;
+							if (total > 0) throw new Error("All cover URLs failed (" + total + " candidates)");
+						}
+					}
+					if (!(game.localHeaderPath && fs$8.existsSync(game.localHeaderPath) && (() => {
+						try {
+							return fs$8.statSync(game.localHeaderPath).size >= 1024;
+						} catch (e) {
+							return false;
+						}
+					})())) {
+						if (game.localHeaderPath) {
+							cleanupFile(game.localHeaderPath);
+							game.localHeaderPath = null;
+						}
+						const headerUrl = game.headerUrl;
+						if (headerUrl) {
+							const ext = path$8.extname(new URL(headerUrl).pathname).split("?")[0] || ".jpg";
+							const dest = path$8.join(coversDir, "header_" + gid + ext);
+							await downloadToFile(headerUrl, dest);
+							game.localHeaderPath = dest;
+							game._imgStamp = Date.now();
+							anyChanged = true;
+						}
+					}
+				} catch (e) {
+					console.log("[CoverFetcher] download failed for", gid, e && e.message);
+					const retries = (coverRetries.get(gid) || 0) + 1;
+					if (retries <= MAX_COVER_RETRIES) {
+						coverRetries.set(gid, retries);
+						coverQueue.add(gid);
+					} else coverRetries.delete(gid);
+				}
+			}));
+			if (anyChanged) {
+				ctx.saveDB(db);
+				ctx.sendToRenderer("games:refresh", db.games);
+			}
+			ctx.sendToRenderer("cover:progress", {
+				remaining: coverQueue.size,
+				downloaded: anyChanged ? batch.length : 0
+			});
+			if (coverQueue.size > 0) await new Promise((r) => setTimeout(r, 150));
+		}
+		ctx.sendToRenderer("cover:progress", {
+			remaining: 0,
+			done: true
+		});
+		coverWorkerRunning = false;
+	}
+	module.exports = {
+		getCoversDir,
+		cleanupFile,
+		enqueueCoverFetch
+	};
+}));
+//#endregion
+//#region electron/modules/chiaki.js
+var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	var path$7 = require("path");
+	var fs$7 = require("fs");
+	var readline = require("readline");
+	var { spawn: spawn$2 } = require("child_process");
+	var dgram = require("dgram");
+	var os$1 = require("os");
+	var { screen: electronScreen, app: app$3, ipcMain: ipcMain$8, net: net$2 } = require("electron");
+	var ctx = require_context();
+	var { CONTROL_BAR_HEIGHT, CHIAKI_SYSTEM_PATHS } = require_constants();
+	var { connectDiscord, setDiscordPresence, clearDiscordPresence, isDiscordEnabled } = require_discord();
+	require_logger();
+	function getChiakiDir() {
+		const userData = path$7.join(app$3.getPath("userData"), "chiaki-ng");
+		if (fs$7.existsSync(userData)) return userData;
+		const dev = path$7.join(__dirname, "..", "resources", "chiaki-ng");
+		if (fs$7.existsSync(dev)) return dev;
+		return null;
+	}
+	function getBundledChiakiExe() {
+		const dir = getChiakiDir();
+		if (!dir) return null;
+		const candidates = ["chiaki.exe", "chiaki-ng.exe"];
+		for (const name of candidates) {
+			const p = path$7.join(dir, name);
+			if (fs$7.existsSync(p)) return p;
+		}
+		try {
+			const entries = fs$7.readdirSync(dir, { withFileTypes: true });
+			for (const entry of entries) if (entry.isDirectory()) for (const name of candidates) {
+				const p = path$7.join(dir, entry.name, name);
+				if (fs$7.existsSync(p)) return p;
+			}
+		} catch (e) {}
+		return null;
+	}
+	function getBundledChiakiVersion() {
+		const dir = getChiakiDir();
+		if (!dir) return null;
+		const vf = path$7.join(dir, ".version");
+		try {
+			return fs$7.readFileSync(vf, "utf-8").trim();
+		} catch (e) {
+			return null;
+		}
+	}
+	var chiakiSessions = /* @__PURE__ */ new Map();
+	function resolveChiakiExe(fallbackPath) {
+		const bundled = getBundledChiakiExe();
+		if (bundled) return bundled;
+		return [
+			...CHIAKI_SYSTEM_PATHS,
+			path$7.join(process.env.ProgramFiles || "", "chiaki-ng", "chiaki-ng.exe"),
+			path$7.join(process.env.LOCALAPPDATA || "", "chiaki-ng", "chiaki-ng.exe"),
+			fallbackPath
+		].filter(Boolean).find((p) => p && fs$7.existsSync(p)) || null;
+	}
+	function buildChiakiArgs(game, config) {
+		const nickname = game.chiakiNickname || game.chiakiProfile || "";
+		const host = game.chiakiHost || "";
+		if (!host) return [];
+		const args = ["stream"];
+		args.push(nickname || "default");
+		args.push(host);
+		if (game.chiakiRegistKey) args.push("--registkey", game.chiakiRegistKey);
+		if (game.chiakiMorning) args.push("--morning", game.chiakiMorning);
+		if (game.chiakiProfile) args.push("--profile", game.chiakiProfile);
+		args.push("--exit-app-on-stream-exit");
+		const displayMode = game.chiakiDisplayMode || config?.displayMode || "fullscreen";
+		if (displayMode === "zoom") args.push("--zoom");
+		else if (displayMode === "stretch") args.push("--stretch");
+		else args.push("--fullscreen");
+		if (game.chiakiDualsense || config?.dualsense) args.push("--dualsense");
+		if (game.chiakiPasscode) args.push("--passcode", game.chiakiPasscode);
+		return args;
+	}
+	function sendStreamEvent(gameId, type, data) {
+		ctx.sendToRenderer("chiaki:event", {
+			gameId,
+			type,
+			...data
+		});
+	}
+	function sendChiakiEvent(gameId, type, data) {
+		sendStreamEvent(gameId, type, {
+			platform: "psn",
+			...data
+		});
+	}
+	function startChiakiSession(gameId, chiakiExe, args) {
+		stopChiakiSession(gameId);
+		const chiakiDir = path$7.dirname(chiakiExe);
+		const env = {
+			...process.env,
+			PATH: `${chiakiDir};${process.env.PATH}`
+		};
+		const session = {
+			gameId,
+			process: null,
+			state: "launching",
+			startTime: Date.now(),
+			streamInfo: {},
+			quality: {},
+			lastEvent: null,
+			exitCode: null
+		};
+		if (args.length === 0) {
+			session.process = spawn$2(chiakiExe, [], {
+				cwd: chiakiDir,
+				env,
+				detached: true,
+				stdio: "ignore"
+			});
+			session.process.unref();
+			session.state = "gui";
+			chiakiSessions.set(gameId, session);
+			sendChiakiEvent(gameId, "state", { state: "gui" });
+			return session;
+		}
+		session.process = spawn$2(chiakiExe, args, {
+			cwd: chiakiDir,
+			env,
+			stdio: [
+				"ignore",
+				"pipe",
+				"pipe"
+			]
+		});
+		let stderrBuf = "";
+		const processLine = (line) => {
+			const trimmed = line.trim();
+			if (!trimmed) return;
+			if (trimmed.startsWith("{")) try {
+				handleChiakiJsonEvent(gameId, JSON.parse(trimmed));
+				return;
+			} catch (e) {}
+			handleChiakiLogLine(gameId, trimmed);
+		};
+		readline.createInterface({ input: session.process.stdout }).on("line", processLine);
+		readline.createInterface({ input: session.process.stderr }).on("line", (line) => {
+			stderrBuf += line + "\n";
+			if (stderrBuf.length > 4096) stderrBuf = stderrBuf.slice(-4096);
+			processLine(line);
+		});
+		session.process.on("exit", (code, signal) => {
+			session.exitCode = code;
+			session.state = "disconnected";
+			stopEmbedHelper(session);
+			let reason = "unknown";
+			let wasError = true;
+			if (code === 0) {
+				reason = "clean_exit";
+				wasError = false;
+			} else if (signal) {
+				reason = "killed";
+				wasError = false;
+			} else reason = "error";
+			const elapsed = Math.floor((Date.now() - session.startTime) / 6e4);
+			sendChiakiEvent(gameId, "disconnected", {
+				reason,
+				wasError,
+				exitCode: code,
+				signal,
+				sessionMinutes: elapsed,
+				stderr: wasError ? stderrBuf.slice(-1024) : ""
+			});
+			if (isDiscordEnabled()) clearDiscordPresence();
+			const trackId = session._currentGameId || gameId;
+			const titleElapsed = session._titleStartTime ? Math.floor((Date.now() - session._titleStartTime) / 6e4) : 0;
+			if (titleElapsed > 0 && ctx.db) {
+				const game = ctx.db.games.find((g) => g.id === trackId);
+				if (game) {
+					game.playtimeMinutes = (game.playtimeMinutes || 0) + titleElapsed;
+					game.lastPlayed = (/* @__PURE__ */ new Date()).toISOString();
+					ctx.saveDB(ctx.db);
+					ctx.sendToRenderer("games:refresh", ctx.db.games);
+				}
+			}
+			const isAuthError = stderrBuf.toLowerCase().includes("regist failed") || stderrBuf.toLowerCase().includes("auth") || stderrBuf.toLowerCase().includes("invalid psn");
+			const reconnectAttempts = session._reconnectAttempts || 0;
+			if (code !== 0 && !isAuthError && reconnectAttempts < 5) {
+				const nextAttempt = reconnectAttempts + 1;
+				const delay = Math.min(1e3 * Math.pow(2, nextAttempt - 1), 16e3);
+				sendChiakiEvent(gameId, "reconnecting", {
+					attempt: nextAttempt,
+					maxAttempts: 5,
+					delayMs: delay
+				});
+				const carryReconnect = nextAttempt;
+				session._reconnectTimer = setTimeout(() => {
+					if (chiakiSessions.has(gameId)) {
+						const newSession = startChiakiSession(gameId, chiakiExe, args);
+						if (newSession) newSession._reconnectAttempts = carryReconnect;
+					}
+				}, delay);
+			} else chiakiSessions.delete(gameId);
+		});
+		session._reconnectAttempts = 0;
+		session._currentTitleId = null;
+		session._currentGameId = gameId;
+		session._titleStartTime = Date.now();
+		session.embedded = false;
+		chiakiSessions.set(gameId, session);
+		sendChiakiEvent(gameId, "state", { state: "launching" });
+		startEmbedHelper(gameId, session);
+		if (isDiscordEnabled()) {
+			const game = ctx.db.games.find((g) => g.id === gameId);
+			if (game) {
+				connectDiscord();
+				setDiscordPresence(game.name, game.platform);
+			}
+		}
+		return session;
+	}
+	function stopChiakiSession(gameId) {
+		const session = chiakiSessions.get(gameId);
+		if (!session) return false;
+		if (session._reconnectTimer) clearTimeout(session._reconnectTimer);
+		stopEmbedHelper(session);
+		if (session.process && !session.process.killed && session.process.exitCode === null) try {
+			if (process.platform === "win32") spawn$2("taskkill", [
+				"/pid",
+				String(session.process.pid),
+				"/t",
+				"/f"
+			], { stdio: "ignore" });
+			else session.process.kill("SIGTERM");
+			setTimeout(() => {
+				try {
+					if (!session.process.killed) session.process.kill("SIGKILL");
+				} catch (e) {}
+			}, 3e3);
+		} catch (e) {}
+		chiakiSessions.delete(gameId);
+		return true;
+	}
+	function getStreamBounds() {
+		const [cw, ch] = ctx.mainWindow ? ctx.mainWindow.getContentSize() : [1280, 720];
+		let sf = 1;
+		try {
+			const winBounds = ctx.mainWindow.getBounds();
+			sf = electronScreen.getDisplayNearestPoint({
+				x: winBounds.x + winBounds.width / 2,
+				y: winBounds.y + winBounds.height / 2
+			}).scaleFactor || 1;
+		} catch (e) {}
+		const barH = Math.round(CONTROL_BAR_HEIGHT * sf);
+		return {
+			x: 0,
+			y: barH,
+			w: Math.round(cw * sf),
+			h: Math.max(1, Math.round(ch * sf) - barH)
+		};
+	}
+	function startEmbedHelper(gameId, session) {
+		if (process.platform !== "win32") return;
+		if (!ctx.mainWindow || !session.process) return;
+		const hwnd = ctx.mainWindow.getNativeWindowHandle().readBigUInt64LE(0).toString();
+		const b = getStreamBounds();
+		const ps = spawn$2("powershell.exe", [
+			"-NoProfile",
+			"-ExecutionPolicy",
+			"Bypass",
+			"-File",
+			path$7.join(__dirname, "..", "scripts", "win32-stream.ps1"),
+			"-ChiakiPid",
+			String(session.process.pid),
+			"-ParentHwnd",
+			hwnd,
+			"-X",
+			String(b.x),
+			"-Y",
+			String(b.y),
+			"-W",
+			String(b.w),
+			"-H",
+			String(b.h)
+		], { stdio: [
+			"pipe",
+			"pipe",
+			"pipe"
+		] });
+		session.embedProcess = ps;
+		readline.createInterface({ input: ps.stdout }).on("line", (line) => {
+			const trimmed = line.trim();
+			if (trimmed === "ready") {
+				session.embedded = true;
+				sendChiakiEvent(gameId, "embedded", { embedded: true });
+			} else if (trimmed.startsWith("error:")) {
+				console.error("[win32-stream]", trimmed);
+				sendChiakiEvent(gameId, "embedded", {
+					embedded: false,
+					error: trimmed
+				});
+			}
+		});
+		ps.stderr.on("data", (d) => console.error("[win32-stream stderr]", d.toString().trimEnd()));
+		ps.on("exit", () => {
+			session.embedProcess = null;
+		});
+	}
+	function stopEmbedHelper(session) {
+		if (!session.embedProcess) return;
+		const ps = session.embedProcess;
+		session.embedProcess = null;
+		try {
+			ps.stdin.write("exit\n");
+		} catch (e) {}
+		setTimeout(() => {
+			try {
+				if (!ps.killed) ps.kill();
+			} catch (e) {}
+		}, 500);
+	}
+	function sendEmbedBoundsToAll() {
+		if (!ctx.mainWindow) return;
+		const b = getStreamBounds();
+		for (const session of chiakiSessions.values()) if (session.embedProcess && !session.embedProcess.killed) try {
+			session.embedProcess.stdin.write(`bounds ${b.x} ${b.y} ${b.w} ${b.h}\n`);
+		} catch (e) {}
+	}
+	function handleChiakiJsonEvent(gameId, evt) {
+		const session = chiakiSessions.get(gameId);
+		if (!session) return;
+		session.lastEvent = evt;
+		switch (evt.event) {
+			case "connecting":
+				session.state = "connecting";
+				sendChiakiEvent(gameId, "state", {
+					state: "connecting",
+					host: evt.host,
+					console: evt.console
+				});
+				break;
+			case "streaming":
+				session.state = "streaming";
+				session.streamInfo = {
+					resolution: evt.resolution,
+					codec: evt.codec,
+					fps: evt.fps
+				};
+				sendChiakiEvent(gameId, "state", {
+					state: "streaming",
+					...session.streamInfo
+				});
+				break;
+			case "quality":
+				session.quality = {
+					bitrate: evt.bitrate_mbps,
+					packetLoss: evt.packet_loss,
+					fpsActual: evt.fps_actual,
+					latencyMs: evt.latency_ms
+				};
+				sendChiakiEvent(gameId, "quality", session.quality);
+				break;
+			case "title_change":
+				handleChiakiTitleChange(gameId, evt);
+				break;
+			case "disconnected":
+				session.state = "disconnected";
+				sendChiakiEvent(gameId, "chiaki_disconnect", {
+					reason: evt.reason,
+					wasError: evt.was_error
+				});
+				break;
+			default: sendChiakiEvent(gameId, "event", evt);
+		}
+	}
+	function handleChiakiTitleChange(originalGameId, evt) {
+		const session = chiakiSessions.get(originalGameId);
+		if (!session) return;
+		const titleId = (evt.title_id || "").trim();
+		const titleName = (evt.title_name || "").trim();
+		const now = Date.now();
+		if (session._currentTitleId === titleId) return;
+		if (session._currentGameId && session._titleStartTime) {
+			const elapsed = Math.floor((now - session._titleStartTime) / 6e4);
+			if (elapsed > 0) {
+				const prev = ctx.db.games.find((g) => g.id === session._currentGameId);
+				if (prev) {
+					prev.playtimeMinutes = (prev.playtimeMinutes || 0) + elapsed;
+					prev.lastPlayed = (/* @__PURE__ */ new Date()).toISOString();
+					ctx.saveDB(ctx.db);
+					ctx.sendToRenderer("games:refresh", ctx.db.games);
+				}
+			}
+		}
+		session._currentTitleId = titleId;
+		session._titleStartTime = now;
+		if (!titleId) {
+			session._currentGameId = null;
+			if (isDiscordEnabled()) clearDiscordPresence();
+			sendChiakiEvent(originalGameId, "title_change", {
+				titleId: "",
+				titleName: "",
+				gameId: null
+			});
+			return;
+		}
+		let matchedGame = ctx.db.games.find((g) => g.platform === "psn" && g.platformId && g.platformId.toUpperCase() === titleId.toUpperCase());
+		if (!matchedGame && titleName) {
+			const lower = titleName.toLowerCase();
+			matchedGame = ctx.db.games.find((g) => g.platform === "psn" && g.name && g.name.toLowerCase() === lower);
+		}
+		if (!matchedGame && titleName) {
+			matchedGame = {
+				id: Date.now().toString(36) + Math.random().toString(36).substring(2, 7),
+				name: titleName,
+				platform: "psn",
+				platformId: titleId,
+				categories: [],
+				coverUrl: "",
+				playtimeMinutes: 0,
+				lastPlayed: (/* @__PURE__ */ new Date()).toISOString(),
+				addedAt: (/* @__PURE__ */ new Date()).toISOString(),
+				favorite: false,
+				chiakiNickname: (ctx.db.games.find((g) => g.id === originalGameId) || {}).chiakiNickname || "",
+				chiakiHost: (ctx.db.games.find((g) => g.id === originalGameId) || {}).chiakiHost || ""
+			};
+			ctx.db.games.push(matchedGame);
+			ctx.saveDB(ctx.db);
+			ctx.sendToRenderer("games:refresh", ctx.db.games);
+		}
+		if (matchedGame && !matchedGame.platformId && titleId) {
+			matchedGame.platformId = titleId;
+			ctx.saveDB(ctx.db);
+			ctx.sendToRenderer("games:refresh", ctx.db.games);
+		}
+		session._currentGameId = matchedGame ? matchedGame.id : null;
+		if (isDiscordEnabled() && matchedGame) setDiscordPresence(matchedGame.name, "psn", session.startTime);
+		sendChiakiEvent(originalGameId, "title_change", {
+			titleId,
+			titleName,
+			gameId: matchedGame ? matchedGame.id : null,
+			gameName: matchedGame ? matchedGame.name : titleName
+		});
+	}
+	function handleChiakiLogLine(gameId, line) {
+		const session = chiakiSessions.get(gameId);
+		if (!session) return;
+		const lower = line.toLowerCase();
+		if (lower.includes("starting session request") || lower.includes("starting ctrl")) {
+			if (session.state !== "streaming") {
+				session.state = "connecting";
+				sendChiakiEvent(gameId, "state", { state: "connecting" });
+			}
+		} else if (lower.includes("senkusha completed successfully") || lower.includes("streamconnection completed") || lower.includes("stream connection started") || lower.includes("video decoder")) {
+			if (session.state !== "streaming") {
+				session.state = "streaming";
+				session._reconnectAttempts = 0;
+				sendChiakiEvent(gameId, "state", { state: "streaming" });
+			}
+		} else if (lower.includes("session has quit") || lower.includes("ctrl stopped")) {} else if (lower.includes("ctrl has failed") || lower.includes("streamconnection run failed") || lower.includes("remote disconnected")) sendChiakiEvent(gameId, "log", {
+			level: "error",
+			message: line
+		});
+	}
+	function getActiveSessions() {
+		const result = {};
+		for (const [gameId, session] of chiakiSessions) result[gameId] = {
+			state: session.state,
+			startTime: session.startTime,
+			streamInfo: session.streamInfo || {},
+			quality: session.quality || {},
+			exitCode: session.exitCode,
+			reconnectAttempts: session._reconnectAttempts || 0
+		};
+		return result;
+	}
+	function autoSetupChiakiIfMissing() {
+		if (getBundledChiakiExe()) return;
+		if (CHIAKI_SYSTEM_PATHS.some((p) => fs$7.existsSync(p))) return;
+		console.log("[chiaki] Not found — starting automatic setup...");
+		ctx.sendToRenderer("chiaki:event", { type: "setup_started" });
+		const scriptPath = path$7.join(__dirname, "..", "scripts", "setup-chiaki.ps1");
+		if (!fs$7.existsSync(scriptPath)) {
+			console.warn("[chiaki] setup-chiaki.ps1 not found, skipping auto-setup");
+			return;
+		}
+		const SETUP_TIMEOUT = 300 * 1e3;
+		const child = spawn$2("powershell", [
+			"-ExecutionPolicy",
+			"Bypass",
+			"-File",
+			scriptPath,
+			"-InstallDir",
+			path$7.join(app$3.getPath("userData"), "chiaki-ng")
+		], {
+			cwd: path$7.join(__dirname, ".."),
+			stdio: "pipe"
+		});
+		let output = "";
+		let finished = false;
+		const setupTimer = setTimeout(() => {
+			if (finished) return;
+			finished = true;
+			try {
+				child.kill();
+			} catch (_) {}
+			console.error("[chiaki] Auto-setup timed out after 5 minutes");
+			ctx.sendToRenderer("chiaki:event", {
+				type: "setup_failed",
+				error: "Setup timed out after 5 minutes"
+			});
+		}, SETUP_TIMEOUT);
+		child.stdout.on("data", (d) => output += d.toString());
+		child.stderr.on("data", (d) => output += d.toString());
+		child.on("close", (code) => {
+			if (finished) return;
+			finished = true;
+			clearTimeout(setupTimer);
+			if (code === 0) {
+				const version = getBundledChiakiVersion();
+				console.log(`[chiaki] Auto-setup complete — v${version}`);
+				ctx.sendToRenderer("chiaki:event", {
+					type: "setup_complete",
+					version
+				});
+			} else {
+				console.error(`[chiaki] Auto-setup failed (exit ${code}):`, output);
+				ctx.sendToRenderer("chiaki:event", {
+					type: "setup_failed",
+					error: `Setup exited with code ${code}`
+				});
+			}
+		});
+		child.on("error", (err) => {
+			if (finished) return;
+			finished = true;
+			clearTimeout(setupTimer);
+			console.error("[chiaki] Auto-setup spawn error:", err.message);
+		});
+	}
+	function registerChiakiIpcHandlers() {
+		const db = () => ctx.db;
+		const saveDB = () => ctx.saveDB(ctx.db);
+		ipcMain$8.handle("chiaki:setStreamBounds", (event, { gameId, x, y, width, height }) => {
+			const session = chiakiSessions.get(gameId);
+			if (session?.embedProcess && !session.embedProcess.killed) try {
+				session.embedProcess.stdin.write(`bounds ${x} ${y} ${width} ${height}\n`);
+			} catch (e) {}
+			return { success: true };
+		});
+		ipcMain$8.handle("chiaki:status", () => {
+			const bundledExe = getBundledChiakiExe();
+			const bundledVersion = getBundledChiakiVersion();
+			if (bundledExe) return {
+				status: "bundled",
+				executablePath: bundledExe,
+				version: bundledVersion,
+				directory: getChiakiDir()
+			};
+			for (const p of CHIAKI_SYSTEM_PATHS) if (fs$7.existsSync(p)) return {
+				status: "system",
+				executablePath: p,
+				version: null
+			};
+			return {
+				status: "missing",
+				executablePath: null,
+				version: null
+			};
+		});
+		ipcMain$8.handle("chiaki:checkUpdate", async () => {
+			try {
+				const repo = process.env.CHIAKI_RELEASE_REPO || "streetpea/chiaki-ng";
+				const res = await net$2.fetch(`https://api.github.com/repos/${repo}/releases/latest`, { headers: { "User-Agent": "cereal-launcher" } });
+				if (!res.ok) throw new Error(`GitHub API returned ${res.status}`);
+				const data = await res.json();
+				const latestTag = data.tag_name || null;
+				const currentVersion = getBundledChiakiVersion();
+				return {
+					current: currentVersion,
+					latest: latestTag,
+					hasUpdate: !!(latestTag && (!currentVersion || latestTag !== currentVersion)),
+					releaseName: data.name || latestTag
+				};
+			} catch (e) {
+				return { error: e.message };
+			}
+		});
+		ipcMain$8.handle("chiaki:update", async () => {
+			try {
+				const scriptPath = app$3.isPackaged ? path$7.join(process.resourcesPath, "scripts", "setup-chiaki.ps1") : path$7.join(__dirname, "..", "scripts", "setup-chiaki.ps1");
+				if (!fs$7.existsSync(scriptPath)) return { error: "setup-chiaki.ps1 not found at: " + scriptPath };
+				const chiakiInstallDir = path$7.join(app$3.getPath("userData"), "chiaki-ng");
+				const SETUP_TIMEOUT = 300 * 1e3;
+				return new Promise((resolve) => {
+					const child = spawn$2("powershell", [
+						"-ExecutionPolicy",
+						"Bypass",
+						"-File",
+						scriptPath,
+						"-Force",
+						"-InstallDir",
+						chiakiInstallDir
+					], {
+						cwd: path$7.join(__dirname, ".."),
+						stdio: "pipe"
+					});
+					let output = "";
+					let resolved = false;
+					const finish = (result) => {
+						if (resolved) return;
+						resolved = true;
+						clearTimeout(timer);
+						resolve(result);
+					};
+					const timer = setTimeout(() => {
+						try {
+							child.kill();
+						} catch (_) {}
+						finish({ error: "Setup timed out after 5 minutes" });
+					}, SETUP_TIMEOUT);
+					child.stdout.on("data", (d) => output += d.toString());
+					child.stderr.on("data", (d) => output += d.toString());
+					child.on("close", (code) => {
+						if (code === 0) finish({
+							ok: true,
+							version: getBundledChiakiVersion(),
+							output
+						});
+						else finish({
+							error: `Setup exited with code ${code}`,
+							output
+						});
+					});
+					child.on("error", (err) => finish({ error: err.message }));
+				});
+			} catch (e) {
+				return { error: e.message };
+			}
+		});
+		ipcMain$8.handle("chiaki:getConfig", () => {
+			return db().chiakiConfig || {
+				executablePath: "",
+				consoles: []
+			};
+		});
+		ipcMain$8.handle("chiaki:saveConfig", (event, config) => {
+			const { cerealMode: _dropped, ...clean } = config || {};
+			db().chiakiConfig = clean;
+			saveDB();
+			return clean;
+		});
+		ipcMain$8.handle("games:setChiakiStream", (event, gameId, streamConfig) => {
+			const game = db().games.find((g) => g.id === gameId);
+			if (game) {
+				game.chiakiNickname = streamConfig.nickname || "";
+				game.chiakiHost = streamConfig.host || "";
+				game.chiakiProfile = streamConfig.profile || "";
+				game.chiakiFullscreen = streamConfig.fullscreen !== false;
+				game.chiakiRegistKey = streamConfig.registKey || "";
+				game.chiakiMorning = streamConfig.morning || "";
+				saveDB();
+				return game;
+			}
+			return null;
+		});
+		ipcMain$8.handle("chiaki:startStreamDirect", (event, opts) => {
+			const chiakiExe = resolveChiakiExe();
+			if (!chiakiExe) return {
+				success: false,
+				error: "chiaki-ng not found. Run scripts/setup-chiaki.ps1 to install it."
+			};
+			const sessionKey = "console:" + (opts.host || "unknown");
+			return {
+				success: true,
+				sessionKey,
+				state: startChiakiSession(sessionKey, chiakiExe, buildChiakiArgs({
+					chiakiHost: opts.host || "",
+					chiakiNickname: opts.nickname || "",
+					chiakiProfile: opts.profile || "",
+					chiakiRegistKey: opts.registKey || "",
+					chiakiMorning: opts.morning || "",
+					chiakiFullscreen: opts.fullscreen !== false,
+					chiakiDisplayMode: opts.displayMode || ""
+				}, db().chiakiConfig || {})).state
+			};
+		});
+		ipcMain$8.handle("chiaki:startStream", (event, gameId) => {
+			const game = db().games.find((g) => g.id === gameId);
+			if (!game) return {
+				success: false,
+				error: "Game not found"
+			};
+			const chiakiExe = resolveChiakiExe(game.executablePath);
+			if (!chiakiExe) return {
+				success: false,
+				error: "chiaki-ng not found"
+			};
+			const session = startChiakiSession(gameId, chiakiExe, buildChiakiArgs(game, db().chiakiConfig || {}));
+			game.lastPlayed = (/* @__PURE__ */ new Date()).toISOString();
+			saveDB();
+			return {
+				success: true,
+				state: session.state
+			};
+		});
+		ipcMain$8.handle("chiaki:stopStream", (event, gameId) => {
+			return { success: stopChiakiSession(gameId) };
+		});
+		ipcMain$8.handle("chiaki:getSessions", () => {
+			return getActiveSessions();
+		});
+		ipcMain$8.handle("chiaki:openGui", () => {
+			const chiakiExe = resolveChiakiExe();
+			if (!chiakiExe) return {
+				success: false,
+				error: "chiaki-ng not found"
+			};
+			const chiakiDir = path$7.dirname(chiakiExe);
+			spawn$2(chiakiExe, [], {
+				cwd: chiakiDir,
+				env: {
+					...process.env,
+					PATH: `${chiakiDir};${process.env.PATH}`
+				},
+				detached: true,
+				stdio: "ignore"
+			}).unref();
+			return { success: true };
+		});
+		ipcMain$8.handle("chiaki:registerConsole", (event, { host, psnAccountId, pin }) => {
+			const chiakiExe = resolveChiakiExe();
+			if (!chiakiExe) return {
+				success: false,
+				error: "chiaki-ng not found"
+			};
+			return new Promise((resolve) => {
+				const chiakiDir = path$7.dirname(chiakiExe);
+				const env = {
+					...process.env,
+					PATH: `${chiakiDir};${process.env.PATH}`
+				};
+				const args = [
+					"register",
+					"--host",
+					host
+				];
+				if (psnAccountId) args.push("--psn-account-id", psnAccountId);
+				if (pin) args.push("--pin", pin);
+				let output = "";
+				let resolved = false;
+				const finish = (result) => {
+					if (resolved) return;
+					resolved = true;
+					resolve(result);
+				};
+				const proc = spawn$2(chiakiExe, args, {
+					cwd: chiakiDir,
+					env,
+					stdio: [
+						"ignore",
+						"pipe",
+						"pipe"
+					]
+				});
+				proc.stdout.on("data", (d) => output += d.toString());
+				proc.stderr.on("data", (d) => output += d.toString());
+				proc.on("exit", (code) => {
+					if (code === 0) finish({
+						success: true,
+						registKey: output.match(/regist[_-]?key[=:]\s*([^\s\n]+)/i)?.[1] || "",
+						morning: output.match(/morning[=:]\s*([^\s\n]+)/i)?.[1] || "",
+						output
+					});
+					else finish({
+						success: false,
+						error: output || "Registration failed (exit " + code + ")"
+					});
+				});
+				setTimeout(() => {
+					try {
+						proc.kill();
+					} catch (e) {}
+					finish({
+						success: false,
+						error: "Registration timed out (30s)"
+					});
+				}, 3e4);
+			});
+		});
+		ipcMain$8.handle("chiaki:discoverConsoles", () => {
+			const TARGETS = [{
+				port: 987,
+				srch: Buffer.from("SRCH * HTTP/1.1\ndevice-discovery-protocol-version:00020020\n")
+			}, {
+				port: 9302,
+				srch: Buffer.from("SRCH * HTTP/1.1\ndevice-discovery-protocol-version:00030010\n")
+			}];
+			return new Promise((resolve) => {
+				const found = /* @__PURE__ */ new Map();
+				function onMessage(msg, rinfo) {
+					const text = msg.toString();
+					const statusMatch = text.match(/^HTTP\/1\.1\s+(\d+)/);
+					if (!statusMatch) return;
+					const httpCode = parseInt(statusMatch[1], 10);
+					if (httpCode !== 200 && httpCode !== 620) return;
+					console.log("[discovery] response from", rinfo.address, "status:", httpCode);
+					const state = httpCode === 200 ? "ready" : "standby";
+					const entry = {
+						host: rinfo.address,
+						state
+					};
+					for (const line of text.split("\n")) {
+						const colon = line.indexOf(":");
+						if (colon === -1) continue;
+						const k = line.substring(0, colon).trim().toLowerCase();
+						const v = line.substring(colon + 1).trim();
+						if (k === "host-name") entry.name = v;
+						if (k === "host-type") entry.type = v;
+						if (k === "host-id") entry.hostId = v;
+						if (k === "system-version") entry.firmwareVersion = v;
+						if (k === "running-app-titleid") entry.runningTitleId = v;
+						if (k === "running-app-name") entry.runningTitle = v;
+						if (k === "device-discovery-protocol-version") entry.protocolVersion = v;
+					}
+					const existing = found.get(rinfo.address);
+					if (existing) Object.assign(existing, Object.fromEntries(Object.entries(entry).filter(([, v]) => v != null && v !== "")));
+					else found.set(rinfo.address, entry);
+				}
+				const ports = [];
+				for (let p = 9303; p <= 9319; p++) ports.push(p);
+				ports.push(0);
+				function tryBind(idx) {
+					const s = dgram.createSocket({
+						type: "udp4",
+						reuseAddr: true
+					});
+					s.on("message", onMessage);
+					s.on("error", (err) => {
+						if (err.code === "EADDRINUSE" && idx + 1 < ports.length) {
+							try {
+								s.close();
+							} catch (e) {}
+							tryBind(idx + 1);
+						} else {
+							console.error("[discovery] bind failed:", err.message);
+							try {
+								s.close();
+							} catch (e) {}
+							resolve({
+								success: false,
+								consoles: [],
+								error: err.message
+							});
+						}
+					});
+					s.bind(ports[idx], () => {
+						console.log("[discovery] bound to port", ports[idx] || "(random)");
+						onBoundSock(s);
+					});
+				}
+				tryBind(0);
+				function onBoundSock(s) {
+					s.setBroadcast(true);
+					const broadcasts = new Set(["255.255.255.255"]);
+					for (const addrs of Object.values(os$1.networkInterfaces())) for (const addr of addrs) {
+						if (addr.family !== "IPv4" || addr.internal) continue;
+						if (addr.netmask) {
+							const ipParts = addr.address.split(".").map(Number);
+							const maskParts = addr.netmask.split(".").map(Number);
+							const bcast = ipParts.map((octet, i) => octet | ~maskParts[i] & 255).join(".");
+							broadcasts.add(bcast);
+						} else {
+							const parts = addr.address.split(".");
+							parts[3] = "255";
+							broadcasts.add(parts.join("."));
+						}
+					}
+					console.log("[discovery] broadcasting to:", [...broadcasts]);
+					const sendRound = () => {
+						for (const bcast of broadcasts) for (const { port, srch } of TARGETS) s.send(srch, port, bcast, (err) => {
+							if (err) console.error("[discovery] send error:", bcast, port, err.message);
+						});
+					};
+					sendRound();
+					setTimeout(sendRound, 500);
+					setTimeout(sendRound, 1500);
+					setTimeout(() => {
+						console.log("[discovery] done, found", found.size, "console(s)");
+						try {
+							s.close();
+						} catch (e) {}
+						resolve({
+							success: true,
+							consoles: [...found.values()]
+						});
+					}, 4e3);
+				}
+			});
+		});
+		ipcMain$8.handle("chiaki:wakeConsole", (event, { host, credentials }) => {
+			return new Promise((resolve) => {
+				const registKey = credentials?.registKey || "";
+				if (!registKey) return resolve({
+					success: false,
+					error: "No registration key — register the console first"
+				});
+				let resolved = false;
+				const finish = (result) => {
+					if (resolved) return;
+					resolved = true;
+					resolve(result);
+				};
+				const chiakiExe = resolveChiakiExe();
+				if (chiakiExe) {
+					const chiakiDir = path$7.dirname(chiakiExe);
+					const env = {
+						...process.env,
+						PATH: `${chiakiDir};${process.env.PATH}`
+					};
+					const proc = spawn$2(chiakiExe, [
+						"wakeup",
+						"--host",
+						host,
+						"--regist-key",
+						registKey
+					], {
+						cwd: chiakiDir,
+						env,
+						stdio: [
+							"ignore",
+							"pipe",
+							"pipe"
+						]
+					});
+					let output = "";
+					proc.stdout.on("data", (d) => output += d.toString());
+					proc.stderr.on("data", (d) => output += d.toString());
+					proc.on("exit", (code) => {
+						finish({
+							success: code === 0,
+							output,
+							method: "chiaki-cli"
+						});
+					});
+					proc.on("error", () => {
+						sendUdpWake();
+					});
+					setTimeout(() => {
+						try {
+							proc.kill();
+						} catch (e) {}
+						finish({
+							success: false,
+							error: "Wake CLI timed out (10s)",
+							method: "chiaki-cli"
+						});
+					}, 1e4);
+					return;
+				}
+				sendUdpWake();
+				function sendUdpWake() {
+					const WAKE_TARGETS = [{
+						port: 987,
+						msg: Buffer.from("WAKEUP * HTTP/1.1\nclient-type:vr\nauth-type:R\nmodel:w\napp-type:r\nuser-credential:" + registKey + "\ndevice-discovery-protocol-version:00020020\n")
+					}, {
+						port: 9302,
+						msg: Buffer.from("WAKEUP * HTTP/1.1\nclient-type:vr\nauth-type:R\nmodel:w\napp-type:r\nuser-credential:" + registKey + "\ndevice-discovery-protocol-version:00030010\n")
+					}];
+					const sock = dgram.createSocket("udp4");
+					sock.on("error", (err) => {
+						console.error("[wake] socket error:", err.message);
+						try {
+							sock.close();
+						} catch (e) {}
+						finish({
+							success: false,
+							error: err.message,
+							method: "udp"
+						});
+					});
+					sock.bind(0, () => {
+						sock.setBroadcast(true);
+						const hosts = [host];
+						const parts = host.split(".");
+						if (parts.length === 4) {
+							parts[3] = "255";
+							hosts.push(parts.join("."));
+						}
+						let total = hosts.length * WAKE_TARGETS.length;
+						let sent = 0;
+						for (const target of hosts) for (const { port, msg } of WAKE_TARGETS) sock.send(msg, port, target, (err) => {
+							if (err) console.error("[wake] send error:", target, port, err.message);
+							sent++;
+							if (sent === total) setTimeout(() => {
+								try {
+									sock.close();
+								} catch (e) {}
+								console.log("[wake] sent to", host, "(both ports)");
+								finish({
+									success: true,
+									method: "udp"
+								});
+							}, 500);
+						});
+					});
+				}
+			});
+		});
+	}
+	module.exports = {
+		getChiakiDir,
+		getBundledChiakiExe,
+		getBundledChiakiVersion,
+		chiakiSessions,
+		resolveChiakiExe,
+		buildChiakiArgs,
+		startChiakiSession,
+		stopChiakiSession,
+		getStreamBounds,
+		startEmbedHelper,
+		stopEmbedHelper,
+		sendEmbedBoundsToAll,
+		sendStreamEvent,
+		sendChiakiEvent,
+		getActiveSessions,
+		autoSetupChiakiIfMissing,
+		registerChiakiIpcHandlers
+	};
+}));
+//#endregion
+//#region electron/modules/xcloud.js
+var require_xcloud = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	var { WebContentsView, session: session$1 } = require("electron");
+	var ctx = require_context();
+	var { CONTROL_BAR_HEIGHT } = require_constants();
+	require_logger();
+	var xcloudSessions = /* @__PURE__ */ new Map();
+	function sendStreamEvent(gameId, type, data) {
+		ctx.sendToRenderer("chiaki:event", {
+			gameId,
+			type,
+			...data
+		});
+	}
+	function getXcloudBounds() {
+		const [cw, ch] = ctx.mainWindow ? ctx.mainWindow.getContentSize() : [1280, 720];
+		return {
+			x: 0,
+			y: CONTROL_BAR_HEIGHT,
+			width: cw,
+			height: Math.max(1, ch - CONTROL_BAR_HEIGHT)
+		};
+	}
+	function updateXcloudBounds(sess) {
+		if (!sess || !sess.view) return;
+		const b = getXcloudBounds();
+		try {
+			sess.view.setBounds(b);
+		} catch (e) {}
+	}
+	function updateAllXcloudBounds() {
+		for (const sess of xcloudSessions.values()) updateXcloudBounds(sess);
+	}
+	function startXcloudSession(gameId, url) {
+		stopXcloudSession(gameId);
+		const view = new WebContentsView({ webPreferences: {
+			session: session$1.fromPartition("persist:xcloud"),
+			contextIsolation: true,
+			sandbox: true
+		} });
+		const ua = view.webContents.getUserAgent().replace(/Electron\/\S+\s*/, "") + " Edg/120.0.0.0";
+		view.webContents.setUserAgent(ua);
+		ctx.mainWindow.contentView.addChildView(view);
+		const sess = {
+			gameId,
+			view,
+			state: "loading",
+			startTime: Date.now()
+		};
+		xcloudSessions.set(gameId, sess);
+		updateXcloudBounds(sess);
+		view.webContents.loadURL(url || "https://www.xbox.com/play");
+		view.webContents.on("dom-ready", () => {
+			sess.state = "streaming";
+			sendStreamEvent(gameId, "state", {
+				state: "streaming",
+				platform: "xbox"
+			});
+		});
+		view.webContents.on("did-fail-load", (e, code, desc) => {
+			sess.state = "disconnected";
+			sendStreamEvent(gameId, "disconnected", {
+				reason: desc,
+				platform: "xbox"
+			});
+		});
+		sendStreamEvent(gameId, "state", {
+			state: "connecting",
+			platform: "xbox"
+		});
+		return sess;
+	}
+	function stopXcloudSession(gameId) {
+		const sess = xcloudSessions.get(gameId);
+		if (!sess) return false;
+		if (sess._stopping) return false;
+		sess._stopping = true;
+		try {
+			try {
+				if (ctx.mainWindow && !ctx.mainWindow.isDestroyed()) ctx.mainWindow.contentView.removeChildView(sess.view);
+			} catch (e) {}
+			xcloudSessions.delete(gameId);
+			sendStreamEvent(gameId, "disconnected", {
+				reason: "stopped",
+				platform: "xbox"
+			});
+			if (sess.view?.webContents && !sess.view.webContents.isDestroyed()) try {
+				sess.view.webContents.loadURL("https://www.xbox.com/play");
+			} catch (e) {}
+			setTimeout(() => {
+				if (sess.view?.webContents?.session && !sess.view.webContents.isDestroyed()) try {
+					sess.view.webContents.session.clearStorageData({
+						origin: "https://www.xbox.com",
+						storages: [
+							"cookies",
+							"localstorage",
+							"sessionstorage",
+							"cachestorage"
+						]
+					}).catch(() => {});
+				} catch (e) {}
+				try {
+					if (sess.view?.webContents && !sess.view.webContents.isDestroyed()) sess.view.webContents.close();
+				} catch (e) {}
+				sess.view = null;
+				console.log(`[xcloud] Session ${gameId} stopped gracefully`);
+			}, 500);
+			return true;
+		} catch (e) {
+			console.error("[xcloud] Error stopping session:", e);
+			try {
+				ctx.mainWindow?.contentView?.removeChildView(sess.view);
+			} catch (_) {}
+			try {
+				sess.view?.webContents?.close();
+			} catch (_) {}
+			xcloudSessions.delete(gameId);
+			sendStreamEvent(gameId, "disconnected", {
+				reason: "error",
+				platform: "xbox",
+				error: e.message
+			});
+			return false;
+		}
+	}
+	function getActiveXcloudSessions() {
+		const result = {};
+		for (const [gameId, sess] of xcloudSessions) result[gameId] = {
+			state: sess.state,
+			platform: "xbox",
+			startTime: sess.startTime
+		};
+		return result;
+	}
+	module.exports = {
+		xcloudSessions,
+		updateAllXcloudBounds,
+		startXcloudSession,
+		stopXcloudSession,
+		getActiveXcloudSessions
+	};
+}));
+//#endregion
+//#region electron/modules/gameCrud.js
+var require_gameCrud = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	var { ipcMain: ipcMain$7 } = require("electron");
+	var fs$6 = require("fs");
+	var path$6 = require("path");
+	var ctx = require_context();
+	function getProvidersDir() {
+		const candidates = [
+			path$6.join(__dirname, "..", "providers"),
+			path$6.join(__dirname, "providers"),
+			path$6.join(process.cwd(), "electron", "providers")
+		];
+		for (const candidate of candidates) if (fs$6.existsSync(path$6.join(candidate, "index.js"))) return candidate;
+		throw new Error("Cannot find providers directory. Tried: " + candidates.join(", "));
+	}
+	var { canonicalize: canonicalizeName } = require(path$6.join(getProvidersDir(), "utils"));
+	var { enqueueCoverFetch } = require_covers();
+	var { fetchGameMetadata, applyMetadataToGame } = require_metadata();
+	var log = require_logger();
+	function registerGameCrudIpcHandlers() {
+		ipcMain$7.handle("games:getAll", () => ctx.db.games);
+		ipcMain$7.handle("games:getCategories", () => ctx.db.categories);
+		ipcMain$7.handle("games:add", (_event, game) => {
+			const db = ctx.db;
+			if (!game || typeof game !== "object") return { error: "Invalid game data" };
+			if (!game.name || typeof game.name !== "string" || !game.name.trim()) return { error: "Game name is required" };
+			game.name = game.name.trim();
+			let existing = null;
+			try {
+				if (game.platform && game.platformId) existing = db.games.find((g) => g.platform === game.platform && g.platformId && g.platformId === game.platformId);
+				if (!existing) {
+					const canon = canonicalizeName(game.name || "");
+					if (canon) existing = db.games.find((g) => canonicalizeName(g.name) === canon && (!game.platform || g.platform === game.platform));
+				}
+			} catch (_e) {
+				existing = null;
+			}
+			if (existing) {
+				const prev = existing;
+				const merged = {
+					...prev,
+					...game
+				};
+				try {
+					const coverChanged = typeof game.coverUrl === "string" && game.coverUrl !== prev.coverUrl;
+					const headerChanged = typeof game.headerUrl === "string" && game.headerUrl !== prev.headerUrl;
+					if (coverChanged || headerChanged) merged._imgStamp = Date.now();
+					else merged._imgStamp = prev._imgStamp;
+				} catch (_e) {
+					merged._imgStamp = prev._imgStamp;
+				}
+				if (!merged.platform) merged.platform = prev.platform;
+				if (!merged.platformId) merged.platformId = prev.platformId;
+				if (prev.installed === true && merged.installed === false) merged.installed = true;
+				db.games[db.games.findIndex((g) => g.id === prev.id)] = merged;
+				ctx.saveDB(db);
+				ctx.sendToRenderer("games:refresh", db.games);
+				try {
+					enqueueCoverFetch(merged.id);
+				} catch (e) {
+					log.debug("covers", "enqueue failed", e);
+				}
+				return merged;
+			}
+			game.id = Date.now().toString(36) + Math.random().toString(36).substring(2, 7);
+			game.addedAt = (/* @__PURE__ */ new Date()).toISOString();
+			game.lastPlayed = null;
+			game.playtimeMinutes = 0;
+			game.favorite = false;
+			if (game.coverUrl) game._imgStamp = Date.now();
+			db.games.push(game);
+			ctx.saveDB(db);
+			try {
+				enqueueCoverFetch(game.id);
+			} catch (e) {
+				log.debug("covers", "enqueue failed", e);
+			}
+			fetchGameMetadata(game).then((meta) => {
+				if (meta && applyMetadataToGame(game, meta)) {
+					ctx.saveDB(db);
+					ctx.sendToRenderer("games:refresh", db.games);
+					try {
+						enqueueCoverFetch(game.id);
+					} catch (e) {
+						log.debug("covers", "enqueue failed", e);
+					}
+				}
+			}).catch(() => {});
+			return game;
+		});
+		ipcMain$7.handle("games:update", (_event, updatedGame) => {
+			const db = ctx.db;
+			if (!updatedGame || typeof updatedGame !== "object" || !updatedGame.id) return null;
+			if (updatedGame.name !== void 0 && (typeof updatedGame.name !== "string" || !updatedGame.name.trim())) return null;
+			const idx = db.games.findIndex((g) => g.id === updatedGame.id);
+			if (idx !== -1) {
+				const prev = db.games[idx];
+				const merged = {
+					...prev,
+					...updatedGame
+				};
+				try {
+					const coverChanged = typeof updatedGame.coverUrl === "string" && updatedGame.coverUrl !== prev.coverUrl;
+					const headerChanged = typeof updatedGame.headerUrl === "string" && updatedGame.headerUrl !== prev.headerUrl;
+					if (coverChanged) {
+						if (prev.localCoverPath) try {
+							fs$6.unlinkSync(prev.localCoverPath);
+						} catch (_e) {
+							log.debug("covers", "unlink cover failed");
+						}
+						merged.localCoverPath = null;
+						merged._imgStamp = Date.now();
+					}
+					if (headerChanged) {
+						if (prev.localHeaderPath) try {
+							fs$6.unlinkSync(prev.localHeaderPath);
+						} catch (_e) {
+							log.debug("covers", "unlink header failed");
+						}
+						merged.localHeaderPath = null;
+						merged._imgStamp = Date.now();
+					}
+					if (!coverChanged && !headerChanged) merged._imgStamp = prev._imgStamp;
+				} catch (_e) {
+					merged._imgStamp = prev._imgStamp;
+				}
+				db.games[idx] = merged;
+				ctx.saveDB(db);
+				ctx.sendToRenderer("games:refresh", db.games);
+				try {
+					enqueueCoverFetch(updatedGame.id);
+				} catch (e) {
+					log.debug("covers", "enqueue failed", e);
+				}
+				return db.games[idx];
+			}
+			return null;
+		});
+		ipcMain$7.handle("games:delete", (_event, id) => {
+			const db = ctx.db;
+			db.games = db.games.filter((g) => g.id !== id);
+			ctx.saveDB(db);
+			ctx.sendToRenderer("games:refresh", db.games);
+			return true;
+		});
+		ipcMain$7.handle("games:toggleFavorite", (_event, id) => {
+			const db = ctx.db;
+			const game = db.games.find((g) => g.id === id);
+			if (game) {
+				game.favorite = !game.favorite;
+				ctx.saveDB(db);
+				ctx.sendToRenderer("games:refresh", db.games);
+				return game;
+			}
+			return null;
+		});
+		ipcMain$7.handle("covers:fetchNow", async (_event, gameId) => {
+			try {
+				enqueueCoverFetch(gameId);
+				return { queued: true };
+			} catch (e) {
+				return { error: e.message };
+			}
+		});
+		ipcMain$7.handle("categories:add", (_event, category) => {
+			const db = ctx.db;
+			if (!db.categories.includes(category)) {
+				db.categories.push(category);
+				ctx.saveDB(db);
+			}
+			return db.categories;
+		});
+		ipcMain$7.handle("categories:remove", (_event, category) => {
+			const db = ctx.db;
+			db.categories = db.categories.filter((c) => c !== category);
+			db.games.forEach((g) => {
+				g.categories = (g.categories || []).filter((c) => c !== category);
+			});
+			ctx.saveDB(db);
+			return db.categories;
+		});
+		ipcMain$7.handle("tabs:switch", () => {});
+		ipcMain$7.handle("tabs:close", () => {});
+	}
+	module.exports = { registerGameCrudIpcHandlers };
+}));
+//#endregion
+//#region electron/modules/database.js
+var require_database = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	var { app: app$2 } = require("electron");
+	var path$5 = require("path");
+	var fs$5 = require("fs");
+	var DB_PATH = path$5.join(app$2 ? app$2.getPath("userData") : ".", "games.json");
+	function writeDBSync(data) {
+		try {
+			if (fs$5.existsSync(DB_PATH)) fs$5.copyFileSync(DB_PATH, DB_PATH + ".bak");
+		} catch (_e) {}
+		const tmp = DB_PATH + ".tmp";
+		fs$5.writeFileSync(tmp, JSON.stringify(data, null, 2));
+		fs$5.renameSync(tmp, DB_PATH);
+	}
+	var _saveDBTimer = null;
+	function saveDB(data) {
+		clearTimeout(_saveDBTimer);
+		_saveDBTimer = setTimeout(() => {
+			_saveDBTimer = null;
+			try {
+				writeDBSync(data);
+			} catch (e) {
+				console.error("Failed to save DB:", e.message);
+			}
+		}, 150);
+	}
+	function flushDB(db) {
+		if (_saveDBTimer) {
+			clearTimeout(_saveDBTimer);
+			_saveDBTimer = null;
+			try {
+				writeDBSync(db);
+			} catch (e) {
+				console.error("Failed to flush DB:", e.message);
+			}
+		}
+	}
+	function loadDB() {
+		for (const filePath of [DB_PATH, DB_PATH + ".bak"]) try {
+			if (!fs$5.existsSync(filePath)) continue;
+			const data = JSON.parse(fs$5.readFileSync(filePath, "utf-8"));
+			if (filePath !== DB_PATH) console.warn("[DB] Loaded from backup — primary was corrupt");
+			if (data.games) {
+				const before = data.games.length;
+				data.games = data.games.filter((g) => g.platform !== "psn" && g.platform !== "psremote");
+				if (data.games.length !== before) saveDB(data);
+			}
+			return data;
+		} catch (e) {
+			console.error("[DB] Failed to load", filePath, e.message);
+		}
+		const seed = {
+			categories: [
+				"Action",
+				"Adventure",
+				"RPG",
+				"Strategy",
+				"Puzzle",
+				"Simulation",
+				"Sports",
+				"FPS",
+				"Indie",
+				"Multiplayer"
+			],
+			playtime: {},
+			games: []
+		};
+		saveDB(seed);
+		return seed;
+	}
+	module.exports = {
+		DB_PATH,
+		loadDB,
+		saveDB,
+		flushDB,
+		writeDBSync
+	};
+}));
+//#endregion
+//#region electron/modules/keys.js
+var require_keys = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	var { ipcMain: ipcMain$6, dialog: dialog$2, shell: shell$2, clipboard } = require("electron");
+	var crypto = require("crypto");
+	var path$4 = require("path");
+	var fs$4 = require("fs");
+	var ctx = require_context();
+	var { ALLOWED_KEY_SERVICES } = require_constants();
+	function getProvidersDir() {
+		const candidates = [
+			path$4.join(__dirname, "..", "providers"),
+			path$4.join(__dirname, "providers"),
+			path$4.join(process.cwd(), "electron", "providers")
+		];
+		for (const candidate of candidates) if (fs$4.existsSync(path$4.join(candidate, "index.js"))) return candidate;
+		throw new Error("Cannot find providers directory. Tried: " + candidates.join(", "));
+	}
+	var providers = null;
+	function getProviders() {
+		if (!providers) providers = require(getProvidersDir());
+		return providers;
+	}
+	var { httpGetJson } = require(path$4.join(getProvidersDir(), "http"));
+	function summarizeSecret(secret) {
+		if (!secret) return {
+			hasSecret: false,
+			fingerprint: null
+		};
+		try {
+			return {
+				hasSecret: true,
+				fingerprint: crypto.createHash("sha256").update(secret).digest("hex").slice(0, 8)
+			};
+		} catch (_e) {
+			return {
+				hasSecret: true,
+				fingerprint: "unknown"
+			};
+		}
+	}
+	async function validateProviderKey(provider, apiKey) {
+		const providers = getProviders();
+		if (!apiKey) return {
+			ok: false,
+			provider,
+			error: "missing-key"
+		};
+		if (providers && providers[provider] && typeof providers[provider].validateKey === "function") try {
+			const res = await providers[provider].validateKey(apiKey);
+			return {
+				ok: !!res.ok,
+				provider,
+				info: res.info,
+				error: res.error
+			};
+		} catch (err) {
+			return {
+				ok: false,
+				provider,
+				error: err && err.message
+			};
+		}
+		if (provider === "steam") {
+			const res = await httpGetJson(`https://api.steampowered.com/ISteamWebAPIUtil/GetServerInfo/v1/?key=${encodeURIComponent(apiKey)}`);
+			if (res && res.status === 200 && res.data) return {
+				ok: true,
+				provider: "steam",
+				info: res.data
+			};
+			return {
+				ok: false,
+				provider: "steam",
+				error: res && (res.data || res.raw || "Steam API error")
+			};
+		}
+		return {
+			ok: false,
+			provider,
+			error: "unknown-provider"
+		};
+	}
+	function registerKeysIpcHandlers() {
+		ipcMain$6.handle("keys:set", async (_event, { service, account, secret }) => {
+			if (!ALLOWED_KEY_SERVICES.includes(service)) return {
+				ok: false,
+				error: "Unauthorized service: " + service
+			};
+			try {
+				ctx.safeStore.setPassword(service, account, secret);
+				return {
+					ok: true,
+					...summarizeSecret(secret)
+				};
+			} catch (err) {
+				console.error("keys:set error", err);
+				return {
+					ok: false,
+					error: err && err.message
+				};
+			}
+		});
+		ipcMain$6.handle("keys:get", async (_event, { service, account }) => {
+			if (!ALLOWED_KEY_SERVICES.includes(service)) return {
+				ok: false,
+				error: "Unauthorized service: " + service
+			};
+			try {
+				return {
+					ok: true,
+					...summarizeSecret(ctx.safeStore.getPassword(service, account))
+				};
+			} catch (err) {
+				console.error("keys:get error", err);
+				return {
+					ok: false,
+					error: err && err.message
+				};
+			}
+		});
+		ipcMain$6.handle("keys:delete", async (_event, { service, account }) => {
+			if (!ALLOWED_KEY_SERVICES.includes(service)) return {
+				ok: false,
+				error: "Unauthorized service: " + service
+			};
+			try {
+				return { ok: ctx.safeStore.deletePassword(service, account) };
+			} catch (err) {
+				console.error("keys:delete error", err);
+				return {
+					ok: false,
+					error: err && err.message
+				};
+			}
+		});
+		ipcMain$6.handle("keys:validate", async (_event, { provider, apiKey }) => {
+			try {
+				return await validateProviderKey(provider, apiKey);
+			} catch (err) {
+				console.error("keys:validate error", err);
+				return {
+					ok: false,
+					error: err && err.message
+				};
+			}
+		});
+		ipcMain$6.handle("keys:validateStored", async (_event, { provider, service, account }) => {
+			if (!ALLOWED_KEY_SERVICES.includes(service)) return {
+				ok: false,
+				error: "Unauthorized service: " + service
+			};
+			try {
+				const secret = ctx.safeStore.getPassword(service, account);
+				if (!secret) return {
+					ok: false,
+					error: "no-secret",
+					provider
+				};
+				return await validateProviderKey(provider, secret);
+			} catch (err) {
+				console.error("keys:validateStored error", err);
+				return {
+					ok: false,
+					error: err && err.message
+				};
+			}
+		});
+		ipcMain$6.handle("steamgriddb:login", async () => {
+			try {
+				await shell$2.openExternal("https://www.steamgriddb.com/profile/preferences/api");
+				const { response } = await dialog$2.showMessageBox(ctx.mainWindow, {
+					type: "info",
+					buttons: ["Paste API Key", "Cancel"],
+					defaultId: 0,
+					message: "SteamGridDB Login",
+					detail: "Copy your API key from the SteamGridDB page that opened, then click \"Paste API Key\"."
+				});
+				if (response !== 0) return { cancelled: true };
+				const apiKey = clipboard.readText().trim();
+				if (!apiKey) return { error: "Clipboard is empty. Copy your SteamGridDB API key first, then try again." };
+				const vr = await validateProviderKey("steamgriddb", apiKey);
+				if (!vr?.ok) return { error: "API key appears invalid: " + (vr?.error || "unknown error") };
+				ctx.safeStore.setPassword("cereal-steamgriddb", "default", apiKey);
+				return {
+					ok: true,
+					...summarizeSecret(apiKey)
+				};
+			} catch (e) {
+				return { error: e.message };
+			}
+		});
+		ipcMain$6.handle("clipboard:readText", () => {
+			try {
+				return clipboard.readText();
+			} catch (_e) {
+				return "";
+			}
+		});
+	}
+	module.exports = {
+		registerKeysIpcHandlers,
+		validateProviderKey,
+		summarizeSecret
+	};
+}));
+//#endregion
+//#region electron/modules/metadataSearch.js
+var require_metadataSearch = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	var { net: net$1, ipcMain: ipcMain$5 } = require("electron");
+	require("crypto");
+	var { getMetadataSettings, httpGet } = require_metadata();
+	require_logger();
+	async function searchSteam(gameName) {
+		const results = [];
+		const search = await httpGet(`https://store.steampowered.com/api/storesearch/?term=${encodeURIComponent(gameName)}&l=english&cc=US`);
+		if (search?.items?.length) for (const item of search.items.slice(0, 3)) {
+			const id = item.id;
+			const name = item.name || "";
+			try {
+				const info = (await httpGet(`https://store.steampowered.com/api/appdetails?appids=${id}&l=english`))?.[String(id)]?.data;
+				if (info) {
+					results.push({
+						url: `https://shared.steamstatic.com/store_item_assets/steam/apps/${id}/library_600x900_2x.jpg`,
+						type: "cover",
+						source: "Steam",
+						label: name + " - Portrait (HD)"
+					});
+					if (info.header_image) results.push({
+						url: info.header_image,
+						type: "header",
+						source: "Steam",
+						label: name + " - Header"
+					});
+					results.push({
+						url: `https://shared.steamstatic.com/store_item_assets/steam/apps/${id}/library_hero.jpg`,
+						type: "header",
+						source: "Steam",
+						label: name + " - Hero"
+					});
+					if (info.screenshots) for (const ss of info.screenshots.slice(0, 2)) results.push({
+						url: ss.path_full,
+						type: "screenshot",
+						source: "Steam",
+						label: name + " - Screenshot"
+					});
+				}
+			} catch (e) {}
+		}
+		return results;
+	}
+	async function searchSteamGridDB(gameName, apiKey) {
+		if (!apiKey) return [];
+		const results = [];
+		const q = encodeURIComponent(gameName);
+		const sgdbFetch = async (endpoint) => {
+			const resp = await net$1.fetch(endpoint, { headers: { "Authorization": "Bearer " + apiKey } });
+			if (!resp.ok) throw new Error("SGDB HTTP " + resp.status);
+			return resp.json();
+		};
+		const searchData = await sgdbFetch(`https://www.steamgriddb.com/api/v2/search/autocomplete/${q}`);
+		if (!searchData?.success || !searchData?.data?.length) return results;
+		const gameId = searchData.data[0].id;
+		const gamLabel = searchData.data[0].name || gameName;
+		const [portraitGrids, landscapeGrids, heroes, logos] = await Promise.allSettled([
+			sgdbFetch(`https://www.steamgriddb.com/api/v2/grids/game/${gameId}?dimensions=600x900&limit=8`),
+			sgdbFetch(`https://www.steamgriddb.com/api/v2/grids/game/${gameId}?dimensions=460x215,920x430&limit=4`),
+			sgdbFetch(`https://www.steamgriddb.com/api/v2/heroes/game/${gameId}?limit=4`),
+			sgdbFetch(`https://www.steamgriddb.com/api/v2/logos/game/${gameId}?limit=2`)
+		]);
+		if (portraitGrids.status === "fulfilled" && portraitGrids.value?.data) {
+			for (const g of portraitGrids.value.data.slice(0, 8)) if (g.url) results.push({
+				url: g.url,
+				type: "cover",
+				source: "SteamGridDB",
+				label: gamLabel + " - Cover"
+			});
+		}
+		if (landscapeGrids.status === "fulfilled" && landscapeGrids.value?.data) {
+			for (const g of landscapeGrids.value.data.slice(0, 4)) if (g.url) results.push({
+				url: g.url,
+				type: "header",
+				source: "SteamGridDB",
+				label: gamLabel + " - Header"
+			});
+		}
+		if (heroes.status === "fulfilled" && heroes.value?.data) {
+			for (const h of heroes.value.data.slice(0, 4)) if (h.url) results.push({
+				url: h.url,
+				type: "header",
+				source: "SteamGridDB",
+				label: gamLabel + " - Hero"
+			});
+		}
+		if (logos.status === "fulfilled" && logos.value?.data) {
+			for (const l of logos.value.data.slice(0, 2)) if (l.url) results.push({
+				url: l.url,
+				type: "logo",
+				source: "SteamGridDB",
+				label: gamLabel + " - Logo"
+			});
+		}
+		return results;
+	}
+	async function handleSearchArt(event, gameName, platform) {
+		if (!gameName) return { images: [] };
+		const ms = getMetadataSettings();
+		const [sgdbResult, steamResult] = await Promise.allSettled([searchSteamGridDB(gameName, ms.steamGridDbKey), searchSteam(gameName)]);
+		const sgdb = sgdbResult.status === "fulfilled" ? sgdbResult.value : (console.log("[ArtSearch] SteamGridDB failed:", sgdbResult.reason?.message), []);
+		const steam = steamResult.status === "fulfilled" ? steamResult.value : (console.log("[ArtSearch] Steam failed:", steamResult.reason?.message), []);
+		const images = [];
+		const seen = /* @__PURE__ */ new Set();
+		for (const img of sgdb) if (img.url && !seen.has(img.url)) {
+			seen.add(img.url);
+			images.push(img);
+		}
+		if (images.length === 0) {
+			for (const img of steam) if (img.url && !seen.has(img.url)) {
+				seen.add(img.url);
+				images.push(img);
+			}
+		}
+		return { images };
+	}
+	function registerMetadataSearchHandlers() {
+		ipcMain$5.handle("metadata:searchArt", handleSearchArt);
+	}
+	module.exports = { registerMetadataSearchHandlers };
+}));
+//#endregion
+//#region electron/modules/metadataIpc.js
+var require_metadataIpc = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	var { ipcMain: ipcMain$4 } = require("electron");
+	var ctx = require_context();
+	var { fetchGameMetadata, applyMetadataToGame, invalidateMetadataCache } = require_metadata();
+	var { enqueueCoverFetch } = require_covers();
+	var { registerMetadataSearchHandlers } = require_metadataSearch();
+	var log = require_logger();
+	function registerMetadataIpcHandlers() {
+		registerMetadataSearchHandlers();
+		ipcMain$4.handle("metadata:fetch", async (_event, gameId) => {
+			const game = ctx.db.games.find((g) => g.id === gameId);
+			if (!game) return { error: "Game not found" };
+			try {
+				const meta = await fetchGameMetadata(game);
+				if (!meta) return { error: "No metadata found" };
+				return {
+					success: true,
+					metadata: meta
+				};
+			} catch (e) {
+				return { error: e.message };
+			}
+		});
+		ipcMain$4.handle("metadata:apply", async (_event, gameId, force) => {
+			const db = ctx.db;
+			const game = db.games.find((g) => g.id === gameId);
+			if (!game) return { error: "Game not found" };
+			try {
+				invalidateMetadataCache((game.platform || "") + ":" + (game.platformId || game.name));
+				const meta = await fetchGameMetadata(game);
+				if (!meta) return { error: "No metadata found" };
+				if (force) {
+					const prevCoverUrl = game.coverUrl;
+					const prevHeaderUrl = game.headerUrl;
+					game.coverUrl = meta.coverUrl || meta.headerUrl || meta.screenshots && meta.screenshots[0] || game.coverUrl;
+					if (meta.description) game.description = meta.description;
+					if (meta.developer) game.developer = meta.developer;
+					if (meta.publisher) game.publisher = meta.publisher;
+					if (meta.releaseDate) game.releaseDate = meta.releaseDate;
+					if (meta.genres?.length) game.categories = meta.genres;
+					game.headerUrl = meta.headerUrl || meta.coverUrl || meta.screenshots && meta.screenshots[0] || game.headerUrl;
+					if (meta.screenshots?.length) game.screenshots = meta.screenshots;
+					if (meta.metacritic != null) game.metacritic = meta.metacritic;
+					if (meta.website) game.website = meta.website;
+					if (game.coverUrl !== prevCoverUrl) {
+						game.localCoverPath = null;
+						game._imgStamp = Date.now();
+					}
+					if (game.headerUrl !== prevHeaderUrl) {
+						game.localHeaderPath = null;
+						game._imgStamp = Date.now();
+					}
+					ctx.saveDB(db);
+					ctx.sendToRenderer("games:refresh", db.games);
+					try {
+						enqueueCoverFetch(game.id);
+					} catch (e) {
+						log.debug("covers", "enqueue failed", e);
+					}
+					return {
+						success: true,
+						game
+					};
+				} else {
+					if (applyMetadataToGame(game, meta)) {
+						ctx.saveDB(db);
+						ctx.sendToRenderer("games:refresh", db.games);
+						try {
+							enqueueCoverFetch(game.id);
+						} catch (e) {
+							log.debug("covers", "enqueue failed", e);
+						}
+					}
+					return {
+						success: true,
+						game
+					};
+				}
+			} catch (e) {
+				return { error: e.message };
+			}
+		});
+		ipcMain$4.handle("metadata:fetchForName", async (_event, name, platform, platformId) => {
+			if (!name) return { error: "No name provided" };
+			try {
+				const meta = await fetchGameMetadata({
+					name,
+					platform: platform || "custom",
+					platformId: platformId || void 0
+				});
+				if (!meta) return { error: "No metadata found" };
+				return {
+					success: true,
+					meta
+				};
+			} catch (e) {
+				return { error: e.message };
+			}
+		});
+		ipcMain$4.handle("metadata:fetchAll", async () => {
+			const db = ctx.db;
+			let updated = 0, failed = 0;
+			const queue = [...db.games].sort((a, b) => {
+				return (a.installed === false ? 1 : 0) - (b.installed === false ? 1 : 0);
+			});
+			const total = queue.length;
+			const BATCH = 3;
+			const REFRESH_INTERVAL = 500;
+			let lastRefreshAt = 0;
+			let pendingRefresh = false;
+			for (let i = 0; i < total; i += BATCH) {
+				const batch = queue.slice(i, i + BATCH);
+				const results = await Promise.allSettled(batch.map(async (game) => {
+					return {
+						game,
+						meta: await fetchGameMetadata(game)
+					};
+				}));
+				let batchUpdated = 0;
+				for (const r of results) if (r.status === "fulfilled" && r.value.meta) {
+					if (applyMetadataToGame(r.value.game, r.value.meta)) {
+						updated++;
+						batchUpdated++;
+						try {
+							enqueueCoverFetch(r.value.game.id);
+						} catch (e) {
+							log.debug("covers", "enqueue failed", e);
+						}
+					}
+				} else failed++;
+				if (batchUpdated > 0) {
+					ctx.saveDB(db);
+					pendingRefresh = true;
+				}
+				const now = Date.now();
+				if (pendingRefresh && now - lastRefreshAt >= REFRESH_INTERVAL) {
+					ctx.sendToRenderer("games:refresh", db.games);
+					lastRefreshAt = now;
+					pendingRefresh = false;
+				}
+				const done = Math.min(i + BATCH, total);
+				ctx.sendToRenderer("metadata:progress", {
+					current: done,
+					total,
+					updated,
+					failed,
+					name: batch[batch.length - 1].name,
+					phase: "metadata"
+				});
+				if (i + BATCH < total) await new Promise((r) => setTimeout(r, 200));
+			}
+			if (updated > 0) {
+				ctx.saveDB(db);
+				ctx.sendToRenderer("games:refresh", db.games);
+			}
+			return {
+				updated,
+				failed,
+				total
+			};
+		});
+	}
+	module.exports = { registerMetadataIpcHandlers };
+}));
+//#endregion
+//#region electron/modules/launcher.js
+var require_launcher = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	var path$3 = require("path");
+	var fs$3 = require("fs");
+	var { shell: shell$1 } = require("electron");
+	var { spawn: spawn$1 } = require("child_process");
+	function normalizePlatform(platform) {
+		if (platform === "psremote") return "psn";
+		return platform;
+	}
+	function getLauncherExecutableCandidates(platform) {
+		switch (platform) {
+			case "steam": return [path$3.join(process.env["ProgramFiles(x86)"] || "", "Steam", "Steam.exe"), path$3.join(process.env.ProgramFiles || "", "Steam", "Steam.exe")];
+			case "epic": return [path$3.join(process.env["ProgramFiles(x86)"] || "", "Epic Games", "Launcher", "Portal", "Binaries", "Win64", "EpicGamesLauncher.exe"), path$3.join(process.env.ProgramFiles || "", "Epic Games", "Launcher", "Portal", "Binaries", "Win64", "EpicGamesLauncher.exe")];
+			case "gog": return [path$3.join(process.env["ProgramFiles(x86)"] || "", "GOG Galaxy", "GalaxyClient.exe"), path$3.join(process.env.ProgramFiles || "", "GOG Galaxy", "GalaxyClient.exe")];
+			case "ea": return [
+				path$3.join(process.env.ProgramFiles || "", "Electronic Arts", "EA Desktop", "EA Desktop", "EADesktop.exe"),
+				path$3.join(process.env.LOCALAPPDATA || "", "Electronic Arts", "EA Desktop", "EA Desktop", "EADesktop.exe"),
+				path$3.join(process.env["ProgramFiles(x86)"] || "", "Origin", "Origin.exe")
+			];
+			case "battlenet": return [path$3.join(process.env.ProgramFiles || "", "Battle.net", "Battle.net.exe"), path$3.join(process.env["ProgramFiles(x86)"] || "", "Battle.net", "Battle.net.exe")];
+			case "ubisoft": return [
+				path$3.join(process.env.ProgramFiles || "", "Ubisoft", "Ubisoft Game Launcher", "UbisoftConnect.exe"),
+				path$3.join(process.env["ProgramFiles(x86)"] || "", "Ubisoft", "Ubisoft Game Launcher", "UbisoftConnect.exe"),
+				path$3.join(process.env.ProgramFiles || "", "Ubisoft", "Ubisoft Game Launcher", "Uplay.exe"),
+				path$3.join(process.env["ProgramFiles(x86)"] || "", "Ubisoft", "Ubisoft Game Launcher", "Uplay.exe")
+			];
+			case "itchio": {
+				const itchBase = path$3.join(process.env.LOCALAPPDATA || "", "itch");
+				try {
+					return fs$3.readdirSync(itchBase, { withFileTypes: true }).filter((d) => d.isDirectory() && d.name.startsWith("app-")).sort((a, b) => b.name.localeCompare(a.name, void 0, { numeric: true })).map((d) => path$3.join(itchBase, d.name, "itch.exe"));
+				} catch (e) {
+					return [];
+				}
+			}
+			case "xbox": return [path$3.join(process.env.LOCALAPPDATA || "", "Microsoft", "WindowsApps", "XboxApp.exe")];
+			default: return [];
+		}
+	}
+	function buildPlatformUris(game, action) {
+		const platform = normalizePlatform(game.platform);
+		const platformId = game.platformId ? String(game.platformId) : "";
+		const storeUrl = game.storeUrl || "";
+		const steamIdFromUrl = (() => {
+			const m = String(storeUrl).match(/\/app\/(\d+)/i);
+			return m ? m[1] : "";
+		})();
+		const steamId = platformId || steamIdFromUrl;
+		const epicAppName = game.epicAppName || platformId;
+		const epicNamespace = game.epicNamespace || "";
+		const epicCatalogItemId = game.epicCatalogItemId || "";
+		const eaOfferId = game.eaOfferId || platformId;
+		const ubiGameId = game.ubisoftGameId || platformId;
+		const gogId = platformId || (() => {
+			const m = String(storeUrl).match(/\/openGameView\/(\d+)/i);
+			return m ? m[1] : "";
+		})();
+		const uniq = (arr) => Array.from(new Set(arr.filter(Boolean)));
+		if (platform === "steam" && steamId) {
+			if (action === "install") return uniq([
+				`steam://install/${steamId}`,
+				`steam://nav/games/details/${steamId}`,
+				storeUrl
+			]);
+			if (action === "client") return [`steam://open/games`, `steam://nav/library`];
+			return uniq([`steam://rungameid/${steamId}`, `steam://nav/games/details/${steamId}`]);
+		}
+		if (platform === "epic") {
+			if (action === "install") return uniq([
+				epicAppName ? `com.epicgames.launcher://apps/${epicAppName}?action=install&silent=true` : "",
+				platformId ? `com.epicgames.launcher://apps/${platformId}?action=install&silent=true` : "",
+				epicNamespace && epicCatalogItemId ? `com.epicgames.launcher://store/product/${epicNamespace}/${epicCatalogItemId}` : "",
+				storeUrl
+			]);
+			if (action === "client") return uniq([
+				epicAppName ? `com.epicgames.launcher://apps/${epicAppName}` : "",
+				platformId ? `com.epicgames.launcher://apps/${platformId}` : "",
+				storeUrl
+			]);
+			return uniq([
+				epicAppName ? `com.epicgames.launcher://apps/${epicAppName}?action=launch&silent=true` : "",
+				platformId ? `com.epicgames.launcher://apps/${platformId}?action=launch&silent=true` : "",
+				storeUrl
+			]);
+		}
+		if (platform === "gog" && gogId) {
+			if (action === "install") return uniq([storeUrl, `goggalaxy://openGameView/${gogId}`]);
+			return uniq([`goggalaxy://openGameView/${gogId}`, storeUrl]);
+		}
+		if (platform === "ea") {
+			if (eaOfferId) {
+				if (action === "install") return uniq([
+					`origin2://store/open?offerId=${eaOfferId}`,
+					`origin2://store/open?offerIds=${eaOfferId}`,
+					storeUrl
+				]);
+				return uniq([
+					`origin2://game/launch?offerIds=${eaOfferId}`,
+					`origin2://library/open`,
+					storeUrl
+				]);
+			}
+			return ["origin2://library/open"];
+		}
+		if (platform === "battlenet") {
+			if (platformId) return [`battlenet://${platformId}`];
+			return ["battlenet://"];
+		}
+		if (platform === "ubisoft") {
+			if (ubiGameId) {
+				if (action === "install") return uniq([`uplay://launch/${ubiGameId}/1`, storeUrl]);
+				return uniq([`uplay://launch/${ubiGameId}/0`, storeUrl]);
+			}
+			return ["uplay://"];
+		}
+		if (platform === "itchio") {
+			if (storeUrl) return [storeUrl];
+			return ["https://itch.io/my-purchases"];
+		}
+		if (platform === "xbox") {
+			if (action === "install") return ["msxbox://", "https://www.xbox.com/en-US/games"];
+			if (action === "client") return ["msxbox://"];
+			return ["https://www.xbox.com/play"];
+		}
+		if (storeUrl) return [storeUrl];
+		return [];
+	}
+	async function openInPlatformClient(game, action) {
+		const uris = buildPlatformUris(game, action);
+		let lastError = null;
+		for (const uri of uris) try {
+			await shell$1.openExternal(uri);
+			return {
+				success: true,
+				opened: uri
+			};
+		} catch (e) {
+			lastError = e;
+		}
+		const candidates = getLauncherExecutableCandidates(normalizePlatform(game.platform));
+		for (const exe of candidates) {
+			if (!exe || !fs$3.existsSync(exe)) continue;
+			try {
+				spawn$1(exe, [], {
+					detached: true,
+					stdio: "ignore"
+				}).unref();
+				return {
+					success: true,
+					opened: exe
+				};
+			} catch (e) {
+				lastError = e;
+			}
+		}
+		return {
+			success: false,
+			error: lastError && lastError.message || "Could not open platform client"
+		};
+	}
+	module.exports = {
+		normalizePlatform,
+		openInPlatformClient
+	};
+}));
+//#endregion
+//#region electron/modules/detectionIpc.js
+var require_detectionIpc = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	var { ipcMain: ipcMain$3 } = require("electron");
+	var path$2 = require("path");
+	var fs$2 = require("fs");
+	var ctx = require_context();
+	var { CHIAKI_SYSTEM_PATHS } = require_constants();
+	var { findSteamRoot, scanSteamInstalled, scanEpicInstalled, scanGogInstalled, scanXboxInstalled } = require_detection();
+	var { getBundledChiakiExe, getBundledChiakiVersion } = require_chiaki();
+	function registerDetectionIpcHandlers$1() {
+		let providersDir;
+		const candidates = [
+			path$2.join(__dirname, "..", "providers"),
+			path$2.join(__dirname, "providers"),
+			path$2.join(process.cwd(), "electron", "providers")
+		];
+		for (const candidate of candidates) if (fs$2.existsSync(path$2.join(candidate, "index.js"))) {
+			providersDir = candidate;
+			break;
+		}
+		if (!providersDir) throw new Error("Cannot find providers directory. Tried: " + candidates.join(", "));
+		const providers = require(providersDir);
+		ipcMain$3.handle("detect:steam", async () => {
+			try {
+				return scanSteamInstalled();
+			} catch (err) {
+				return {
+					games: [],
+					error: err.message
+				};
+			}
+		});
+		ipcMain$3.handle("detect:epic", async () => {
+			const games = scanEpicInstalled();
+			return games.length ? { games } : {
+				games: [],
+				error: "Epic Games not found"
+			};
+		});
+		ipcMain$3.handle("detect:gog", async () => {
+			const games = scanGogInstalled();
+			return games.length ? { games } : {
+				games: [],
+				error: "GOG not found"
+			};
+		});
+		ipcMain$3.handle("detect:psremote", async () => {
+			const result = {
+				found: false,
+				bundled: false,
+				executablePath: null,
+				version: null,
+				consoles: []
+			};
+			try {
+				const bundledExe = getBundledChiakiExe();
+				if (bundledExe) {
+					result.found = true;
+					result.bundled = true;
+					result.executablePath = bundledExe;
+					result.version = getBundledChiakiVersion();
+				}
+				if (!result.found) {
+					const systemPaths = CHIAKI_SYSTEM_PATHS;
+					for (const p of systemPaths) if (fs$2.existsSync(p)) {
+						result.found = true;
+						result.bundled = false;
+						result.executablePath = p;
+						break;
+					}
+				}
+				if (result.executablePath) try {
+					result.consoles = require("child_process").execFileSync(result.executablePath, ["list"], {
+						timeout: 5e3,
+						env: {
+							...process.env,
+							PATH: `${path$2.dirname(result.executablePath)};${process.env.PATH}`
+						}
+					}).toString().trim().split("\n").filter((l) => l.trim());
+				} catch (_e) {
+					result.consoles = [];
+				}
+			} catch (err) {
+				result.error = err.message;
+			}
+			return result;
+		});
+		ipcMain$3.handle("detect:xbox", async () => {
+			try {
+				return scanXboxInstalled();
+			} catch (err) {
+				return {
+					games: [],
+					xboxAppFound: false,
+					error: err.message
+				};
+			}
+		});
+		function registerProviderDetectHandler(platform, label) {
+			ipcMain$3.handle(`detect:${platform}`, async () => {
+				try {
+					const p = providers?.[platform];
+					if (!p?.detectInstalled) return {
+						games: [],
+						appFound: false,
+						error: `${label || platform} provider not available`
+					};
+					const res = p.detectInstalled();
+					return {
+						games: res?.games || [],
+						appFound: !!p.isAppInstalled?.(),
+						error: res?.error
+					};
+				} catch (err) {
+					return {
+						games: [],
+						appFound: false,
+						error: err.message
+					};
+				}
+			});
+		}
+		registerProviderDetectHandler("ea", "EA");
+		registerProviderDetectHandler("battlenet", "Battle.net");
+		registerProviderDetectHandler("itchio", "itch.io");
+		registerProviderDetectHandler("ubisoft", "Ubisoft");
+		ipcMain$3.handle("playtime:sync", async () => {
+			const db = ctx.db;
+			const updated = [];
+			try {
+				const steamRoot = findSteamRoot();
+				if (steamRoot) {
+					const userdataDir = path$2.join(steamRoot, "userdata");
+					if (fs$2.existsSync(userdataDir)) {
+						const userDirs = fs$2.readdirSync(userdataDir).filter((d) => {
+							return fs$2.statSync(path$2.join(userdataDir, d)).isDirectory() && /^\d+$/.test(d);
+						});
+						for (const userId of userDirs) {
+							const localConfigPath = path$2.join(userdataDir, userId, "config", "localconfig.vdf");
+							if (!fs$2.existsSync(localConfigPath)) continue;
+							const vdfContent = fs$2.readFileSync(localConfigPath, "utf-8");
+							const playtimeMap = /* @__PURE__ */ new Map();
+							const appBlocks = vdfContent.matchAll(/"(\d+)"\s*\{[^}]*?"playtime_forever"\s+"(\d+)"[^}]*?\}/gs);
+							for (const m of appBlocks) {
+								const appId = m[1];
+								const minutes = parseInt(m[2], 10);
+								if (minutes > 0) {
+									if (minutes > (playtimeMap.get(appId) || 0)) playtimeMap.set(appId, minutes);
+								}
+							}
+							for (const [appId, minutes] of playtimeMap) {
+								const game = db.games.find((g) => g.platform === "steam" && g.platformId === appId);
+								if (game && minutes > (game.playtimeMinutes || 0)) {
+									game.playtimeMinutes = minutes;
+									updated.push({
+										id: game.id,
+										name: game.name,
+										minutes,
+										source: "steam"
+									});
+								}
+							}
+						}
+					}
+				}
+				try {
+					const gogDbPath = path$2.join(process.env.PROGRAMDATA || "C:\\ProgramData", "GOG.com", "Galaxy", "storage", "galaxy-2.0.db");
+					if (fs$2.existsSync(gogDbPath)) {}
+				} catch (_e) {}
+				if (updated.length > 0) {
+					ctx.saveDB(db);
+					ctx.sendToRenderer("games:refresh", db.games);
+				}
+			} catch (err) {
+				return {
+					updated: [],
+					error: err.message
+				};
+			}
+			return {
+				updated,
+				games: db.games
+			};
+		});
+	}
+	module.exports = { registerDetectionIpcHandlers: registerDetectionIpcHandlers$1 };
+}));
+//#endregion
+//#region electron/modules/settings.js
+var require_settings = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	var { app: app$1, ipcMain: ipcMain$2, dialog: dialog$1 } = require("electron");
+	var fs$1 = require("fs");
+	var ctx = require_context();
+	var { connectDiscord, disconnectDiscord } = require_discord();
+	var { cleanupFile } = require_covers();
+	var DEFAULT_SETTINGS = {
+		defaultView: "orbit",
+		accentColor: "#d4a853",
+		starDensity: "normal",
+		showAnimations: true,
+		rememberWindowBounds: true,
+		autoSyncPlaytime: false,
+		minimizeOnLaunch: false,
+		closeToTray: false,
+		defaultTab: "all",
+		discordPresence: false,
+		metadataSource: "steam",
+		launchOnStartup: false,
+		startMinimized: false
+	};
+	function getSettings() {
+		return {
+			...DEFAULT_SETTINGS,
+			...ctx.db.settings || {}
+		};
+	}
+	function registerSettingsIpcHandlers({ createTray, destroyTray, DB_PATH }) {
+		ipcMain$2.handle("settings:get", () => getSettings());
+		ipcMain$2.handle("settings:save", (event, newSettings) => {
+			ctx.db.settings = {
+				...DEFAULT_SETTINGS,
+				...ctx.db.settings || {},
+				...newSettings
+			};
+			ctx.saveDB(ctx.db);
+			if (ctx.db.settings.discordPresence) connectDiscord();
+			else disconnectDiscord();
+			if ("launchOnStartup" in newSettings) try {
+				app$1.setLoginItemSettings({ openAtLogin: !!newSettings.launchOnStartup });
+			} catch (e) {}
+			if ("closeToTray" in newSettings) if (newSettings.closeToTray) createTray();
+			else destroyTray();
+			return ctx.db.settings;
+		});
+		ipcMain$2.handle("settings:reset", () => {
+			ctx.db.settings = { ...DEFAULT_SETTINGS };
+			ctx.saveDB(ctx.db);
+			return ctx.db.settings;
+		});
+		ipcMain$2.handle("settings:exportLibrary", async () => {
+			const result = await dialog$1.showSaveDialog(ctx.mainWindow, {
+				title: "Export Library",
+				defaultPath: "cereal-library.json",
+				filters: [{
+					name: "JSON",
+					extensions: ["json"]
+				}]
+			});
+			if (result.canceled || !result.filePath) return { cancelled: true };
+			try {
+				const exportData = {
+					games: ctx.db.games,
+					categories: ctx.db.categories,
+					exportedAt: (/* @__PURE__ */ new Date()).toISOString()
+				};
+				fs$1.writeFileSync(result.filePath, JSON.stringify(exportData, null, 2));
+				return {
+					success: true,
+					path: result.filePath
+				};
+			} catch (e) {
+				return { error: e.message };
+			}
+		});
+		ipcMain$2.handle("settings:importLibrary", async () => {
+			const result = await dialog$1.showOpenDialog(ctx.mainWindow, {
+				title: "Import Library",
+				filters: [{
+					name: "JSON",
+					extensions: ["json"]
+				}],
+				properties: ["openFile"]
+			});
+			if (result.canceled || !result.filePaths.length) return { cancelled: true };
+			try {
+				const raw = fs$1.readFileSync(result.filePaths[0], "utf-8");
+				const imported = JSON.parse(raw);
+				let addedCount = 0;
+				if (imported.games && Array.isArray(imported.games)) {
+					const existingIds = new Set(ctx.db.games.map((g) => g.name + "|" + g.platform));
+					for (const g of imported.games) {
+						const key = g.name + "|" + g.platform;
+						if (!existingIds.has(key)) {
+							g.id = Date.now().toString(36) + Math.random().toString(36).substring(2, 7);
+							ctx.db.games.push(g);
+							existingIds.add(key);
+							addedCount++;
+						}
+					}
+				}
+				if (imported.categories && Array.isArray(imported.categories)) {
+					const catSet = new Set(ctx.db.categories);
+					imported.categories.forEach((c) => catSet.add(c));
+					ctx.db.categories = [...catSet];
+				}
+				ctx.saveDB(ctx.db);
+				return {
+					success: true,
+					added: addedCount,
+					games: ctx.db.games,
+					categories: ctx.db.categories
+				};
+			} catch (e) {
+				return { error: e.message };
+			}
+		});
+		ipcMain$2.handle("settings:clearCovers", () => {
+			for (const game of ctx.db.games) {
+				if (game.localCoverPath) {
+					cleanupFile(game.localCoverPath);
+					game.localCoverPath = null;
+				}
+				if (game.localHeaderPath) {
+					cleanupFile(game.localHeaderPath);
+					game.localHeaderPath = null;
+				}
+				game._imgStamp = Date.now();
+				if (game.platform === "steam" && game.platformId) {
+					game.coverUrl = `https://shared.steamstatic.com/store_item_assets/steam/apps/${game.platformId}/library_600x900_2x.jpg`;
+					game.headerUrl = `https://shared.steamstatic.com/store_item_assets/steam/apps/${game.platformId}/library_hero.jpg`;
+				} else {
+					game.coverUrl = "";
+					game.headerUrl = "";
+				}
+			}
+			ctx.saveDB(ctx.db);
+			return {
+				success: true,
+				games: ctx.db.games
+			};
+		});
+		ipcMain$2.handle("settings:clearAllGames", () => {
+			ctx.db.games = [];
+			ctx.saveDB(ctx.db);
+			return { success: true };
+		});
+		ipcMain$2.handle("settings:getDataPath", () => DB_PATH);
+		ipcMain$2.handle("settings:getAppVersion", () => app$1.getVersion());
+	}
+	module.exports = {
+		DEFAULT_SETTINGS,
+		getSettings,
+		registerSettingsIpcHandlers
+	};
+}));
+//#endregion
+//#region electron/native/smtc/index.js
+var require_smtc = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	var path$1 = require("path");
+	var { exec } = require("child_process");
+	var EXE_PATH = path$1.join(__dirname, "..", "MediaInfoTool.exe").replace("app.asar", "app.asar.unpacked");
+	function runExe(args) {
+		return new Promise((resolve) => {
+			const safeArgs = (args || []).map((a) => "\"" + String(a).replace(/["%!^&|<>]/g, "") + "\"").join(" ");
+			exec("\"" + EXE_PATH + "\"" + (safeArgs ? " " + safeArgs : ""), { timeout: 5e3 }, (err, stdout) => {
+				try {
+					resolve(JSON.parse(stdout.trim()));
+				} catch {
+					resolve({ error: err ? err.message : "parse error" });
+				}
+			});
+		});
+	}
+	module.exports = {
+		getMediaInfo: () => runExe(),
+		sendMediaKey: (action) => runExe(["sendKey", action])
+	};
+}));
+//#endregion
+//#region electron/modules/media.js
+var require_media = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	var { ipcMain: ipcMain$1 } = require("electron");
+	var { startXcloudSession, stopXcloudSession, getActiveXcloudSessions } = require_xcloud();
+	var smtcNative = null;
+	function getSmtcNative() {
+		if (!smtcNative) try {
+			smtcNative = require_smtc();
+			console.log("[media] native addon loaded");
+		} catch (e) {
+			console.log("[media] failed to load native addon:", e.message);
+		}
+		return smtcNative;
+	}
+	function registerMediaIpcHandlers() {
+		ipcMain$1.handle("xcloud:startDirect", (_event, { url }) => {
+			try {
+				startXcloudSession("xbox:cloud", url || "https://www.xbox.com/play");
+				return {
+					success: true,
+					sessionKey: "xbox:cloud"
+				};
+			} catch (e) {
+				return {
+					success: false,
+					error: e.message
+				};
+			}
+		});
+		ipcMain$1.handle("xcloud:start", (_event, { gameId, url }) => {
+			try {
+				startXcloudSession(gameId, url);
+				return { success: true };
+			} catch (e) {
+				return {
+					success: false,
+					error: e.message
+				};
+			}
+		});
+		ipcMain$1.handle("xcloud:stop", (_event, gameId) => {
+			return { success: stopXcloudSession(gameId) };
+		});
+		ipcMain$1.handle("xcloud:getSessions", () => {
+			return getActiveXcloudSessions();
+		});
+		ipcMain$1.handle("media:getInfo", async () => {
+			const smtc = getSmtcNative();
+			if (!smtc) return {};
+			try {
+				const info = await smtc.getMediaInfo();
+				console.log("[media] native result:", info);
+				if (info.error) {
+					console.log("[media] error:", info.error);
+					return {};
+				}
+				return {
+					title: info.title || "",
+					artist: info.artist || "",
+					album: info.album || "",
+					thumbnail: info.thumbnail || "",
+					playing: info.playing,
+					position: Math.floor(info.position || 0),
+					duration: Math.floor(info.duration || 0)
+				};
+			} catch (e) {
+				console.log("[media] exception:", e.message);
+				return {};
+			}
+		});
+		ipcMain$1.handle("media:control", async (_event, action) => {
+			const smtc = getSmtcNative();
+			if (!smtc) return false;
+			try {
+				await smtc.sendMediaKey(action);
+				return true;
+			} catch (e) {
+				console.log("[media] control error:", e.message);
+				return false;
+			}
+		});
+	}
+	module.exports = { registerMediaIpcHandlers };
+}));
+//#endregion
+//#region electron/main.js
+var { app, BrowserWindow, ipcMain, dialog, shell, session, Tray, Menu, nativeImage, net, protocol } = require("electron");
+var path = require("path");
+var fs = require("fs");
+app.commandLine.appendSwitch("enable-gpu-rasterization");
+app.commandLine.appendSwitch("enable-zero-copy");
+app.commandLine.appendSwitch("ignore-gpu-blocklist");
+app.commandLine.appendSwitch("enable-hardware-overlays", "single-fullscreen,single-on-top,underlay");
+app.commandLine.appendSwitch("enable-features", "VaapiVideoDecodeLinuxGL,VaapiVideoEncoder,CanvasOopRasterization,UseSkiaRenderer");
+protocol.registerSchemesAsPrivileged([{
+	scheme: "local-image",
+	privileges: {
+		standard: false,
+		supportFetchAPI: true,
+		stream: true,
+		bypassCSP: false
+	}
+}]);
+var { safeStore } = require_credentials();
+var { spawn } = require("child_process");
+var os = require("os");
+var { autoUpdater } = require("electron-updater");
+var { ACCOUNT_SECRET_FIELDS } = require_constants();
+var log = require_logger();
+var { detachAccountSecrets, registerAccountIpcHandlers } = require_accounts();
+var { connectDiscord, disconnectDiscord, setDiscordPresence, isDiscordEnabled, getDiscordStatus } = require_discord();
+ipcMain.handle("discord:status", () => getDiscordStatus());
+var { getCoversDir, cleanupFile, enqueueCoverFetch } = require_covers();
+var { chiakiSessions, resolveChiakiExe, buildChiakiArgs, startChiakiSession, sendEmbedBoundsToAll, autoSetupChiakiIfMissing, registerChiakiIpcHandlers } = require_chiaki();
+var { xcloudSessions, updateAllXcloudBounds, startXcloudSession } = require_xcloud();
+var { registerGameCrudIpcHandlers } = require_gameCrud();
+registerGameCrudIpcHandlers();
+var { DB_PATH, loadDB, saveDB, flushDB } = require_database();
+var db = null;
+var mainWindow;
+var trayIcon = null;
+var isQuitting = false;
+function sendToRenderer(channel, ...args) {
+	if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, ...args);
+}
+function toggleDevTools() {
+	if (!mainWindow || mainWindow.isDestroyed()) return;
+	const contents = mainWindow.webContents;
+	if (!contents) return;
+	if (contents.isDevToolsOpened()) contents.closeDevTools();
+	else contents.openDevTools({ mode: "detach" });
+}
+function createWindow() {
+	const savedBounds = db && db.settings && db.settings.rememberWindowBounds && db.settings.windowBounds ? db.settings.windowBounds : null;
+	const winOpts = {
+		width: 1280,
+		height: 800,
+		minWidth: 900,
+		minHeight: 600,
+		frame: false,
+		show: true,
+		backgroundColor: "#0a0a0f",
+		webPreferences: {
+			preload: path.join(__dirname, "preload.js"),
+			contextIsolation: true,
+			nodeIntegration: false,
+			backgroundThrottling: false
+		}
+	};
+	if (savedBounds) {
+		if (typeof savedBounds.x === "number" && typeof savedBounds.y === "number") {
+			winOpts.x = savedBounds.x;
+			winOpts.y = savedBounds.y;
+		}
+		if (typeof savedBounds.width === "number" && typeof savedBounds.height === "number") {
+			winOpts.width = savedBounds.width;
+			winOpts.height = savedBounds.height;
+		}
+	}
+	mainWindow = new BrowserWindow(winOpts);
+	if (savedBounds && savedBounds.isMaximized) try {
+		mainWindow.maximize();
+	} catch (_e) {}
+	if (process.env.VITE_DEV_SERVER_URL) mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
+	else mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
+	if (process.env.CEREAL_DEVTOOLS === "1") mainWindow.webContents.once("did-finish-load", () => {
+		try {
+			toggleDevTools();
+		} catch (e) {
+			console.error("Auto DevTools failed:", e.message);
+		}
+	});
+	ipcMain.on("window:ready", () => {});
+	mainWindow.webContents.on("will-navigate", (event, url) => {
+		const devServer = process.env.VITE_DEV_SERVER_URL;
+		if (devServer && url.startsWith(devServer)) return;
+		if (url.startsWith("file://")) return;
+		event.preventDefault();
+	});
+	mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+	mainWindow.webContents.on("before-input-event", (event, input) => {
+		if (input.type !== "keyDown") return;
+		if (!(input.control && input.shift && input.code === "KeyI" || input.code === "F12")) return;
+		event.preventDefault();
+		toggleDevTools();
+	});
+	mainWindow.on("resize", onWindowBoundsChanged);
+	mainWindow.on("move", onWindowBoundsChanged);
+	mainWindow.on("restore", onWindowBoundsChanged);
+	mainWindow.on("maximize", onWindowBoundsChanged);
+	mainWindow.on("unmaximize", onWindowBoundsChanged);
+	mainWindow.on("close", (e) => {
+		saveWindowBounds();
+		if (!isQuitting && db && db.settings && db.settings.closeToTray) {
+			e.preventDefault();
+			mainWindow.hide();
+		}
+	});
+	mainWindow.on("minimize", () => {
+		for (const session of chiakiSessions.values()) if (session.embedProcess && !session.embedProcess.killed) try {
+			session.embedProcess.stdin.write("hide\n");
+		} catch (_e) {}
+		for (const sess of xcloudSessions.values()) try {
+			sess.view.setVisible(false);
+		} catch (_e) {}
+	});
+	mainWindow.on("focus", () => {
+		for (const session of chiakiSessions.values()) if (session.embedded && session.embedProcess && !session.embedProcess.killed) try {
+			session.embedProcess.stdin.write("show\n");
+		} catch (_e) {}
+		for (const sess of xcloudSessions.values()) try {
+			sess.view.setVisible(true);
+		} catch (_e) {}
+	});
+}
+if (!app.requestSingleInstanceLock()) app.quit();
+else app.on("second-instance", () => {
+	if (mainWindow) {
+		if (!mainWindow.isVisible()) mainWindow.show();
+		if (mainWindow.isMinimized()) mainWindow.restore();
+		mainWindow.focus();
+	}
+});
+function destroyTray() {
+	if (!trayIcon) return;
+	try {
+		trayIcon.destroy();
+	} catch (_e) {}
+	trayIcon = null;
+}
+function createTray() {
+	if (trayIcon) return;
+	trayIcon = new Tray(nativeImage.createFromDataURL("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAY0lEQVR42mP4z8BQz0BAwAADTAxEAqpawMRAAYAa8J+BgQEkTbQBjFiEGYgxgJGBgYERqoERp9OhhjBS0wsoF7AwkOYFcn0BdQHRvsBnAMVeGIAGdCAL4AFixu8FBgYGBgC3+y+Mfb/haQAAAABJRU5ErkJggg=="));
+	trayIcon.setToolTip("Cereal Launcher");
+	const contextMenu = Menu.buildFromTemplate([
+		{
+			label: "Show Cereal",
+			click: () => {
+				if (mainWindow) {
+					mainWindow.show();
+					mainWindow.focus();
+				}
+			}
+		},
+		{ type: "separator" },
+		{
+			label: "Quit",
+			click: () => {
+				isQuitting = true;
+				app.quit();
+			}
+		}
+	]);
+	trayIcon.setContextMenu(contextMenu);
+	trayIcon.on("click", () => {
+		if (mainWindow) {
+			mainWindow.show();
+			mainWindow.focus();
+		}
+	});
+}
+app.whenReady().then(() => {
+	protocol.handle("local-image", (request) => {
+		let filePath = decodeURIComponent(new URL(request.url).pathname);
+		if (process.platform === "win32" && filePath.startsWith("/")) filePath = filePath.slice(1);
+		const coversDir = getCoversDir();
+		const resolved = path.resolve(filePath);
+		if (!resolved.startsWith(coversDir)) return new Response("Forbidden", { status: 403 });
+		return net.fetch("file:///" + resolved.replace(/\\/g, "/"));
+	});
+	db = loadDB();
+	const ctx = require_context();
+	ctx.db = db;
+	ctx.safeStore = safeStore;
+	ctx.saveDB = saveDB;
+	ctx.flushDB = () => flushDB(db);
+	ctx.sendToRenderer = sendToRenderer;
+	if (db.accounts && typeof db.accounts === "object") {
+		let changed = false;
+		for (const platform of Object.keys(db.accounts)) {
+			const acct = db.accounts[platform];
+			if (acct && ACCOUNT_SECRET_FIELDS.some((k) => acct[k] != null)) {
+				detachAccountSecrets(platform, { save: false });
+				changed = true;
+			}
+		}
+		if (changed) saveDB(db);
+	}
+	const CURRENT_MIGRATION = 2;
+	const lastMigration = db.settings && db.settings._migrationVersion || 0;
+	if (lastMigration < 1) {
+		let coversCleaned = 0;
+		for (const game of db.games || []) {
+			if (game.localCoverPath) try {
+				if (!fs.existsSync(game.localCoverPath) || fs.statSync(game.localCoverPath).size < 1024) {
+					cleanupFile(game.localCoverPath);
+					game.localCoverPath = null;
+					coversCleaned++;
+				}
+			} catch (_e) {
+				game.localCoverPath = null;
+				coversCleaned++;
+			}
+			if (game.localHeaderPath) try {
+				if (!fs.existsSync(game.localHeaderPath) || fs.statSync(game.localHeaderPath).size < 1024) {
+					cleanupFile(game.localHeaderPath);
+					game.localHeaderPath = null;
+					coversCleaned++;
+				}
+			} catch (_e) {
+				game.localHeaderPath = null;
+				coversCleaned++;
+			}
+		}
+		if (coversCleaned > 0) console.log("[CoverFetcher] Cleaned", coversCleaned, "corrupt cover references");
+		try {
+			const coversDir = getCoversDir();
+			let purged = 0;
+			for (const f of fs.readdirSync(coversDir)) {
+				const fp = path.join(coversDir, f);
+				try {
+					if (fs.statSync(fp).size < 1024) {
+						fs.unlinkSync(fp);
+						purged++;
+					}
+				} catch (_e) {}
+			}
+			if (purged > 0) console.log("[CoverFetcher] Purged", purged, "corrupt files from covers directory");
+		} catch (_e) {}
+	}
+	if (lastMigration < 2) {
+		let backfilled = 0;
+		for (const game of db.games || []) if (game.platform === "steam" && game.platformId && !game.headerUrl) {
+			game.headerUrl = `https://shared.steamstatic.com/store_item_assets/steam/apps/${game.platformId}/header.jpg`;
+			backfilled++;
+		}
+		if (backfilled > 0) console.log("[Migration] Backfilled", backfilled, "Steam header URLs");
+	}
+	if (lastMigration < CURRENT_MIGRATION) {
+		db.settings = db.settings || {};
+		db.settings._migrationVersion = CURRENT_MIGRATION;
+		saveDB(db);
+	}
+	setTimeout(() => {
+		let requeued = 0;
+		for (const game of db.games || []) {
+			const needsCover = !game.localCoverPath && (game.coverUrl || game.headerUrl || game.screenshots && game.screenshots.length);
+			const needsHeader = !game.localHeaderPath && game.headerUrl;
+			if (needsCover || needsHeader) {
+				enqueueCoverFetch(game.id);
+				requeued++;
+			}
+		}
+		if (requeued > 0) console.log("[CoverFetcher] Re-enqueued", requeued, "games for cover download");
+	}, 3e3);
+	session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+		callback([
+			"clipboard-read",
+			"clipboard-sanitized-write",
+			"fullscreen"
+		].includes(permission));
+	});
+	session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+		callback({ responseHeaders: {
+			...details.responseHeaders,
+			"Content-Security-Policy": [
+				"default-src 'self'",
+				"script-src 'self' 'unsafe-inline'",
+				"style-src 'self' 'unsafe-inline'",
+				"img-src 'self' data: local-image: https: http:",
+				"font-src 'self' data:",
+				"connect-src 'self' https://*.steampowered.com https://*.steamstatic.com https://store.steampowered.com https://api.steampowered.com https://steamcdn-a.akamaihd.net https://*.steamgriddb.com https://*.gog.com https://*.epicgames.com https://*.xbox.com https://*.xboxlive.com https://*.wikipedia.org https://*.wikidata.org https://*.wikimedia.org https://*.duckduckgo.com https://localhost ws://localhost wss://localhost"
+			].join("; ")
+		} });
+	});
+	createWindow();
+	ctx.mainWindow = mainWindow;
+	if (db.settings && db.settings.closeToTray) createTray();
+	if (db.settings && db.settings.startMinimized) mainWindow.hide();
+	if (isDiscordEnabled()) setTimeout(connectDiscord, 8e3);
+	setTimeout(autoSetupChiakiIfMissing, 6e3);
+	autoUpdater.autoDownload = true;
+	autoUpdater.autoInstallOnAppQuit = true;
+	setTimeout(() => {
+		autoUpdater.checkForUpdates().catch(() => {});
+	}, 5e3);
+	for (const evt of [
+		"checking-for-update",
+		"update-available",
+		"update-not-available",
+		"download-progress",
+		"update-downloaded",
+		"error"
+	]) autoUpdater.on(evt, (data) => {
+		sendToRenderer("update:event", {
+			type: evt,
+			data: evt === "error" ? data && data.message || String(data) : data
+		});
+	});
+});
+app.on("window-all-closed", () => {
+	disconnectDiscord();
+	if (db && db.settings && db.settings.closeToTray) return;
+	if (process.platform !== "darwin") app.quit();
+});
+app.on("before-quit", () => {
+	isQuitting = true;
+	try {
+		saveWindowBounds();
+	} catch (_e) {}
+	flushDB(db);
+});
+app.on("will-quit", () => {
+	try {
+		for (const [_gameId, sess] of xcloudSessions) {
+			try {
+				mainWindow?.contentView?.removeChildView(sess.view);
+			} catch (_e) {
+				log.debug("xcloud", "cleanup removeChildView failed");
+			}
+			try {
+				sess.view?.webContents?.close();
+			} catch (_e) {
+				log.debug("xcloud", "cleanup webContents close failed");
+			}
+		}
+		xcloudSessions.clear();
+	} catch (_e) {
+		log.debug("xcloud", "session cleanup error");
+	}
+});
+ipcMain.handle("window:minimize", () => mainWindow.minimize());
+ipcMain.handle("window:maximize", () => {
+	if (mainWindow.isMaximized()) mainWindow.unmaximize();
+	else mainWindow.maximize();
+	return mainWindow.isMaximized();
+});
+ipcMain.handle("window:close", () => mainWindow.close());
+ipcMain.handle("window:fullscreen", () => {
+	mainWindow.setFullScreen(!mainWindow.isFullScreen());
+	return mainWindow.isFullScreen();
+});
+ipcMain.handle("window:isFullscreen", () => mainWindow.isFullScreen());
+ipcMain.handle("shell:openExternal", (event, url) => {
+	try {
+		const parsed = new URL(url);
+		if (![
+			"http:",
+			"https:",
+			"mailto:",
+			"steam:",
+			"epicgames:",
+			"com.epicgames.launcher:",
+			"goggalaxy:",
+			"origin:",
+			"origin2:",
+			"uplay:",
+			"battlenet:",
+			"xbox:",
+			"msxbox:",
+			"ms-xbl-multiplayer:"
+		].includes(parsed.protocol)) return { error: "Blocked protocol: " + parsed.protocol };
+	} catch (_e) {
+		return { error: "Invalid URL" };
+	}
+	return shell.openExternal(url);
+});
+ipcMain.handle("system:getSpecs", async () => {
+	const ramGb = Math.round(os.totalmem() / (1024 * 1024 * 1024));
+	const cpus = os.cpus();
+	const cpuCount = cpus.length;
+	const cpuModel = cpus[0]?.model?.trim() || "";
+	let gpuName = "";
+	try {
+		const gpu = (await app.getGPUInfo("basic"))?.gpuDevice?.[0];
+		if (gpu?.description) gpuName = gpu.description;
+	} catch (_e) {
+		log.debug("system", "GPU info unavailable", _e);
+	}
+	return {
+		ramGb,
+		cpuCount,
+		cpuModel,
+		gpuName
+	};
+});
+var _embedResizeTimer = null;
+var _saveBoundsTimer = null;
+function scheduleSaveWindowBounds() {
+	clearTimeout(_saveBoundsTimer);
+	_saveBoundsTimer = setTimeout(saveWindowBounds, 500);
+}
+function saveWindowBounds() {
+	try {
+		if (!mainWindow || mainWindow.isDestroyed()) return;
+		if (db && db.settings && db.settings.rememberWindowBounds === false) return;
+		const isMax = mainWindow.isMaximized ? mainWindow.isMaximized() : false;
+		const bounds = isMax ? db.settings && db.settings.windowBounds ? db.settings.windowBounds : {} : mainWindow.getBounds();
+		db.settings = db.settings || {};
+		db.settings.windowBounds = {
+			x: bounds.x || 0,
+			y: bounds.y || 0,
+			width: bounds.width || 1280,
+			height: bounds.height || 800,
+			isMaximized: !!isMax
+		};
+		saveDB(db);
+	} catch (e) {
+		console.error("Failed saving window bounds", e && e.message);
+	}
+}
+function onWindowBoundsChanged() {
+	clearTimeout(_embedResizeTimer);
+	_embedResizeTimer = setTimeout(() => {
+		sendEmbedBoundsToAll();
+		updateAllXcloudBounds();
+	}, 50);
+	scheduleSaveWindowBounds();
+}
+var { registerKeysIpcHandlers } = require_keys();
+registerKeysIpcHandlers();
+var { registerMetadataIpcHandlers } = require_metadataIpc();
+registerMetadataIpcHandlers();
+var { normalizePlatform, openInPlatformClient } = require_launcher();
+ipcMain.handle("games:launch", async (event, id) => {
+	const game = db.games.find((g) => g.id === id);
+	if (!game) return {
+		success: false,
+		error: "Game not found"
+	};
+	try {
+		let launchPath = game.executablePath;
+		if (game.platform === "psremote" || game.platform === "psn") {
+			const chiakiExe = resolveChiakiExe(launchPath);
+			if (!chiakiExe) return {
+				success: false,
+				error: "chiaki-ng not found. It should download automatically — try again in a moment, or check Settings > PlayStation."
+			};
+			const chiakiConfig = db.chiakiConfig || {};
+			const consoles = chiakiConfig.consoles || [];
+			let effectiveGame = game;
+			if (!game.chiakiHost || !game.chiakiRegistKey) {
+				const matched = game.chiakiHost ? consoles.find((c) => c.host === game.chiakiHost) : consoles.find((c) => c.registKey && c.morning);
+				if (matched) effectiveGame = {
+					...game,
+					chiakiHost: game.chiakiHost || matched.host,
+					chiakiNickname: game.chiakiNickname || matched.nickname || "",
+					chiakiProfile: game.chiakiProfile || matched.profile || "",
+					chiakiRegistKey: game.chiakiRegistKey || matched.registKey || "",
+					chiakiMorning: game.chiakiMorning || matched.morning || ""
+				};
+				else if (!game.chiakiHost) return {
+					success: false,
+					error: "No registered PlayStation console found. Open Remote Play to add and register a console first."
+				};
+			}
+			startChiakiSession(id, chiakiExe, buildChiakiArgs(effectiveGame, chiakiConfig));
+		} else if (game.platform === "xbox") startXcloudSession(id, game.streamUrl || "https://www.xbox.com/play");
+		else if ([
+			"steam",
+			"epic",
+			"gog",
+			"ea",
+			"battlenet",
+			"ubisoft",
+			"itchio"
+		].includes(normalizePlatform(game.platform))) {
+			const openRes = await openInPlatformClient(game, "play");
+			if (!openRes.success) return openRes;
+		} else if (launchPath && fs.existsSync(launchPath)) spawn(launchPath, [], {
+			cwd: path.dirname(launchPath),
+			detached: true,
+			stdio: "ignore"
+		}).unref();
+		else return {
+			success: false,
+			error: "Executable not found"
+		};
+		if (![
+			"psn",
+			"psremote",
+			"xbox"
+		].includes(game.platform)) {
+			game.lastPlayed = (/* @__PURE__ */ new Date()).toISOString();
+			saveDB(db);
+		}
+		if (db.settings && db.settings.minimizeOnLaunch && mainWindow) mainWindow.minimize();
+		if (isDiscordEnabled()) {
+			connectDiscord();
+			setDiscordPresence(game.name, game.platform);
+		}
+		return {
+			success: true,
+			lastPlayed: game.lastPlayed
+		};
+	} catch (err) {
+		return {
+			success: false,
+			error: err.message
+		};
+	}
+});
+ipcMain.handle("games:install", async (event, id) => {
+	const game = db.games.find((g) => g.id === id);
+	if (!game) return {
+		success: false,
+		error: "Game not found"
+	};
+	try {
+		if (normalizePlatform(game.platform) === "psn") return {
+			success: false,
+			error: "Install is not supported for Remote Play titles"
+		};
+		if (normalizePlatform(game.platform) === "custom") return {
+			success: false,
+			error: "Custom games must be installed manually"
+		};
+		return await openInPlatformClient(game, "install");
+	} catch (err) {
+		return {
+			success: false,
+			error: err.message
+		};
+	}
+});
+ipcMain.handle("games:openInClient", async (event, id) => {
+	const game = db.games.find((g) => g.id === id);
+	if (!game) return {
+		success: false,
+		error: "Game not found"
+	};
+	try {
+		return await openInPlatformClient(game, "client");
+	} catch (err) {
+		return {
+			success: false,
+			error: err.message
+		};
+	}
+});
+ipcMain.handle("dialog:pickExecutable", async () => {
+	const result = await dialog.showOpenDialog(mainWindow, {
+		properties: ["openFile"],
+		filters: [{
+			name: "Executables",
+			extensions: [
+				"exe",
+				"bat",
+				"cmd",
+				"lnk"
+			]
+		}, {
+			name: "All Files",
+			extensions: ["*"]
+		}]
+	});
+	if (!result.canceled && result.filePaths.length > 0) return result.filePaths[0];
+	return null;
+});
+ipcMain.handle("dialog:pickImage", async () => {
+	const result = await dialog.showOpenDialog(mainWindow, {
+		properties: ["openFile"],
+		filters: [{
+			name: "Images",
+			extensions: [
+				"png",
+				"jpg",
+				"jpeg",
+				"webp",
+				"gif",
+				"bmp"
+			]
+		}]
+	});
+	if (!result.canceled && result.filePaths.length > 0) {
+		const src = result.filePaths[0];
+		const ext = path.extname(src);
+		const destName = `cover_${Date.now()}${ext}`;
+		const destDir = path.join(app.getPath("userData"), "covers");
+		if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
+		const dest = path.join(destDir, destName);
+		fs.copyFileSync(src, dest);
+		return dest;
+	}
+	return null;
+});
+var { registerDetectionIpcHandlers } = require_detectionIpc();
+registerDetectionIpcHandlers();
+var { registerSettingsIpcHandlers } = require_settings();
+registerSettingsIpcHandlers({
+	createTray,
+	destroyTray,
+	DB_PATH
+});
+ipcMain.handle("update:check", () => {
+	return autoUpdater.checkForUpdates().catch((err) => ({ error: err.message }));
+});
+ipcMain.handle("update:install", () => {
+	autoUpdater.quitAndInstall();
+});
+registerAccountIpcHandlers();
+registerChiakiIpcHandlers();
+var { registerMediaIpcHandlers } = require_media();
+registerMediaIpcHandlers();
+//#endregion

@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { canonicalize, findExisting, makeGameEntry, updateAccountSync } = require('./utils');
-const _log = require('../modules/logger');
+const log = require('../modules/logger');
 
 const LAUNCHER_NAMES = new Set([
   'ea desktop',
@@ -50,10 +50,10 @@ function detectOwned() {
             source: 'is-cache',
             installed: !!(data.baseInstallPath && fs.existsSync(data.baseInstallPath)),
           });
-        } catch { /* skip bad file */ }
+        } catch (e) { /* skip bad file */ }
       }
     }
-  } catch { /* ignore */ }
+  } catch (e) { /* ignore */ }
   return owned;
 }
 
@@ -105,7 +105,7 @@ function detectInstalled() {
               installed: true,
             });
           }
-        } catch { /* skip bad manifest */ }
+        } catch (e) { /* skip bad manifest */ }
       }
     }
 
@@ -126,7 +126,7 @@ function detectInstalled() {
             const files = fs.readdirSync(gameDir);
             const exeFile = files.find(f => f.endsWith('.exe') && !/(unins|setup|redist|vcredist|dxsetup)/i.test(f));
             if (exeFile) exe = path.join(gameDir, exeFile);
-          } catch { /* ignore */ }
+          } catch (e) {}
           games.push({
             name: gameName,
             platform: 'ea',
@@ -139,7 +139,7 @@ function detectInstalled() {
             installed: true,
           });
         }
-      } catch { /* ignore */ }
+      } catch (e) {}
     }
   } catch (err) {
     return { games: [], error: err.message };
