@@ -1,36 +1,34 @@
 // ─── Metadata Art Search (moved from main.js) ─────────────────────────────────
-const { net, ipcMain, dialog, shell } = require('electron');
+const { net, ipcMain } = require('electron');
 const crypto = require('crypto');
-const ctx = require('./context');
 const { getMetadataSettings, httpGet } = require('./metadata');
-const { safeStore, validateProviderKey, summarizeSecret } = require('../main'); // TODO: move these to modules
+const log = require('./logger');
 
-function searchSteam(gameName) {
+async function searchSteam(gameName) {
   const results = [];
   const q = encodeURIComponent(gameName);
-  return httpGet(`https://store.steampowered.com/api/storesearch/?term=${q}&l=english&cc=US`).then(search => {
-    if (search?.items?.length) {
-      for (const item of search.items.slice(0, 3)) {
-        const id = item.id;
-        const name = item.name || '';
-        try {
-          const det = await httpGet(`https://store.steampowered.com/api/appdetails?appids=${id}&l=english`);
-          const info = det?.[String(id)]?.data;
-          if (info) {
-            results.push({ url: `https://shared.steamstatic.com/store_item_assets/steam/apps/${id}/library_600x900_2x.jpg`, type: 'cover', source: 'Steam', label: name + ' - Portrait (HD)' });
-            if (info.header_image) results.push({ url: info.header_image, type: 'header', source: 'Steam', label: name + ' - Header' });
-            results.push({ url: `https://shared.steamstatic.com/store_item_assets/steam/apps/${id}/library_hero.jpg`, type: 'header', source: 'Steam', label: name + ' - Hero' });
-            if (info.screenshots) {
-              for (const ss of info.screenshots.slice(0, 2)) {
-                results.push({ url: ss.path_full, type: 'screenshot', source: 'Steam', label: name + ' - Screenshot' });
-              }
+  const search = await httpGet(`https://store.steampowered.com/api/storesearch/?term=${q}&l=english&cc=US`);
+  if (search?.items?.length) {
+    for (const item of search.items.slice(0, 3)) {
+      const id = item.id;
+      const name = item.name || '';
+      try {
+        const det = await httpGet(`https://store.steampowered.com/api/appdetails?appids=${id}&l=english`);
+        const info = det?.[String(id)]?.data;
+        if (info) {
+          results.push({ url: `https://shared.steamstatic.com/store_item_assets/steam/apps/${id}/library_600x900_2x.jpg`, type: 'cover', source: 'Steam', label: name + ' - Portrait (HD)' });
+          if (info.header_image) results.push({ url: info.header_image, type: 'header', source: 'Steam', label: name + ' - Header' });
+          results.push({ url: `https://shared.steamstatic.com/store_item_assets/steam/apps/${id}/library_hero.jpg`, type: 'header', source: 'Steam', label: name + ' - Hero' });
+          if (info.screenshots) {
+            for (const ss of info.screenshots.slice(0, 2)) {
+              results.push({ url: ss.path_full, type: 'screenshot', source: 'Steam', label: name + ' - Screenshot' });
             }
           }
-        } catch(e) {}
-      }
+        }
+      } catch(e) {}
     }
-    return results;
-  });
+  }
+  return results;
 }
 
 async function searchDuckDuckGo(gameName) {
@@ -179,27 +177,25 @@ async function handleSearchArt(event, gameName, platform) {
   if (!gameName) return { images: [] };
   const ms = getMetadataSettings();
 
-  // Prefer SteamGridDB, but fall back to Steam store images when SGDB yields nothing
-  const sgdb = await searchSteamGridDB(gameName, ms.steamGridDbKey).catch(e => { console.log('[ArtSearch] SteamGridDB failed:', e.message); return []; });
+  // Run SteamGridDB + Steam in parallel to cut latency in the fallback case
+  const [sgdbResult, steamResult] = await Promise.allSettled([
+    searchSteamGridDB(gameName, ms.steamGridDbKey),
+    searchSteam(gameName),
+  ]);
+
+  const sgdb = sgdbResult.status === 'fulfilled' ? sgdbResult.value : (console.log('[ArtSearch] SteamGridDB failed:', sgdbResult.reason?.message), []);
+  const steam = steamResult.status === 'fulfilled' ? steamResult.value : (console.log('[ArtSearch] Steam failed:', steamResult.reason?.message), []);
+
   const images = [];
   const seen = new Set();
+  // Prefer SGDB results
   for (const img of sgdb) {
-    if (img.url && !seen.has(img.url)) {
-      seen.add(img.url);
-      images.push(img);
-    }
+    if (img.url && !seen.has(img.url)) { seen.add(img.url); images.push(img); }
   }
+  // Append Steam results for any missing art types when SGDB is sparse
   if (images.length === 0) {
-    try {
-      const steamImgs = await searchSteam(gameName).catch(e => { console.log('[ArtSearch] Steam fallback failed:', e && e.message); return []; });
-      for (const img of steamImgs) {
-        if (img.url && !seen.has(img.url)) {
-          seen.add(img.url);
-          images.push(img);
-        }
-      }
-    } catch (e) {
-      console.log('[ArtSearch] Steam fallback threw:', e && e.message);
+    for (const img of steam) {
+      if (img.url && !seen.has(img.url)) { seen.add(img.url); images.push(img); }
     }
   }
   return { images };
@@ -211,9 +207,4 @@ function registerMetadataSearchHandlers() {
 
 module.exports = {
   registerMetadataSearchHandlers,
-  searchSteam,
-  searchDuckDuckGo,
-  searchWikidata,
-  searchWikipedia,
-  searchSteamGridDB,
 };

@@ -184,7 +184,5 @@ async function openInPlatformClient(game, action) {
 
 module.exports = {
   normalizePlatform,
-  getLauncherExecutableCandidates,
-  buildPlatformUris,
   openInPlatformClient,
 };

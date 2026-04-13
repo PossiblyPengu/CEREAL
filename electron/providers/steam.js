@@ -3,6 +3,7 @@ const path = require('path');
 const os = require('os');
 const { httpGet, httpGetJson } = require('./http');
 const { findExisting, makeGameEntry, updateAccountSync } = require('./utils');
+const log = require('../modules/logger');
 
 function steamCoverUrl(appId) {
   return `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${appId}/library_600x900.jpg`;

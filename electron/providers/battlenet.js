@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { canonicalize, findExisting, makeGameEntry, updateAccountSync } = require('./utils');
+const log = require('../modules/logger');
 
 const BNET_PRODUCTS = {
   'wow': { name: 'World of Warcraft', id: 'wow' },

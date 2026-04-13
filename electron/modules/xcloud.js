@@ -2,6 +2,7 @@
 const { WebContentsView, session } = require('electron');
 const ctx = require('./context');
 const { CONTROL_BAR_HEIGHT } = require('./constants');
+const log = require('./logger');
 
 const xcloudSessions = new Map(); // gameId -> { view, state, startTime }
 
@@ -138,8 +139,6 @@ function getActiveXcloudSessions() {
 
 module.exports = {
   xcloudSessions,
-  getXcloudBounds,
-  updateXcloudBounds,
   updateAllXcloudBounds,
   startXcloudSession,
   stopXcloudSession,

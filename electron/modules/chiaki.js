@@ -6,10 +6,13 @@ const path = require('path');
 const fs = require('fs');
 const readline = require('readline');
 const { spawn } = require('child_process');
-const { screen: electronScreen, app } = require('electron');
+const dgram = require('dgram');
+const os = require('os');
+const { screen: electronScreen, app, ipcMain, net } = require('electron');
 const ctx = require('./context');
 const { CONTROL_BAR_HEIGHT, CHIAKI_SYSTEM_PATHS } = require('./constants');
 const { connectDiscord, setDiscordPresence, clearDiscordPresence, isDiscordEnabled } = require('./discord');
+const log = require('./logger');
 
 // ─── chiaki-ng path resolution ───────────────────────────────────────────────
 // Priority: userData/chiaki-ng (downloaded by app) → dev resources fallback
@@ -467,7 +470,7 @@ function handleChiakiTitleChange(originalGameId, evt) {
   // Auto-create the game if not found
   if (!matchedGame && titleName) {
     matchedGame = {
-      id: Date.now().toString(36) + Math.random().toString(36).substr(2, 5),
+      id: Date.now().toString(36) + Math.random().toString(36).substring(2, 7),
       name: titleName,
       platform: 'psn',
       platformId: titleId,
@@ -562,6 +565,469 @@ function getActiveSessions() {
   return result;
 }
 
+// ─── chiaki-ng Auto-Setup (first run) ─────────────────────────────────────────
+// If chiaki-ng is not bundled and no system install is found, automatically
+// download it in the background so the user doesn't have to do it manually.
+function autoSetupChiakiIfMissing() {
+  // Already bundled — nothing to do
+  if (getBundledChiakiExe()) return;
+
+  // System install exists — no need to download
+  if (CHIAKI_SYSTEM_PATHS.some(p => fs.existsSync(p))) return;
+
+  console.log('[chiaki] Not found — starting automatic setup...');
+  ctx.sendToRenderer('chiaki:event', { type: 'setup_started' });
+
+  const scriptPath = path.join(__dirname, '..', 'scripts', 'setup-chiaki.ps1');
+  if (!fs.existsSync(scriptPath)) {
+    console.warn('[chiaki] setup-chiaki.ps1 not found, skipping auto-setup');
+    return;
+  }
+
+  const SETUP_TIMEOUT = 5 * 60 * 1000;
+  const chiakiInstallDir = path.join(app.getPath('userData'), 'chiaki-ng');
+  const child = spawn('powershell', ['-ExecutionPolicy', 'Bypass', '-File', scriptPath, '-InstallDir', chiakiInstallDir], { cwd: path.join(__dirname, '..'), stdio: 'pipe' });
+  let output = '';
+  let finished = false;
+  const setupTimer = setTimeout(() => {
+    if (finished) return;
+    finished = true;
+    try { child.kill(); } catch (_) {}
+    console.error('[chiaki] Auto-setup timed out after 5 minutes');
+    ctx.sendToRenderer('chiaki:event', { type: 'setup_failed', error: 'Setup timed out after 5 minutes' });
+  }, SETUP_TIMEOUT);
+  child.stdout.on('data', d => output += d.toString());
+  child.stderr.on('data', d => output += d.toString());
+  child.on('close', (code) => {
+    if (finished) return;
+    finished = true;
+    clearTimeout(setupTimer);
+    if (code === 0) {
+      const version = getBundledChiakiVersion();
+      console.log(`[chiaki] Auto-setup complete — v${version}`);
+      ctx.sendToRenderer('chiaki:event', { type: 'setup_complete', version });
+    } else {
+      console.error(`[chiaki] Auto-setup failed (exit ${code}):`, output);
+      ctx.sendToRenderer('chiaki:event', { type: 'setup_failed', error: `Setup exited with code ${code}` });
+    }
+  });
+  child.on('error', (err) => {
+    if (finished) return;
+    finished = true;
+    clearTimeout(setupTimer);
+    console.error('[chiaki] Auto-setup spawn error:', err.message);
+  });
+}
+
+// ─── IPC Handler Registration ─────────────────────────────────────────────────
+function registerChiakiIpcHandlers() {
+  const db = () => ctx.db;
+  const saveDB = () => ctx.saveDB(ctx.db);
+
+  ipcMain.handle('chiaki:setStreamBounds', (event, { gameId, x, y, width, height }) => {
+    const session = chiakiSessions.get(gameId);
+    if (session?.embedProcess && !session.embedProcess.killed) {
+      try {
+        session.embedProcess.stdin.write(`bounds ${x} ${y} ${width} ${height}\n`);
+      } catch (e) { /* ok */ }
+    }
+    return { success: true };
+  });
+
+  ipcMain.handle('chiaki:status', () => {
+    const bundledExe = getBundledChiakiExe();
+    const bundledVersion = getBundledChiakiVersion();
+
+    if (bundledExe) {
+      return {
+        status: 'bundled',
+        executablePath: bundledExe,
+        version: bundledVersion,
+        directory: getChiakiDir(),
+      };
+    }
+
+    // Check system install
+    for (const p of CHIAKI_SYSTEM_PATHS) {
+      if (fs.existsSync(p)) {
+        return { status: 'system', executablePath: p, version: null };
+      }
+    }
+
+    return { status: 'missing', executablePath: null, version: null };
+  });
+
+  ipcMain.handle('chiaki:checkUpdate', async () => {
+    try {
+      const repo = process.env.CHIAKI_RELEASE_REPO || 'streetpea/chiaki-ng';
+      const res = await net.fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
+        headers: { 'User-Agent': 'cereal-launcher' }
+      });
+      if (!res.ok) throw new Error(`GitHub API returned ${res.status}`);
+      const data = await res.json();
+      const latestTag = data.tag_name || null;
+      const currentVersion = getBundledChiakiVersion();
+      const hasUpdate = latestTag && (!currentVersion || latestTag !== currentVersion);
+      return { current: currentVersion, latest: latestTag, hasUpdate: !!hasUpdate, releaseName: data.name || latestTag };
+    } catch (e) {
+      return { error: e.message };
+    }
+  });
+
+  ipcMain.handle('chiaki:update', async () => {
+    try {
+      // In packaged builds scripts/ is an extraResource next to chiaki-ng, outside asar
+      const scriptPath = app.isPackaged
+        ? path.join(process.resourcesPath, 'scripts', 'setup-chiaki.ps1')
+        : path.join(__dirname, '..', 'scripts', 'setup-chiaki.ps1');
+      if (!fs.existsSync(scriptPath)) return { error: 'setup-chiaki.ps1 not found at: ' + scriptPath };
+      const chiakiInstallDir = path.join(app.getPath('userData'), 'chiaki-ng');
+      const SETUP_TIMEOUT = 5 * 60 * 1000;
+      return new Promise((resolve) => {
+        const child = spawn('powershell', ['-ExecutionPolicy', 'Bypass', '-File', scriptPath, '-Force', '-InstallDir', chiakiInstallDir], { cwd: path.join(__dirname, '..'), stdio: 'pipe' });
+        let output = '';
+        let resolved = false;
+        const finish = (result) => { if (resolved) return; resolved = true; clearTimeout(timer); resolve(result); };
+        const timer = setTimeout(() => {
+          try { child.kill(); } catch (_) {}
+          finish({ error: 'Setup timed out after 5 minutes' });
+        }, SETUP_TIMEOUT);
+        child.stdout.on('data', d => output += d.toString());
+        child.stderr.on('data', d => output += d.toString());
+        child.on('close', (code) => {
+          if (code === 0) {
+            const newVersion = getBundledChiakiVersion();
+            finish({ ok: true, version: newVersion, output });
+          } else {
+            finish({ error: `Setup exited with code ${code}`, output });
+          }
+        });
+        child.on('error', (err) => finish({ error: err.message }));
+      });
+    } catch (e) {
+      return { error: e.message };
+    }
+  });
+
+  ipcMain.handle('chiaki:getConfig', () => {
+    return db().chiakiConfig || { executablePath: '', consoles: [] };
+  });
+
+  ipcMain.handle('chiaki:saveConfig', (event, config) => {
+    // Drop any legacy cerealMode field before persisting
+    const { cerealMode: _dropped, ...clean } = config || {};
+    db().chiakiConfig = clean;
+    saveDB();
+    return clean;
+  });
+
+  ipcMain.handle('games:setChiakiStream', (event, gameId, streamConfig) => {
+    const game = db().games.find(g => g.id === gameId);
+    if (game) {
+      game.chiakiNickname = streamConfig.nickname || '';
+      game.chiakiHost = streamConfig.host || '';
+      game.chiakiProfile = streamConfig.profile || '';
+      game.chiakiFullscreen = streamConfig.fullscreen !== false;
+      game.chiakiRegistKey = streamConfig.registKey || '';
+      game.chiakiMorning = streamConfig.morning || '';
+      saveDB();
+      return game;
+    }
+    return null;
+  });
+
+  ipcMain.handle('chiaki:startStreamDirect', (event, opts) => {
+    const chiakiExe = resolveChiakiExe();
+    if (!chiakiExe) return { success: false, error: 'chiaki-ng not found. Run scripts/setup-chiaki.ps1 to install it.' };
+
+    const sessionKey = 'console:' + (opts.host || 'unknown');
+    const gameData = {
+      chiakiHost:       opts.host        || '',
+      chiakiNickname:   opts.nickname    || '',
+      chiakiProfile:    opts.profile     || '',
+      chiakiRegistKey:  opts.registKey   || '',
+      chiakiMorning:    opts.morning     || '',
+      chiakiFullscreen: opts.fullscreen !== false,
+      chiakiDisplayMode: opts.displayMode || '',
+    };
+    const chiakiConfig = db().chiakiConfig || {};
+    const args = buildChiakiArgs(gameData, chiakiConfig);
+    const session = startChiakiSession(sessionKey, chiakiExe, args);
+    return { success: true, sessionKey, state: session.state };
+  });
+
+  ipcMain.handle('chiaki:startStream', (event, gameId) => {
+    const game = db().games.find(g => g.id === gameId);
+    if (!game) return { success: false, error: 'Game not found' };
+
+    const chiakiExe = resolveChiakiExe(game.executablePath);
+    if (!chiakiExe) return { success: false, error: 'chiaki-ng not found' };
+
+    const chiakiConfig = db().chiakiConfig || {};
+    const args = buildChiakiArgs(game, chiakiConfig);
+    const session = startChiakiSession(gameId, chiakiExe, args);
+
+    game.lastPlayed = new Date().toISOString();
+    saveDB();
+
+    return { success: true, state: session.state };
+  });
+
+  ipcMain.handle('chiaki:stopStream', (event, gameId) => {
+    return { success: stopChiakiSession(gameId) };
+  });
+
+  ipcMain.handle('chiaki:getSessions', () => {
+    return getActiveSessions();
+  });
+
+  ipcMain.handle('chiaki:openGui', () => {
+    const chiakiExe = resolveChiakiExe();
+    if (!chiakiExe) return { success: false, error: 'chiaki-ng not found' };
+
+    const chiakiDir = path.dirname(chiakiExe);
+    const env = { ...process.env, PATH: `${chiakiDir};${process.env.PATH}` };
+    spawn(chiakiExe, [], { cwd: chiakiDir, env, detached: true, stdio: 'ignore' }).unref();
+    return { success: true };
+  });
+
+  ipcMain.handle('chiaki:registerConsole', (event, { host, psnAccountId, pin }) => {
+    // Use chiaki-ng CLI to register a console
+    const chiakiExe = resolveChiakiExe();
+    if (!chiakiExe) return { success: false, error: 'chiaki-ng not found' };
+
+    return new Promise((resolve) => {
+      const chiakiDir = path.dirname(chiakiExe);
+      const env = { ...process.env, PATH: `${chiakiDir};${process.env.PATH}` };
+      const args = ['register', '--host', host];
+      if (psnAccountId) args.push('--psn-account-id', psnAccountId);
+      if (pin) args.push('--pin', pin);
+
+      let output = '';
+      let resolved = false;
+      const finish = (result) => { if (resolved) return; resolved = true; resolve(result); };
+      const proc = spawn(chiakiExe, args, { cwd: chiakiDir, env, stdio: ['ignore', 'pipe', 'pipe'] });
+      proc.stdout.on('data', d => output += d.toString());
+      proc.stderr.on('data', d => output += d.toString());
+      proc.on('exit', (code) => {
+        if (code === 0) {
+          // Parse registration output for keys
+          const registKey = output.match(/regist[_-]?key[=:]\s*([^\s\n]+)/i)?.[1] || '';
+          const morning = output.match(/morning[=:]\s*([^\s\n]+)/i)?.[1] || '';
+          finish({ success: true, registKey, morning, output });
+        } else {
+          finish({ success: false, error: output || 'Registration failed (exit ' + code + ')' });
+        }
+      });
+      setTimeout(() => { try { proc.kill(); } catch(e) {} finish({ success: false, error: 'Registration timed out (30s)' }); }, 30000);
+    });
+  });
+
+  ipcMain.handle('chiaki:discoverConsoles', () => {
+    // Matches chiaki-ng discovery.c exactly:
+    //   - SRCH uses LF (\n) not CRLF (\r\n)
+    //   - PS4: port 987,  protocol 00020020
+    //   - PS5: port 9302, protocol 00030010
+    //   - Local port 9303-9319
+    //   - HTTP 200 = ready, HTTP 620 = standby
+    const TARGETS = [
+      { port: 987,  srch: Buffer.from('SRCH * HTTP/1.1\ndevice-discovery-protocol-version:00020020\n') },
+      { port: 9302, srch: Buffer.from('SRCH * HTTP/1.1\ndevice-discovery-protocol-version:00030010\n') },
+    ];
+
+    return new Promise((resolve) => {
+      const found = new Map();
+
+      // Message handler shared by all bind attempts
+      function onMessage(msg, rinfo) {
+        const text = msg.toString();
+        // chiaki: 200 = ready, 620 = standby
+        const statusMatch = text.match(/^HTTP\/1\.1\s+(\d+)/);
+        if (!statusMatch) return;
+        const httpCode = parseInt(statusMatch[1], 10);
+        if (httpCode !== 200 && httpCode !== 620) return;
+
+        console.log('[discovery] response from', rinfo.address, 'status:', httpCode);
+
+        const state = httpCode === 200 ? 'ready' : 'standby';
+        const entry = { host: rinfo.address, state };
+
+        for (const line of text.split('\n')) {
+          const colon = line.indexOf(':');
+          if (colon === -1) continue;
+          const k = line.substring(0, colon).trim().toLowerCase();
+          const v = line.substring(colon + 1).trim();
+          if (k === 'host-name')            entry.name            = v;
+          if (k === 'host-type')            entry.type            = v;
+          if (k === 'host-id')              entry.hostId          = v;
+          if (k === 'system-version')       entry.firmwareVersion = v;
+          if (k === 'running-app-titleid')  entry.runningTitleId  = v;
+          if (k === 'running-app-name')     entry.runningTitle    = v;
+          if (k === 'device-discovery-protocol-version') entry.protocolVersion = v;
+        }
+
+        const existing = found.get(rinfo.address);
+        if (existing) {
+          Object.assign(existing, Object.fromEntries(
+            Object.entries(entry).filter(([, v]) => v != null && v !== '')
+          ));
+        } else {
+          found.set(rinfo.address, entry);
+        }
+      }
+
+      // Bind to port 9303-9319 like chiaki, then fallback to 0 (random)
+      const ports = [];
+      for (let p = 9303; p <= 9319; p++) ports.push(p);
+      ports.push(0);
+
+      function tryBind(idx) {
+        const s = dgram.createSocket({ type: 'udp4', reuseAddr: true });
+        s.on('message', onMessage);
+        s.on('error', (err) => {
+          if (err.code === 'EADDRINUSE' && idx + 1 < ports.length) {
+            try { s.close(); } catch(e) {}
+            tryBind(idx + 1);
+          } else {
+            console.error('[discovery] bind failed:', err.message);
+            try { s.close(); } catch(e) {}
+            resolve({ success: false, consoles: [], error: err.message });
+          }
+        });
+        s.bind(ports[idx], () => {
+          console.log('[discovery] bound to port', ports[idx] || '(random)');
+          onBoundSock(s);
+        });
+      }
+      tryBind(0);
+
+      function onBoundSock(s) {
+        s.setBroadcast(true);
+
+        const broadcasts = new Set(['255.255.255.255']);
+        for (const addrs of Object.values(os.networkInterfaces())) {
+          for (const addr of addrs) {
+            if (addr.family !== 'IPv4' || addr.internal) continue;
+            if (addr.netmask) {
+              const ipParts  = addr.address.split('.').map(Number);
+              const maskParts = addr.netmask.split('.').map(Number);
+              const bcast = ipParts.map((octet, i) => (octet | (~maskParts[i] & 0xFF))).join('.');
+              broadcasts.add(bcast);
+            } else {
+              const parts = addr.address.split('.');
+              parts[3] = '255';
+              broadcasts.add(parts.join('.'));
+            }
+          }
+        }
+
+        console.log('[discovery] broadcasting to:', [...broadcasts]);
+
+        const sendRound = () => {
+          for (const bcast of broadcasts) {
+            for (const { port, srch } of TARGETS) {
+              s.send(srch, port, bcast, (err) => {
+                if (err) console.error('[discovery] send error:', bcast, port, err.message);
+              });
+            }
+          }
+        };
+
+        sendRound();
+        setTimeout(sendRound, 500);
+        setTimeout(sendRound, 1500);
+
+        setTimeout(() => {
+          console.log('[discovery] done, found', found.size, 'console(s)');
+          try { s.close(); } catch(e) {}
+          resolve({ success: true, consoles: [...found.values()] });
+        }, 4000);
+      }
+    });
+  });
+
+  // ─── Wake-on-LAN for PlayStation consoles ─────────────────────────────────────
+  ipcMain.handle('chiaki:wakeConsole', (event, { host, credentials }) => {
+    // PS4/PS5 use a custom wake packet on UDP port 987, not standard WoL.
+    // Send a WAKEUP request with the registered credentials.
+    return new Promise((resolve) => {
+      const registKey = credentials?.registKey || '';
+      if (!registKey) {
+        return resolve({ success: false, error: 'No registration key — register the console first' });
+      }
+
+      // Attempt 1: Use chiaki CLI if available
+      let resolved = false;
+      const finish = (result) => { if (resolved) return; resolved = true; resolve(result); };
+
+      const chiakiExe = resolveChiakiExe();
+      if (chiakiExe) {
+        const chiakiDir = path.dirname(chiakiExe);
+        const env = { ...process.env, PATH: `${chiakiDir};${process.env.PATH}` };
+        const args = ['wakeup', '--host', host, '--regist-key', registKey];
+
+        const proc = spawn(chiakiExe, args, { cwd: chiakiDir, env, stdio: ['ignore', 'pipe', 'pipe'] });
+        let output = '';
+        proc.stdout.on('data', d => output += d.toString());
+        proc.stderr.on('data', d => output += d.toString());
+        proc.on('exit', (code) => {
+          finish({ success: code === 0, output, method: 'chiaki-cli' });
+        });
+        proc.on('error', () => {
+          // CLI failed, fall through to UDP
+          sendUdpWake();
+        });
+        setTimeout(() => { try { proc.kill(); } catch(e) {} finish({ success: false, error: 'Wake CLI timed out (10s)', method: 'chiaki-cli' }); }, 10000);
+        return;
+      }
+
+      // Attempt 2: Direct UDP wake packet
+      sendUdpWake();
+
+      function sendUdpWake() {
+        // Matches chiaki-ng discovery.c WAKEUP format exactly (LF, not CRLF)
+        // PS4 wakes on port 987, PS5 on port 9302
+        const WAKE_TARGETS = [
+          { port: 987,  msg: Buffer.from('WAKEUP * HTTP/1.1\nclient-type:vr\nauth-type:R\nmodel:w\napp-type:r\nuser-credential:' + registKey + '\ndevice-discovery-protocol-version:00020020\n') },
+          { port: 9302, msg: Buffer.from('WAKEUP * HTTP/1.1\nclient-type:vr\nauth-type:R\nmodel:w\napp-type:r\nuser-credential:' + registKey + '\ndevice-discovery-protocol-version:00030010\n') },
+        ];
+
+        const sock = dgram.createSocket('udp4');
+        sock.on('error', (err) => {
+          console.error('[wake] socket error:', err.message);
+          try { sock.close(); } catch(e) {}
+          finish({ success: false, error: err.message, method: 'udp' });
+        });
+
+        sock.bind(0, () => {
+          sock.setBroadcast(true);
+          const hosts = [host];
+          const parts = host.split('.');
+          if (parts.length === 4) { parts[3] = '255'; hosts.push(parts.join('.')); }
+
+          let total = hosts.length * WAKE_TARGETS.length;
+          let sent = 0;
+          for (const target of hosts) {
+            for (const { port, msg } of WAKE_TARGETS) {
+              sock.send(msg, port, target, (err) => {
+                if (err) console.error('[wake] send error:', target, port, err.message);
+                sent++;
+                if (sent === total) {
+                  setTimeout(() => {
+                    try { sock.close(); } catch(e) {}
+                    console.log('[wake] sent to', host, '(both ports)');
+                    finish({ success: true, method: 'udp' });
+                  }, 500);
+                }
+              });
+            }
+          }
+        });
+      }
+    });
+  });
+}
+
 module.exports = {
   getChiakiDir,
   getBundledChiakiExe,
@@ -578,4 +1044,6 @@ module.exports = {
   sendStreamEvent,
   sendChiakiEvent,
   getActiveSessions,
+  autoSetupChiakiIfMissing,
+  registerChiakiIpcHandlers,
 };

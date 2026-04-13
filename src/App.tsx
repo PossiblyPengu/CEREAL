@@ -3,6 +3,9 @@ import ReactDOM from 'react-dom';
 import type { Game, Settings, ChiakiSession, ImportProgress, MetaProgress, ArtPickerOpts } from './types';
 import { PLATFORMS, STREAMING_PLATFORMS, CLUSTER_CENTERS, GALAXY_W, GALAXY_H, THEMES, I } from './constants';
 import { applyTheme, applyUiScale, resolveGameImage, steamImgFallback, fmtTime, useGamepad } from './utils';
+import { useGalaxyCamera } from './hooks/useGalaxyCamera';
+import { useParallax } from './hooks/useParallax';
+import { useInitialDataLoad, useChiakiAndRefreshListeners, useTabListeners, useAutoUpdateListener } from './hooks/useAppListeners';
 import { TabBar } from './components/TabBar';
 import { Toast } from './components/Toast';
 import { SearchOverlay } from './components/SearchOverlay';
@@ -160,8 +163,6 @@ interface StarLayerItem { x: number; y: number; sz: number; op: number; tw: bool
 interface GalaxyStar { x: number; y: number; sz: number; op: number; hue: string; tw: boolean; twDur: number; twDel: number; }
 interface ShootingStar { x: number; y: number; angle: number; dur: number; del: number; }
 
-const PARALLAX_SPEEDS = [10, 30, 60] as const;
-
 export default function App() {
   const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
   const [metaProgress, setMetaProgress] = useState<MetaProgress | null>(null);
@@ -199,11 +200,8 @@ export default function App() {
   const [ready, setReady] = useState(false);
   const [viewMode, setViewMode] = useState('orbit');
   const [viewTransition, setViewTransition] = useState<string | null>(null);
-  const [galaxyEntering, setGalaxyEntering] = useState(false);
   const [sortBy, setSortBy] = useState('default');
   const [continueBannerDismissed, setContinueBannerDismissed] = useState(false);
-  const [cam, setCam] = useState({ zoom: 0.4, x: 0, y: 0 });
-  const [animating, setAnimating] = useState(false);
   const [gpIdx, setGpIdx] = useState(-1);
   const [gpArea, setGpArea] = useState('cards');
   const [gpActive, setGpActive] = useState(false);
@@ -213,16 +211,14 @@ export default function App() {
   );
   const [activeTabId, setActiveTabId] = useState('launcher');
 
-  const viewportRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLDivElement>(null);
-  const camRef = useRef({ zoom: 0.4, x: 0, y: 0 });
-  const dragInfo = useRef({ active: false, sx: 0, sy: 0, cx: 0, cy: 0, moved: false });
-  const pRef0 = useRef<HTMLDivElement>(null);
-  const pRef1 = useRef<HTMLDivElement>(null);
-  const pRef2 = useRef<HTMLDivElement>(null);
-  const parallaxRefsArray = useRef([pRef0, pRef1, pRef2]);
-  const parallaxRafRef = useRef<number | null>(null);
-  const parallaxMouseRef = useRef({ cx: 0, cy: 0 });
+  // ─── Custom hooks ─────────────────────────────────────────────────────────
+  const {
+    cam, animating, galaxyEntering, setGalaxyEntering,
+    camRef, viewportRef, canvasRef, dragInfo,
+    fitAll, flyTo, zoomIn, zoomOut,
+  } = useGalaxyCamera(viewMode);
+  const { parallaxRefsArray } = useParallax(viewMode);
+
   const kbStateRef = useRef({ focusGame: null as Game | null, showThemePicker: false, showLayoutPicker: false, showFilters: '' });
   const [globalArtPicker, setGlobalArtPicker] = useState<ArtPickerOpts | null>(null);
   const artResolve = useRef<((url: string | null) => void) | null>(null);
@@ -230,29 +226,6 @@ export default function App() {
 
   const openArtPicker = (opts: ArtPickerOpts) =>
     new Promise<string | null>(resolve => { artResolve.current = resolve; setGlobalArtPicker(opts); });
-
-  // Parallax
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (viewMode === 'cards') return;
-      parallaxMouseRef.current = { cx: e.clientX / window.innerWidth - 0.5, cy: e.clientY / window.innerHeight - 0.5 };
-      if (parallaxRafRef.current !== null) return;
-      parallaxRafRef.current = requestAnimationFrame(() => {
-        parallaxRafRef.current = null;
-        const { cx, cy } = parallaxMouseRef.current;
-        parallaxRefsArray.current.forEach((ref, i) => {
-          if (ref.current) ref.current.style.transform = `translate(${cx * PARALLAX_SPEEDS[i]}px, ${cy * PARALLAX_SPEEDS[i]}px)`;
-        });
-      });
-    };
-    window.addEventListener('mousemove', handler, { passive: true });
-    return () => {
-      window.removeEventListener('mousemove', handler);
-      if (parallaxRafRef.current !== null) { cancelAnimationFrame(parallaxRafRef.current); parallaxRafRef.current = null; }
-    };
-  }, [viewMode]);
-
-  useEffect(() => { camRef.current = cam; }, [cam]);
 
   useEffect(() => {
     const upd = () => {
@@ -266,88 +239,13 @@ export default function App() {
 
   const flash = useCallback((m: React.ReactNode) => { setToast(''); setTimeout(() => setToast(m), 30); }, []);
 
-  const fitAll = () => {
-    const vw = window.innerWidth, vh = window.innerHeight;
-    const z = Math.min(vw / GALAXY_W, vh / GALAXY_H) * 0.9;
-    const nx = (vw - GALAXY_W * z) / 2, ny = (vh - GALAXY_H * z) / 2;
-    setAnimating(true); setCam({ zoom: z, x: nx, y: ny }); setTimeout(() => setAnimating(false), 650);
-  };
-
-  const flyTo = (cx: number, cy: number, tz?: number) => {
-    const z = tz || 1.6;
-    const vw = window.innerWidth, vh = window.innerHeight;
-    setAnimating(true); setCam({ zoom: z, x: vw / 2 - cx * z, y: vh / 2 - cy * z }); setTimeout(() => setAnimating(false), 650);
-  };
-
-  const zoomIn = () => {
-    const hw = window.innerWidth / 2, hh = window.innerHeight / 2;
-    setAnimating(true);
-    setCam(c => { const nz = Math.min(5, c.zoom * 1.4); const r = nz / c.zoom; return { zoom: nz, x: hw - r * (hw - c.x), y: hh - r * (hh - c.y) }; });
-    setTimeout(() => setAnimating(false), 350);
-  };
-
-  const zoomOut = () => {
-    const hw = window.innerWidth / 2, hh = window.innerHeight / 2;
-    setAnimating(true);
-    setCam(c => { const nz = Math.max(0.15, c.zoom / 1.4); const r = nz / c.zoom; return { zoom: nz, x: hw - r * (hw - c.x), y: hh - r * (hh - c.y) }; });
-    setTimeout(() => setAnimating(false), 350);
-  };
-
   const switchView = useCallback((mode: string) => {
     if (mode === viewMode || viewTransition) return;
     if (mode === 'orbit' && viewMode === 'cards') {
       setViewTransition('cards-exit');
       setTimeout(() => { setViewMode('orbit'); setViewTransition(null); setGalaxyEntering(true); setTimeout(() => setGalaxyEntering(false), 900); }, 500);
     } else { setViewMode(mode); }
-  }, [viewMode, viewTransition]);
-
-  useEffect(() => {
-    if (viewMode === 'orbit') {
-      const vw = window.innerWidth, vh = window.innerHeight;
-      const z = Math.min(vw / GALAXY_W, vh / GALAXY_H) * 0.9;
-      setCam({ zoom: z, x: (vw - GALAXY_W * z) / 2, y: (vh - GALAXY_H * z) / 2 });
-    }
-  }, [viewMode]);
-
-  // Orbit wheel + drag
-  useEffect(() => {
-    if (viewMode !== 'orbit') return;
-    const vp = viewportRef.current; if (!vp) return;
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault(); setAnimating(false);
-      const rect = vp.getBoundingClientRect();
-      const mx = e.clientX - rect.left, my = e.clientY - rect.top;
-      setCam(c => { const f = e.deltaY < 0 ? 1.12 : 1 / 1.12; const nz = Math.min(5, Math.max(0.15, c.zoom * f)); const r = nz / c.zoom; return { zoom: nz, x: mx - r * (mx - c.x), y: my - r * (my - c.y) }; });
-    };
-    const onDown = (e: MouseEvent) => {
-      if (e.button !== 0) return; setAnimating(false);
-      const c = camRef.current;
-      dragInfo.current = { active: true, sx: e.clientX, sy: e.clientY, cx: c.x, cy: c.y, moved: false };
-    };
-    let rafId: number | null = null;
-    const onMove = (e: MouseEvent) => {
-      const d = dragInfo.current; if (!d.active) return;
-      if (Math.abs(e.clientX - d.sx) > 3 || Math.abs(e.clientY - d.sy) > 3) d.moved = true;
-      const ex = e.clientX, ey = e.clientY;
-      if (rafId !== null) cancelAnimationFrame(rafId);
-      rafId = requestAnimationFrame(() => {
-        rafId = null;
-        setCam(c => ({ ...c, x: d.cx + (ex - d.sx), y: d.cy + (ey - d.sy) }));
-      });
-    };
-    const onUp = () => { dragInfo.current.active = false; };
-    vp.addEventListener('wheel', onWheel, { passive: false });
-    vp.addEventListener('mousedown', onDown);
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-    return () => {
-      vp.removeEventListener('wheel', onWheel);
-      vp.removeEventListener('mousedown', onDown);
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-      if (rafId !== null) cancelAnimationFrame(rafId);
-    };
-  }, [viewMode]);
+  }, [viewMode, viewTransition, setGalaxyEntering]);
 
   // Enter / ready animation flags
   useEffect(() => {
@@ -356,114 +254,12 @@ export default function App() {
     return () => { clearTimeout(t1); clearTimeout(t2); };
   }, []);
 
-  // Tab system listeners
-  useEffect(() => {
-    const api = window.api as Record<string, unknown>;
-    const u1 = typeof api?.onTabsOpened === 'function'
-      ? (api.onTabsOpened as (cb: (d: { id: string; title: string; platform: string }) => void) => () => void)(
-          data => { setTabs(p => [...p, { id: data.id, title: data.title, closable: true, platform: data.platform }]); setActiveTabId(data.id); (api.switchTab as (id: string) => void)?.(data.id); }
-        )
-      : null;
-    const u2 = typeof api?.onTabsClosed === 'function'
-      ? (api.onTabsClosed as (cb: (d: { id: string }) => void) => () => void)(
-          data => { setTabs(p => p.filter(t => t.id !== data.id)); setActiveTabId(p => p === data.id ? 'launcher' : p); }
-        )
-      : null;
-    return () => { u1?.(); u2?.(); };
-  }, []);
+  // ─── IPC Listeners (extracted to hooks) ──────────────────────────────────
+  useTabListeners(setTabs, setActiveTabId);
+  useAutoUpdateListener(setAppUpdate);
 
-  // Chiaki + games refresh listeners
-  useEffect(() => {
-    let unsubChiaki: (() => void) | null = null;
-    let unsubRefresh: (() => void) | null = null;
-    if (window.api?.onChiakiEvent) {
-      unsubChiaki = window.api.onChiakiEvent!((evt: ChiakiSession) => {
-        const gid = evt.gameId;
-        if (!gid) return;
-        if (evt.type === 'title_change') {
-          setChiakiSessions(prev => {
-            const n = { ...prev };
-            n[gid] = { ...(n[gid] || {}), ...evt, detectedTitle: (evt.titleName as string) || evt.gameName || '' };
-            return n;
-          });
-          if (evt.gameName) flash('Now playing: ' + evt.gameName);
-          return;
-        }
-        setChiakiSessions(prev => {
-          const n = { ...prev };
-          if ((evt.type === 'disconnected' || evt.type === 'chiaki_disconnect') && evt.reason !== 'transient_error') delete n[gid];
-          else n[gid] = { ...(n[gid] || {}), ...evt };
-          return n;
-        });
-      });
-    }
-    if (window.api?.onGamesRefresh) {
-      unsubRefresh = window.api.onGamesRefresh!((g: Game[]) => {
-        const incoming = g || [];
-        setGames(prev => {
-          const prevMap = new Map((prev || []).map(x => [x.id, x]));
-          return incoming.map((ng: Game) => {
-            const prevG = prevMap.get(ng.id);
-            const prevStamp = prevG?._imgStamp || 0;
-            const newStamp = ng._imgStamp || 0;
-            const stamp = Math.max(prevStamp, newStamp);
-            return stamp ? { ...ng, _imgStamp: stamp } : ng;
-          });
-        });
-      });
-    }
-    return () => { unsubChiaki?.(); unsubRefresh?.(); };
-  }, [flash]);
-
-  // Load initial data
-  useEffect(() => {
-    (async () => {
-      if (window.api) {
-        const [g, c, s] = await Promise.all([
-          window.api.getGames(),
-          window.api.getCategories(),
-          window.api.getSettings(),
-        ]);
-        setGames(g || []);
-        setCats(c || []);
-        if (s) {
-            setSettings(s);
-            if (s.defaultView) setViewMode(s.defaultView);
-            if (s.defaultTab) setTab(s.defaultTab);
-            if (s.theme) applyTheme(s.theme);
-            if (s.accentColor) {
-              document.documentElement.style.setProperty('--accent', s.accentColor);
-              document.documentElement.style.setProperty('--accent-soft', s.accentColor + '1f');
-              document.documentElement.style.setProperty('--accent-border', s.accentColor + '4d');
-            }
-            if (s.uiScale) applyUiScale(s.uiScale);
-            if (s.filterPlatforms && Array.isArray(s.filterPlatforms)) setSelectedPlatforms(s.filterPlatforms);
-            if (s.filterCategories && Array.isArray(s.filterCategories)) setSelectedCategories(s.filterCategories);
-            if (s.filterHideSteamSoftware) setHideSteamSoftware(!!s.filterHideSteamSoftware);
-            setShowWizard(s.firstRun !== false);
-          }
-        setGamesLoaded(true);
-      } else {
-        setCats(['Action', 'Adventure', 'RPG', 'Strategy', 'Puzzle', 'Simulation', 'Sports', 'FPS', 'Indie', 'Multiplayer']);
-        setGames([
-          { id: '1', name: 'Cyberpunk 2077', platform: 'steam', platformId: '1091500', coverUrl: 'https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/1091500/library_600x900.jpg', categories: ['Action', 'RPG'], playtimeMinutes: 1240, lastPlayed: '2025-01-28T10:30:00Z', addedAt: '2024-06-15', favorite: true },
-          { id: '2', name: 'Elden Ring', platform: 'steam', platformId: '1245620', coverUrl: 'https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/1245620/library_600x900.jpg', categories: ['Action', 'RPG', 'Adventure'], playtimeMinutes: 840, lastPlayed: '2025-02-01T14:00:00Z', addedAt: '2024-03-10', favorite: true },
-          { id: '3', name: 'Hades', platform: 'steam', platformId: '1145360', coverUrl: 'https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/1145360/library_600x900.jpg', categories: ['Action', 'Indie'], playtimeMinutes: 320, lastPlayed: '2025-01-15T18:00:00Z', addedAt: '2024-08-20', favorite: false },
-          { id: '10', name: 'Fortnite', platform: 'epic', coverUrl: '', categories: ['Action', 'Multiplayer', 'FPS'], playtimeMinutes: 3200, lastPlayed: '2025-02-10T22:00:00Z', addedAt: '2024-01-01', favorite: false },
-          { id: '13', name: 'The Witcher 3', platform: 'gog', coverUrl: '', categories: ['RPG', 'Adventure'], playtimeMinutes: 560, lastPlayed: '2024-12-20', addedAt: '2024-02-14', favorite: false },
-          { id: '21', name: 'Forza Horizon 5', platform: 'xbox', coverUrl: '', categories: ['Sports', 'Simulation'], playtimeMinutes: 90, lastPlayed: '2025-01-22', addedAt: '2024-11-10', favorite: false },
-        ]);
-        setGamesLoaded(true);
-      }
-    })();
-    let unsubImport: (() => void) | null = null;
-    if (window.api?.onImportProgress) {
-      unsubImport = window.api.onImportProgress((data: ImportProgress) => {
-        setImportProgress(data);
-      });
-    }
-    return () => { if (unsubImport) unsubImport(); };
-  }, []);
+  useChiakiAndRefreshListeners(flash, setChiakiSessions, setGames);
+  useInitialDataLoad({ setGames, setCats, setSettings, setGamesLoaded, setViewMode, setTab, setSelectedPlatforms, setSelectedCategories, setHideSteamSoftware, setShowWizard, setImportProgress });
 
   // Auto-dismiss the import progress overlay once done/error
   useEffect(() => {
@@ -569,18 +365,6 @@ export default function App() {
     window.addEventListener('gamepaddisconnected', onDisc);
     return () => { window.removeEventListener('gamepadconnected', onConn as EventListener); window.removeEventListener('gamepaddisconnected', onDisc); };
   }, [flash]);
-
-  // App auto-update events
-  useEffect(() => {
-    if (!window.api?.onUpdateEvent) return;
-    return window.api.onUpdateEvent(({ type, data }) => {
-      const d = data as { version?: string; percent?: number } | null | undefined;
-      if (type === 'update-available') setAppUpdate({ status: 'downloading', version: d?.version });
-      else if (type === 'download-progress') setAppUpdate(prev => ({ ...prev!, status: 'downloading', progress: Math.round(d?.percent || 0) }));
-      else if (type === 'update-downloaded') setAppUpdate(prev => ({ ...prev!, status: 'ready' }));
-      else if (type === 'error') setAppUpdate(null);
-    });
-  }, []);
 
   const _updateGameInState = useCallback((updated: Game) => {
     if (!updated) return;

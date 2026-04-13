@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { httpGetJson } = require('./http');
 const { canonicalize, findExisting, makeGameEntry, updateAccountSync } = require('./utils');
+const log = require('../modules/logger');
 
 function detectInstalled() {
   const games = [];

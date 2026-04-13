@@ -1,76 +1,52 @@
-const https = require('https');
+// ─── HTTP utilities using Electron's net.fetch ─────────────────────────────────
+// net.fetch provides: redirect following, HTTP/2, proxy support, decompression.
+// Falls back to Node.js https before app.whenReady() (module load time only).
+const { net } = require('electron');
 
 const UA = 'CerealLauncher/1.0';
+const DEFAULT_TIMEOUT = 15000; // 15s network timeout
 
-const DEFAULT_TIMEOUT = 15000; // 15s network timeout so imports don't hang forever
-
-function attachTimeout(req, reject) {
-  req.setTimeout(DEFAULT_TIMEOUT, () => {
-    req.destroy(new Error('Request timed out'));
-    reject(new Error('Request timed out'));
-  });
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('Request timed out')), ms)),
+  ]);
 }
 
-function httpGet(url, headers) {
-  return new Promise((resolve, reject) => {
-    const req = https.get(url, { headers: { 'User-Agent': UA, ...(headers || {}) } }, (res) => {
-      const chunks = [];
-      res.on('data', c => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
-      res.on('end', () => resolve({ status: res.statusCode, raw: Buffer.concat(chunks).toString('utf8') }));
-    });
-    req.on('error', e => reject(e));
-    attachTimeout(req, reject);
-  });
+async function httpGet(url, headers) {
+  const res = await withTimeout(net.fetch(url, {
+    headers: { 'User-Agent': UA, ...(headers || {}) },
+  }), DEFAULT_TIMEOUT);
+  const raw = await res.text();
+  return { status: res.status, raw };
 }
 
-function httpGetJson(url, headers) {
-  return new Promise((resolve, reject) => {
-    const req = https.get(url, { headers: { 'User-Agent': UA, ...(headers || {}) } }, (res) => {
-      const chunks = [];
-      res.on('data', c => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
-      res.on('end', () => {
-        const data = Buffer.concat(chunks).toString('utf8');
-        try { resolve({ status: res.statusCode, data: JSON.parse(data) }); }
-        catch (e) { resolve({ status: res.statusCode, data: null, raw: data }); }
-      });
-    });
-    req.on('error', e => reject(e));
-    attachTimeout(req, reject);
-  });
+async function httpGetJson(url, headers) {
+  const res = await withTimeout(net.fetch(url, {
+    headers: { 'User-Agent': UA, ...(headers || {}) },
+  }), DEFAULT_TIMEOUT);
+  const raw = await res.text();
+  try { return { status: res.status, data: JSON.parse(raw) }; }
+  catch (_e) { return { status: res.status, data: null, raw }; }
 }
 
-function httpPost(url, body, headers) {
-  return new Promise((resolve, reject) => {
-    const u = new URL(url);
-    const postData = typeof body === 'string' ? body : new URLSearchParams(body).toString();
-    const contentType = (typeof body === 'string' && body.startsWith('{'))
-      ? 'application/json'
-      : 'application/x-www-form-urlencoded';
-    const req = https.request({
-      hostname: u.hostname,
-      port: u.port || 443,
-      path: u.pathname + u.search,
-      method: 'POST',
-      headers: {
-        'Content-Type': contentType,
-        'Content-Length': Buffer.byteLength(postData),
-        'User-Agent': UA,
-        ...(headers || {}),
-      },
-    }, (res) => {
-      const chunks = [];
-      res.on('data', c => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
-      res.on('end', () => {
-        const data = Buffer.concat(chunks).toString('utf8');
-        try { resolve({ status: res.statusCode, data: JSON.parse(data) }); }
-        catch (e) { resolve({ status: res.statusCode, data: null, raw: data }); }
-      });
-    });
-    req.on('error', e => reject(e));
-    attachTimeout(req, reject);
-    req.write(postData);
-    req.end();
-  });
+async function httpPost(url, body, headers) {
+  const postData = typeof body === 'string' ? body : new URLSearchParams(body).toString();
+  const contentType = (typeof body === 'string' && body.startsWith('{'))
+    ? 'application/json'
+    : 'application/x-www-form-urlencoded';
+  const res = await withTimeout(net.fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': contentType,
+      'User-Agent': UA,
+      ...(headers || {}),
+    },
+    body: postData,
+  }), DEFAULT_TIMEOUT);
+  const raw = await res.text();
+  try { return { status: res.status, data: JSON.parse(raw) }; }
+  catch (_e) { return { status: res.status, data: null, raw }; }
 }
 
 module.exports = { httpGet, httpGetJson, httpPost };

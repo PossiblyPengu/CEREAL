@@ -5,6 +5,7 @@ const path = require('path');
 const ctx = require('./context');
 const { ACCOUNT_SECRET_FIELDS } = require('./constants');
 const { scanEpicInstalled, scanGogInstalled } = require('./detection');
+const log = require('./logger');
 
 // Lazy-loaded — these are resolved at call time (after app.whenReady)
 let providers = null;

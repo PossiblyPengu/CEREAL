@@ -6,6 +6,7 @@
 
 const { net } = require('electron');
 const ctx = require('./context');
+const log = require('./logger');
 
 const METADATA_CACHE = new Map();
 const METADATA_CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -201,8 +202,8 @@ async function fetchSteamGridDBArt(gameName, apiKey) {
       sgdbFetch(`https://www.steamgriddb.com/api/v2/heroes/game/${gameId}?limit=1`),
     ]);
 
-    const coverUrl = covers.status === 'fulfilled' && covers.value?.data?.[0]?.url || '';
-    const headerUrl = heroes.status === 'fulfilled' && heroes.value?.data?.[0]?.url || '';
+    const coverUrl = (covers.status === 'fulfilled' && covers.value?.data?.[0]?.url) || '';
+    const headerUrl = (heroes.status === 'fulfilled' && heroes.value?.data?.[0]?.url) || '';
 
     if (coverUrl || headerUrl) return { coverUrl, headerUrl };
     return null;

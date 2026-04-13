@@ -1,0 +1,8 @@
+import { defineConfig } from 'vitest/config';
+
+export default defineConfig({
+  test: {
+    include: ['electron/**/*.test.{js,mjs,ts}', 'src/**/*.test.{ts,tsx}'],
+    globals: true,
+  },
+});

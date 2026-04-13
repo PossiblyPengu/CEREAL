@@ -4,6 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const ctx = require('./context');
 const { fetchGameMetadata, applyMetadataToGame } = require('./metadata');
+const log = require('./logger');
 
 // --- Cover cache directory ---
 function getCoversDir() {
@@ -145,8 +146,6 @@ async function processCoverQueue() {
 
 module.exports = {
   getCoversDir,
-  downloadToFile,
   cleanupFile,
   enqueueCoverFetch,
-  processCoverQueue,
 };

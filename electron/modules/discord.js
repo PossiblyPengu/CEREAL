@@ -1,5 +1,6 @@
 // ─── Discord Rich Presence ─────────────────────────────────────────────────────
 const ctx = require('./context');
+const log = require('./logger');
 
 const DISCORD_CLIENT_ID = '1338877643523145789'; // Cereal Launcher app ID
 let discordRpc = null;

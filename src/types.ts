@@ -165,62 +165,134 @@ export interface ArtPickerOpts {
 // ─── Electron API (exposed via preload) ──────────────────────────────────────
 
 export interface ElectronAPI {
-  getGames(): Promise<Game[]>;
-  saveGames(games: Game[]): Promise<void>;
-  getCategories(): Promise<string[]>;
-  saveCategories(cats: string[]): Promise<void>;
-  getSettings(): Promise<Settings>;
-  saveSettings(s: Partial<Settings>): Promise<Settings>;
-  launchGame(gameId: string): Promise<{ success: boolean; error?: string; lastPlayed?: string }>;
-  addGame(game: Game): Promise<Game>;
-  updateGame(game: Game): Promise<Game>;
-  deleteGame(id: string): Promise<void>;
-  toggleFavorite(id: string): Promise<Game>;
-  openFileDialog(opts?: { filters?: { name: string; extensions: string[] }[] }): Promise<string | null>;
-  openFolderDialog(): Promise<string | null>;
-  signalReady?(): void;
-  onChiakiEvent?(cb: (evt: ChiakiSession) => void): () => void;
-  onGamesRefresh?(cb: (games: Game[]) => void): () => void;
-  detectGames?(platform: string): Promise<Game[]>;
-  fetchSgdbCovers?(gameId: string, query: string): Promise<{ url: string; thumbUrl?: string }[]>;
-  downloadCover?(gameId: string, url: string): Promise<{ localPath: string }>;
-  startChiaki?(game: Game, opts?: Record<string, unknown>): Promise<void>;
-  stopChiaki?(gameId: string): Promise<void>;
-  getChiakiRegistered?(host: string): Promise<boolean>;
-  registerChiaki?(host: string, pin: string): Promise<{ success: boolean; error?: string }>;
   // Window controls
   minimize?(): void;
   maximize?(): void;
   close?(): void;
-  // Playtime sync
-  syncPlaytime?(): Promise<{ games: Game[]; updated: string[] }>;
-  // Import progress
-  onImportProgress?(cb: (data: ImportProgress) => void): () => void;
-  // App updates
-  onUpdateEvent?(cb: (e: { type: string; data: unknown }) => void): () => void;
-  installUpdate?(): void;
-  // Metadata
-  fetchAllMetadata?(): Promise<{ total: number; updated: number; failed: number }>;
-  onMetadataProgress?(cb: (p: Partial<MetaProgress>) => void): () => void;
-  onCoverProgress?(cb: (p: CoverProgress) => void): () => void;
-  // Tab system
-  onTabsOpened?(cb: (d: { id: string; title: string; platform: string }) => void): () => void;
-  onTabsClosed?(cb: (d: { id: string }) => void): () => void;
-  switchTab?(id: string): void;
-  closeTab?(id: string): void;
+  fullscreen?(): Promise<void>;
+  openExternal?(url: string): Promise<void>;
+  isFullscreen?(): Promise<boolean>;
+  signalReady?(): void;
+
+  // Games
+  getGames(): Promise<Game[]>;
+  addGame(game: Game): Promise<Game>;
+  updateGame(game: Game): Promise<Game>;
+  fetchCoverNow?(gameId: string): Promise<void>;
+  deleteGame(id: string): Promise<void>;
+  toggleFavorite(id: string): Promise<Game>;
+  launchGame(gameId: string): Promise<{ success: boolean; error?: string; lastPlayed?: string }>;
+  installGame?(id: string): Promise<void>;
+  openGameInClient?(id: string): Promise<void>;
+
   // Platform detection
   detectSteam?(): Promise<{ games: Game[] }>;
   detectEpic?(): Promise<{ games: Game[] }>;
   detectGOG?(): Promise<{ games: Game[] }>;
+  detectPSRemote?(): Promise<{ games: Game[] }>;
   detectXbox?(): Promise<{ games: Game[] }>;
   detectEA?(): Promise<{ games: Game[] }>;
   detectBattleNet?(): Promise<{ games: Game[] }>;
   detectItchio?(): Promise<{ games: Game[] }>;
   detectUbisoft?(): Promise<{ games: Game[] }>;
-  // Streaming
+
+  // Chiaki (PlayStation Remote Play)
+  getChiakiStatus?(): Promise<unknown>;
+  chiakiCheckUpdate?(): Promise<unknown>;
+  chiakiUpdate?(): Promise<unknown>;
+  getChiakiConfig?(): Promise<unknown>;
+  saveChiakiConfig?(config: unknown): Promise<void>;
+  setChiakiStream?(gameId: string, streamConfig: unknown): Promise<void>;
+  chiakiStartStreamDirect?(opts: unknown): Promise<void>;
+  chiakiStartStream?(gameId: string): Promise<void>;
   chiakiStopStream?(gameId: string): Promise<void>;
+  chiakiGetSessions?(): Promise<unknown>;
+  chiakiOpenGui?(): Promise<void>;
+  chiakiRegisterConsole?(opts: unknown): Promise<{ success: boolean; error?: string }>;
+  chiakiDiscoverConsoles?(): Promise<unknown>;
+  chiakiWakeConsole?(opts: unknown): Promise<void>;
+  chiakiSetStreamBounds?(opts: unknown): Promise<void>;
+
+  // xCloud (Xbox Cloud Gaming)
+  xcloudStartDirect?(url: string): Promise<void>;
+  xcloudStart?(opts: unknown): Promise<void>;
   xcloudStop?(gameId: string): Promise<void>;
-  [key: string]: unknown;
+  xcloudGetSessions?(): Promise<unknown>;
+
+  // Stream events (PS + Xbox)
+  onChiakiEvent?(cb: (evt: ChiakiSession) => void): () => void;
+
+  // Game list refresh
+  onGamesRefresh?(cb: (games: Game[]) => void): () => void;
+
+  // Dialogs
+  pickExecutable?(): Promise<string | null>;
+  pickImage?(): Promise<string | null>;
+
+  // Categories
+  getCategories(): Promise<string[]>;
+  addCategory?(cat: string): Promise<string[]>;
+  removeCategory?(cat: string): Promise<string[]>;
+
+  // Metadata
+  fetchMetadata?(gameId: string): Promise<unknown>;
+  applyMetadata?(gameId: string, force?: boolean): Promise<unknown>;
+  fetchAllMetadata?(): Promise<{ total: number; updated: number; failed: number }>;
+  searchArt?(gameName: string, platform: string): Promise<unknown>;
+  fetchMetadataForName?(name: string, platform: string, platformId?: string): Promise<unknown>;
+  steamGridDbLogin?(): Promise<unknown>;
+  readClipboard?(): Promise<string>;
+  onMetadataProgress?(cb: (p: Partial<MetaProgress>) => void): () => void;
+  onCoverProgress?(cb: (p: CoverProgress) => void): () => void;
+
+  // Playtime
+  syncPlaytime?(): Promise<{ games: Game[]; updated: string[] }>;
+
+  // Platform Accounts
+  getAccounts?(): Promise<unknown>;
+  removeAccount?(platform: string): Promise<unknown>;
+  platformAuth?(platform: string): Promise<unknown>;
+  platformImport?(platform: string): Promise<unknown>;
+
+  // Import progress
+  onImportProgress?(cb: (data: ImportProgress) => void): () => void;
+
+  // Settings
+  getSettings(): Promise<Settings>;
+  saveSettings(s: Partial<Settings>): Promise<Settings>;
+  resetSettings?(): Promise<Settings>;
+  exportLibrary?(): Promise<unknown>;
+  importLibrary?(): Promise<unknown>;
+  clearAllGames?(): Promise<void>;
+  clearCovers?(): Promise<void>;
+  getDataPath?(): Promise<string>;
+  getAppVersion?(): Promise<string>;
+
+  // Auto-Update
+  checkForUpdate?(): Promise<unknown>;
+  installUpdate?(): void;
+  onUpdateEvent?(cb: (e: { type: string; data: unknown }) => void): () => void;
+
+  // System media controls (SMTC)
+  getMediaInfo?(): Promise<MediaInfo | null>;
+  mediaControl?(action: string): Promise<void>;
+
+  // Secure API key storage
+  saveApiKey?(provider: string, apiKey: string): Promise<void>;
+  getApiKeyInfo?(provider: string): Promise<unknown>;
+  deleteApiKey?(provider: string): Promise<void>;
+  validateApiKey?(provider: string, apiKey: string): Promise<unknown>;
+  validateStoredApiKey?(provider: string): Promise<unknown>;
+  getDiscordStatus?(): Promise<unknown>;
+
+  // Tab system
+  onTabsOpened?(cb: (d: { id: string; title: string; platform: string }) => void): () => void;
+  onTabsClosed?(cb: (d: { id: string }) => void): () => void;
+  switchTab?(id: string): void;
+  closeTab?(id: string): void;
+
+  // System specs
+  getSystemSpecs?(): Promise<unknown>;
 }
 
 declare global {

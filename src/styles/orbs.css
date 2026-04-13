@@ -1,0 +1,108 @@
+/* ─── Void Layer / Parallax Background ─────────────────────────────────────── */
+.void-layer{position:fixed;inset:0;z-index:0;overflow:hidden;pointer-events:none}
+.parallax-layer{position:absolute;inset:-120px;will-change:transform;transition:transform 0.3s ease-out}
+.parallax-layer.depth-0{z-index:0}
+.parallax-layer.depth-1{z-index:1}
+.parallax-layer.depth-2{z-index:2}
+.nebula{position:absolute;border-radius:50%;filter:blur(100px);opacity:0.045;pointer-events:none;transform:translate(-50%,-50%)}
+.orbit-ring{position:absolute;border-radius:50%;border:1px solid rgba(255,255,255,0.015);pointer-events:none;transform:translate(-50%,-50%)}
+.cluster-label{position:absolute;font-size:52px;font-weight:100;letter-spacing:8px;text-transform:uppercase;color:rgba(255,255,255,0.022);pointer-events:none;transform:translate(-50%,-50%);white-space:nowrap}
+
+/* ─── Orb / Game Field ─────────────────────────────────────────────────────── */
+.orb-field{position:fixed;inset:0;z-index:1}
+.orb{position:absolute;transform:translate(-50%,-50%);z-index:2;animation:orbDrift var(--drift-dur,20s) ease-in-out infinite alternate;animation-delay:var(--drift-delay,0s);transition:z-index 0s}
+.orb:hover{z-index:100}
+
+@keyframes orbDrift{
+  0%{transform:translate(-50%,-50%)}
+  100%{transform:translate(calc(-50% + var(--drift-x,0px)),calc(-50% + var(--drift-y,0px)))}
+}
+
+.orb-body{
+  width:var(--orb-size,52px);height:var(--orb-size,52px);border-radius:50%;
+  position:relative;cursor:pointer;overflow:visible;
+  opacity:0;transform:scale(0.4);
+  transition:opacity var(--speed-slow) ease,transform var(--speed-normal) cubic-bezier(0.16,1,0.3,1),box-shadow var(--speed-normal),filter var(--speed-normal);
+  transition-delay:var(--enter-delay,0s);
+}
+.orb-body.entered{opacity:1;transform:scale(1)}
+.orb-body.entered:hover{transform:scale(1.35);z-index:20;transition-delay:0s !important}
+.orb-body.entered.dimmed{opacity:0.06;filter:grayscale(1) blur(1px);pointer-events:none;transition-delay:0s !important}
+
+.orb-visual{
+  width:100%;height:100%;border-radius:50%;overflow:hidden;position:relative;
+  box-shadow:0 0 0 2px rgba(255,255,255,0.04),0 4px 20px rgba(0,0,0,0.5);
+  transition:box-shadow var(--speed-normal);
+}
+.orb-body.entered:hover .orb-visual{
+  box-shadow:0 0 0 2px var(--orb-color,#555),0 0 28px color-mix(in srgb,var(--orb-color,#555) 35%,transparent),0 8px 32px rgba(0,0,0,0.5);
+}
+.orb-visual::after{content:'';position:absolute;inset:0;border-radius:50%;background:radial-gradient(ellipse at 30% 20%,rgba(255,255,255,0.12),transparent 55%);pointer-events:none;z-index:2}
+.orb-visual img{width:100%;height:100%;object-fit:cover;display:block}
+
+.orb-fallback{
+  width:100%;height:100%;display:flex;align-items:center;justify-content:center;
+  font-weight:200;color:rgba(255,255,255,0.3);
+  background:radial-gradient(circle at 35% 30%,color-mix(in srgb,var(--orb-color,#555) 15%,var(--card)),var(--card) 70%);
+}
+
+.orb-name{
+  position:absolute;bottom:-24px;left:50%;transform:translateX(-50%) translateY(4px);
+  opacity:0;transition:opacity var(--speed-fast),transform var(--speed-fast);
+  white-space:nowrap;font-size:10px;font-weight:600;padding:3px 10px;border-radius:6px;
+  background:rgba(7,7,13,0.85);backdrop-filter:blur(8px);color:var(--text);
+  border:1px solid rgba(255,255,255,0.06);pointer-events:none;z-index:30;
+}
+.orb-body.entered:hover .orb-name{opacity:1;transform:translateX(-50%) translateY(0)}
+
+.orb-fav{
+  position:absolute;top:-3px;right:-3px;width:16px;height:16px;border-radius:50%;
+  background:var(--accent);display:flex;align-items:center;justify-content:center;z-index:3;
+  box-shadow:0 2px 8px rgba(212,168,83,0.3);
+}
+.orb-fav svg{width:8px;height:8px;fill:#0a0a0f}
+
+/* ─── Galaxy Viewport ──────────────────────────────────────────────────────── */
+.galaxy-viewport{position:fixed;inset:0;z-index:1;overflow:hidden;cursor:grab}
+.galaxy-viewport.galaxy-entering{animation:galaxyIn 0.8s cubic-bezier(0.16,1,0.3,1) both}
+@keyframes galaxyIn{0%{opacity:0;transform:scale(5)}20%{opacity:1}100%{opacity:1;transform:scale(1)}}
+.galaxy-viewport:active{cursor:grabbing}
+.galaxy-canvas{position:absolute;top:0;left:0;transform-origin:0 0;will-change:transform}
+.galaxy-canvas.fly{transition:transform var(--speed-slow) cubic-bezier(0.25,1,0.5,1)}
+.galaxy-star{position:absolute;border-radius:50%;pointer-events:none}
+.galaxy-star.tw{animation:twinkle var(--tw-dur,4s) ease-in-out infinite;animation-delay:var(--tw-del,0s)}
+@keyframes twinkle{0%,100%{filter:brightness(1)}35%{filter:brightness(3)}65%{filter:brightness(0.5)}}
+@keyframes shoot{0%{opacity:0;transform:translateX(-20px)}5%{opacity:0.8;transform:translateX(0)}50%{opacity:0;transform:translateX(280px)}100%{opacity:0;transform:translateX(280px)}}
+@keyframes coronaPulse{0%,100%{transform:translate(-50%,-50%) scale(1);opacity:0.25}50%{transform:translate(-50%,-50%) scale(1.15);opacity:0.55}}
+.shooting-star{width:100px;height:1.5px;border-radius:1px;background:linear-gradient(90deg,transparent 0%,rgba(200,220,255,0.7) 30%,transparent 100%);pointer-events:none;opacity:0;animation:shoot var(--sh-dur,5s) ease-out infinite;animation-delay:var(--sh-del,0s)}
+.galaxy-sun{position:absolute;transform:translate(-50%,-50%);z-index:5;pointer-events:none}
+.galaxy-sun-core{border-radius:50%;display:flex;align-items:center;justify-content:center;position:relative;z-index:2}
+.galaxy-sun-letter{font-weight:900;letter-spacing:2px;text-shadow:0 0 10px currentColor}
+.galaxy-sun-corona{position:absolute;left:50%;top:50%;border-radius:50%;z-index:1;animation:coronaPulse 4s ease-in-out infinite alternate}
+.galaxy-sun-flare{position:absolute;left:50%;top:50%;border-radius:50%;z-index:0;transform:translate(-50%,-50%);pointer-events:none}
+.bg-star{position:absolute;border-radius:50%;background:white;pointer-events:none}
+.bg-star.tw{animation:twinkle var(--tw-dur,5s) ease-in-out infinite;animation-delay:var(--tw-del,0s)}
+
+/* ─── Space Station (Cluster Hub) ────────────────────────────────────────────── */
+.space-station{position:absolute;transform:translate(-50%,-50%);z-index:6;cursor:pointer;animation:stationFloat 6s ease-in-out infinite}
+.space-station:hover .station-hub{transform:scale(1.1);filter:brightness(1.3)}
+.space-station:hover .station-label{opacity:0.9}
+.station-glow{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:200px;height:200px;border-radius:50%;opacity:0.08;filter:blur(50px);pointer-events:none}
+.station-ring{position:absolute;left:50%;top:50%;width:120px;height:120px;transform:translate(-50%,-50%);border-radius:50%;border:1.5px solid;opacity:0.35;animation:stationRotate 60s linear infinite;pointer-events:none}
+.station-ring-inner{position:absolute;left:50%;top:50%;width:80px;height:80px;transform:translate(-50%,-50%);border-radius:50%;border:1px solid;opacity:0.2;animation:stationRotate 40s linear infinite reverse;pointer-events:none}
+.station-dock{position:absolute;width:5px;height:5px;border-radius:50%;background:var(--dock-color,#fff);box-shadow:0 0 6px var(--dock-color,#fff);animation:dockBlink 2s ease-in-out infinite}
+.station-dock:nth-child(1){top:-2.5px;left:50%;transform:translateX(-50%);animation-delay:0s}
+.station-dock:nth-child(2){bottom:-2.5px;left:50%;transform:translateX(-50%);animation-delay:0.5s}
+.station-dock:nth-child(3){left:-2.5px;top:50%;transform:translateY(-50%);animation-delay:1s}
+.station-dock:nth-child(4){right:-2.5px;top:50%;transform:translateY(-50%);animation-delay:1.5s}
+.station-spokes{position:absolute;left:50%;top:50%;width:0;height:0;pointer-events:none}
+.station-spokes::before,.station-spokes::after{content:'';position:absolute;background:var(--spoke-color,rgba(255,255,255,0.08))}
+.station-spokes::before{width:1px;height:100px;left:-0.5px;top:-50px}
+.station-spokes::after{width:100px;height:1px;top:-0.5px;left:-50px}
+.station-hub{width:44px;height:44px;border-radius:50%;border:2px solid;display:flex;align-items:center;justify-content:center;position:relative;z-index:2;transition:transform var(--speed-normal),filter var(--speed-normal);background:radial-gradient(circle at 35% 35%,rgba(255,255,255,0.1),rgba(10,10,18,0.9) 70%)}
+.station-hub svg,.station-hub img{width:18px;height:18px}
+.station-label{position:absolute;top:calc(50% + 72px);left:50%;transform:translateX(-50%);white-space:nowrap;font-size:10px;font-weight:600;padding:3px 10px;border-radius:6px;background:rgba(7,7,13,0.85);backdrop-filter:blur(8px);color:var(--text-2);border:1px solid rgba(255,255,255,0.06);pointer-events:none;opacity:0.5;transition:opacity var(--speed-fast)}
+.station-game-count{font-weight:400;color:var(--text-4);margin-left:2px}
+@keyframes stationRotate{0%{transform:translate(-50%,-50%) rotate(0deg)}100%{transform:translate(-50%,-50%) rotate(360deg)}}
+@keyframes stationFloat{0%,100%{transform:translate(-50%,-50%) translateY(0)}50%{transform:translate(-50%,-50%) translateY(-8px)}}
+@keyframes dockBlink{0%,100%{opacity:0.3}50%{opacity:1}}
