@@ -13,6 +13,7 @@ const ctx = require('./context');
 const { CONTROL_BAR_HEIGHT, CHIAKI_SYSTEM_PATHS } = require('./constants');
 const { connectDiscord, setDiscordPresence, clearDiscordPresence, isDiscordEnabled } = require('./discord');
 const log = require('./logger');
+const { getScriptPath, getResourcePath } = require('./paths');
 
 // ─── chiaki-ng path resolution ───────────────────────────────────────────────
 // Priority: userData/chiaki-ng (downloaded by app) → dev resources fallback
@@ -20,8 +21,8 @@ function getChiakiDir() {
   const userData = path.join(app.getPath('userData'), 'chiaki-ng');
   if (fs.existsSync(userData)) return userData;
 
-  // Dev fallback — dist-electron/resources/chiaki-ng (if manually placed for testing)
-  const dev = path.join(__dirname, '..', 'resources', 'chiaki-ng');
+  // Dev fallback — resources/chiaki-ng (if manually placed for testing)
+  const dev = getResourcePath('chiaki-ng');
   if (fs.existsSync(dev)) return dev;
 
   return null;
@@ -334,7 +335,11 @@ function startEmbedHelper(gameId, session) {
   const hwnd = hwndBuffer.readBigUInt64LE(0).toString();
   const b = getStreamBounds();
 
-  const psScript = path.join(__dirname, '..', 'scripts', 'win32-stream.ps1');
+  const psScript = getScriptPath('win32-stream.ps1');
+  if (!fs.existsSync(psScript)) {
+    console.warn('[chiaki] win32-stream.ps1 not found, skipping embed');
+    return;
+  }
   const ps = spawn('powershell.exe', [
     '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', psScript,
     '-ChiakiPid', String(session.process.pid),
@@ -578,7 +583,7 @@ function autoSetupChiakiIfMissing() {
   console.log('[chiaki] Not found — starting automatic setup...');
   ctx.sendToRenderer('chiaki:event', { type: 'setup_started' });
 
-  const scriptPath = path.join(__dirname, '..', 'scripts', 'setup-chiaki.ps1');
+  const scriptPath = getScriptPath('setup-chiaki.ps1');
   if (!fs.existsSync(scriptPath)) {
     console.warn('[chiaki] setup-chiaki.ps1 not found, skipping auto-setup');
     return;
@@ -586,7 +591,7 @@ function autoSetupChiakiIfMissing() {
 
   const SETUP_TIMEOUT = 5 * 60 * 1000;
   const chiakiInstallDir = path.join(app.getPath('userData'), 'chiaki-ng');
-  const child = spawn('powershell', ['-ExecutionPolicy', 'Bypass', '-File', scriptPath, '-InstallDir', chiakiInstallDir], { cwd: path.join(__dirname, '..'), stdio: 'pipe' });
+  const child = spawn('powershell', ['-ExecutionPolicy', 'Bypass', '-File', scriptPath, '-InstallDir', chiakiInstallDir], { cwd: path.dirname(scriptPath), stdio: 'pipe' });
   let output = '';
   let finished = false;
   const setupTimer = setTimeout(() => {
@@ -676,15 +681,12 @@ function registerChiakiIpcHandlers() {
 
   ipcMain.handle('chiaki:update', async () => {
     try {
-      // In packaged builds scripts/ is an extraResource next to chiaki-ng, outside asar
-      const scriptPath = app.isPackaged
-        ? path.join(process.resourcesPath, 'scripts', 'setup-chiaki.ps1')
-        : path.join(__dirname, '..', 'scripts', 'setup-chiaki.ps1');
+      const scriptPath = getScriptPath('setup-chiaki.ps1');
       if (!fs.existsSync(scriptPath)) return { error: 'setup-chiaki.ps1 not found at: ' + scriptPath };
       const chiakiInstallDir = path.join(app.getPath('userData'), 'chiaki-ng');
       const SETUP_TIMEOUT = 5 * 60 * 1000;
       return new Promise((resolve) => {
-        const child = spawn('powershell', ['-ExecutionPolicy', 'Bypass', '-File', scriptPath, '-Force', '-InstallDir', chiakiInstallDir], { cwd: path.join(__dirname, '..'), stdio: 'pipe' });
+        const child = spawn('powershell', ['-ExecutionPolicy', 'Bypass', '-File', scriptPath, '-Force', '-InstallDir', chiakiInstallDir], { cwd: path.dirname(scriptPath), stdio: 'pipe' });
         let output = '';
         let resolved = false;
         const finish = (result) => { if (resolved) return; resolved = true; clearTimeout(timer); resolve(result); };

@@ -7,19 +7,7 @@ const ctx = require('./context');
 const { ACCOUNT_SECRET_FIELDS } = require('./constants');
 const { scanEpicInstalled, scanGogInstalled } = require('./detection');
 const log = require('./logger');
-
-// Resolve providers directory - works in both dev and dist
-function getProvidersDir() {
-  const candidates = [
-    path.join(__dirname, '..', 'providers'),
-    path.join(__dirname, 'providers'),
-    path.join(process.cwd(), 'electron', 'providers'),
-  ];
-  for (const candidate of candidates) {
-    if (fs.existsSync(path.join(candidate, 'index.js'))) return candidate;
-  }
-  throw new Error('Cannot find providers directory. Tried: ' + candidates.join(', '));
-}
+const { getProvidersDir } = require('./paths');
 
 // Lazy-loaded — these are resolved at call time (after app.whenReady)
 let providers = null;

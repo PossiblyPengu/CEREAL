@@ -6,22 +6,10 @@ const ctx = require('./context');
 const { CHIAKI_SYSTEM_PATHS } = require('./constants');
 const { findSteamRoot, scanSteamInstalled, scanEpicInstalled, scanGogInstalled, scanXboxInstalled } = require('./detection');
 const { getBundledChiakiExe, getBundledChiakiVersion } = require('./chiaki');
+const { getProvidersDir } = require('./paths');
 
 function registerDetectionIpcHandlers() {
-  // Resolve providers directory - try multiple paths for dev vs dist compatibility
-  let providersDir;
-  const candidates = [
-    path.join(__dirname, '..', 'providers'),      // dev: electron/modules/../providers
-    path.join(__dirname, 'providers'),          // dist: dist-electron/providers
-    path.join(process.cwd(), 'electron', 'providers'), // fallback
-  ];
-  for (const candidate of candidates) {
-    if (fs.existsSync(path.join(candidate, 'index.js'))) {
-      providersDir = candidate;
-      break;
-    }
-  }
-  if (!providersDir) throw new Error('Cannot find providers directory. Tried: ' + candidates.join(', '));
+  const providersDir = getProvidersDir();
   const providers = require(providersDir);
 
   ipcMain.handle('detect:steam', async () => {

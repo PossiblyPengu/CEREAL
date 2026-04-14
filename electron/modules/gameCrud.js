@@ -3,19 +3,7 @@ const { ipcMain } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const ctx = require('./context');
-
-// Resolve providers directory - works in both dev and dist
-function getProvidersDir() {
-  const candidates = [
-    path.join(__dirname, '..', 'providers'),
-    path.join(__dirname, 'providers'),
-    path.join(process.cwd(), 'electron', 'providers'),
-  ];
-  for (const candidate of candidates) {
-    if (fs.existsSync(path.join(candidate, 'index.js'))) return candidate;
-  }
-  throw new Error('Cannot find providers directory. Tried: ' + candidates.join(', '));
-}
+const { getProvidersDir } = require('./paths');
 
 const { canonicalize: canonicalizeName } = require(path.join(getProvidersDir(), 'utils'));
 const { enqueueCoverFetch } = require('./covers');

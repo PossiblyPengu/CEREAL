@@ -38,12 +38,15 @@ function copyMediaInfoExe() {
     fs.mkdirSync(path.dirname(dest), { recursive: true })
     fs.copyFileSync(src, dest)
   }
-  // Also copy smtc/index.js so it's available as a runtime module if not bundled
-  const smtcSrc = path.resolve(__dirname, 'electron/native/smtc/index.js')
-  const smtcDest = path.resolve(__dirname, 'dist-electron/native/smtc/index.js')
-  if (fs.existsSync(smtcSrc)) {
-    fs.mkdirSync(path.dirname(smtcDest), { recursive: true })
-    fs.copyFileSync(smtcSrc, smtcDest)
+  // Also copy smtc/*.js so they're available as runtime modules
+  const smtcFiles = ['index.js', 'powershell-bridge.js']
+  for (const file of smtcFiles) {
+    const smtcSrc = path.resolve(__dirname, 'electron/native/smtc', file)
+    const smtcDest = path.resolve(__dirname, 'dist-electron/native/smtc', file)
+    if (fs.existsSync(smtcSrc)) {
+      fs.mkdirSync(path.dirname(smtcDest), { recursive: true })
+      fs.copyFileSync(smtcSrc, smtcDest)
+    }
   }
 }
 

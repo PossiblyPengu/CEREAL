@@ -1,8 +1,28 @@
 const { exec } = require('child_process');
 const path = require('path');
+const fs = require('fs');
 
-// Go up 2 levels: native/smtc -> native -> project root
-const SCRIPT_PATH = path.join(__dirname, '..', '..', 'scripts', 'media-control.ps1');
+// Resolve scripts directory - works in both dev and production
+function getScriptPath(scriptName) {
+  const candidates = [
+    // Dev: electron/native/smtc/../../scripts
+    path.join(__dirname, '..', '..', 'scripts'),
+    // Production: resources/scripts (asar unpacked)
+    path.join(process.resourcesPath || '', 'scripts'),
+    // Fallback: cwd/scripts
+    path.join(process.cwd(), 'scripts'),
+  ];
+  
+  for (const dir of candidates) {
+    const fullPath = path.join(dir, scriptName);
+    if (fs.existsSync(fullPath)) return fullPath;
+  }
+  
+  // Return default even if not found - caller should check exists
+  return path.join(candidates[0], scriptName);
+}
+
+const SCRIPT_PATH = getScriptPath('media-control.ps1');
 
 function runPowerShell(action) {
   return new Promise((resolve, reject) => {
