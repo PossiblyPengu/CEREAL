@@ -778,12 +778,12 @@ export default function App() {
   const handleCloseTab = (id: string) => {
     setTabs(p => p.filter(t => t.id !== id));
     setActiveTabId(p => p === id ? 'launcher' : p);
-    (window.api as Record<string, (id: string) => void>)?.closeTab?.(id);
+    (window.api as unknown as Record<string, (id: string) => void>)?.closeTab?.(id);
   };
 
   return (
     <div className={'pos-' + tbPos + '-layout'} style={{ width: '100%', height: '100%', position: 'relative' }}>
-      <TabBar tabs={tabs} activeTab={activeTabId} onSwitch={id => { setActiveTabId(id); (window.api as Record<string, (id: string) => void>)?.switchTab?.(id); }} onClose={handleCloseTab} />
+      <TabBar tabs={tabs} activeTab={activeTabId} onSwitch={id => { setActiveTabId(id); (window.api as unknown as Record<string, (id: string) => void>)?.switchTab?.(id); }} onClose={handleCloseTab} />
       <div className="void-layer">
         {starLayers.map((layer, d) => (
           <div key={d} ref={parallaxRefsArray.current[d]} className={'parallax-layer depth-' + d}>

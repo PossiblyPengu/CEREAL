@@ -1,4 +1,8 @@
-﻿## v0.0.22 - 2026-04-15
+﻿## v0.0.23 - 2026-04-15
+
+- Maintenance release
+
+## v0.0.22 - 2026-04-15
 
 ### New
 - disable DevTools in production and add file-based logging for packaged builds

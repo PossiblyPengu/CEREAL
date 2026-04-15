@@ -81,11 +81,11 @@ export function TabBar({ tabs, activeTab, onSwitch, onClose }: TabBarProps) {
       <div className="tab-spacer" />
       <div className="tab-win-ctrls">
         {(['minimize', 'maximize'] as const).map(fn => (
-          <button key={fn} onClick={() => (window.api as Record<string, () => void>)?.[fn]?.()} aria-label={fn}>
+          <button key={fn} onClick={() => (window.api as unknown as Record<string, () => void>)?.[fn]?.()} aria-label={fn}>
             {fn === 'minimize' ? WIN_ICONS.min : WIN_ICONS.max}
           </button>
         ))}
-        <button className="tab-close-win" onClick={() => (window.api as Record<string, () => void>)?.close?.()} aria-label="Close">{WIN_ICONS.close}</button>
+        <button className="tab-close-win" onClick={() => (window.api as unknown as Record<string, () => void>)?.close?.()} aria-label="Close">{WIN_ICONS.close}</button>
       </div>
     </div>
   );
