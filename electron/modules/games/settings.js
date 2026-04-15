@@ -1,8 +1,9 @@
 // ─── Settings Management ──────────────────────────────────────────────────────
 const { app, ipcMain, dialog } = require('electron');
 const fs = require('fs');
-const ctx = require('./context');
-const { connectDiscord, disconnectDiscord } = require('./discord');
+const crypto = require('crypto');
+const ctx = require('../core/context');
+const { connectDiscord, disconnectDiscord } = require('../integrations/discord');
 const { cleanupFile } = require('./covers');
 
 const DEFAULT_SETTINGS = {
@@ -91,7 +92,7 @@ function registerSettingsIpcHandlers({ createTray, destroyTray, DB_PATH }) {
         for (const g of imported.games) {
           const key = (g.name || '') + '|' + (g.platform || '');
           if (!existingIds.has(key)) {
-            g.id = Date.now().toString(36) + Math.random().toString(36).substring(2, 7);
+            g.id = Date.now().toString(36) + crypto.randomBytes(4).toString('hex');
             ctx.db.games.push(g);
             existingIds.add(key);
             addedCount++;
@@ -99,9 +100,7 @@ function registerSettingsIpcHandlers({ createTray, destroyTray, DB_PATH }) {
         }
       }
       if (imported.categories && Array.isArray(imported.categories)) {
-        const catSet = new Set(ctx.db.categories);
-        imported.categories.forEach(c => catSet.add(c));
-        ctx.db.categories = [...catSet];
+        ctx.db.categories = [...new Set([...ctx.db.categories, ...imported.categories])];
       }
       ctx.saveDB(ctx.db);
       return { success: true, added: addedCount, games: ctx.db.games, categories: ctx.db.categories };

@@ -30,15 +30,11 @@ function scanSteamInstalled() {
 
   if (fs.existsSync(vdfPath)) {
     const vdfContent = fs.readFileSync(vdfPath, 'utf-8');
-    const pathMatches = vdfContent.match(/"path"\s+"([^"]+)"/g);
-    if (pathMatches) {
-      pathMatches.forEach(m => {
-        const p = m.match(/"path"\s+"([^"]+)"/)[1].replace(/\\\\/g, '\\');
-        const appsDir = path.join(p, 'steamapps');
-        if (fs.existsSync(appsDir) && !libraryFolders.includes(appsDir)) {
-          libraryFolders.push(appsDir);
-        }
-      });
+    for (const [, p] of vdfContent.matchAll(/"path"\s+"([^"]+)"/g)) {
+      const appsDir = path.join(p.replace(/\\\\/g, '\\'), 'steamapps');
+      if (fs.existsSync(appsDir) && !libraryFolders.includes(appsDir)) {
+        libraryFolders.push(appsDir);
+      }
     }
   }
 

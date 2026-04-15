@@ -5,7 +5,8 @@
 // Optional: SteamGridDB (requires free API key) for high-quality game art
 
 const { net } = require('electron');
-const ctx = require('./context');
+const ctx = require('../core/context');
+const log = require('../core/logger');
 
 const METADATA_CACHE = new Map();
 const METADATA_CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -86,7 +87,7 @@ async function fetchSteamMetadata(appId) {
       isSoftware,
     };
   } catch (e) {
-    console.log('[Metadata] Steam fetch failed for', appId, e.message);
+    log.debug('metadata', 'Steam fetch failed for', appId, e.message);
     return null;
   }
 }
@@ -110,7 +111,7 @@ async function fetchSteamSearchMetadata(gameName) {
     // Use the matched appId to get full details
     return await fetchSteamMetadata(String(best.id));
   } catch (e) {
-    console.log('[Metadata] Steam search failed for', gameName, e.message);
+    log.debug('metadata', 'Steam search failed for', gameName, e.message);
     return null;
   }
 }
@@ -177,7 +178,7 @@ async function fetchWikipediaMetadata(gameName) {
       _source: 'wikipedia',
     };
   } catch (e) {
-    console.log('[Metadata] Wikipedia fetch failed for', gameName, e.message);
+    log.debug('metadata', 'Wikipedia fetch failed for', gameName, e.message);
     return null;
   }
 }
@@ -210,7 +211,7 @@ async function fetchSteamGridDBArt(gameName, apiKey) {
     if (coverUrl || headerUrl) return { coverUrl, headerUrl };
     return null;
   } catch (e) {
-    console.log('[Metadata] SteamGridDB art fetch failed for', gameName, e.message);
+    log.debug('metadata', 'SteamGridDB art fetch failed for', gameName, e.message);
     return null;
   }
 }
@@ -321,7 +322,7 @@ function applyMetadataToGame(game, meta) {
         game.categories = [...cats, 'Software'];
         changed = true;
       }
-    } catch(e){}
+    } catch (_e) { /* non-critical software categorisation */ }
   }
 
   return changed;

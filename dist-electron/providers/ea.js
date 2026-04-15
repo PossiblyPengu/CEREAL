@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { canonicalize, findExisting, makeGameEntry, updateAccountSync } = require('./utils');
-const log = require('../modules/logger');
+const log = require('../modules/core/logger');
 
 const LAUNCHER_NAMES = new Set([
   'ea desktop',

@@ -1,20 +1,19 @@
 //#region \0rolldown/runtime.js
 var __commonJSMin = (cb, mod) => () => (mod || cb((mod = { exports: {} }).exports, mod), mod.exports);
 //#endregion
-//#region electron/modules/credentials.js
+//#region electron/modules/core/credentials.js
 var require_credentials = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	var { safeStorage } = require("electron");
-	var { app: app$6 } = require("electron");
-	var path$13 = require("path");
-	var fs$10 = require("fs");
-	var credStorePath = () => path$13.join(app$6.getPath("userData"), "credentials.json");
+	var { safeStorage, app: app$7 } = require("electron");
+	var path$14 = require("path");
+	var fs$11 = require("fs");
+	var credStorePath = () => path$14.join(app$7.getPath("userData"), "credentials.json");
 	var _credCache = null;
 	function loadCredStore() {
 		if (_credCache) return _credCache;
 		const target = credStorePath();
 		for (const filePath of [target, target + ".bak"]) try {
-			if (!fs$10.existsSync(filePath)) continue;
-			_credCache = JSON.parse(fs$10.readFileSync(filePath, "utf-8"));
+			if (!fs$11.existsSync(filePath)) continue;
+			_credCache = JSON.parse(fs$11.readFileSync(filePath, "utf-8"));
 			return _credCache;
 		} catch {}
 		_credCache = {};
@@ -24,11 +23,11 @@ var require_credentials = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		_credCache = store;
 		const target = credStorePath();
 		try {
-			if (fs$10.existsSync(target)) fs$10.copyFileSync(target, target + ".bak");
+			if (fs$11.existsSync(target)) fs$11.copyFileSync(target, target + ".bak");
 		} catch (_e) {}
 		const tmp = target + ".tmp";
-		fs$10.writeFileSync(tmp, JSON.stringify(store, null, 2), "utf-8");
-		fs$10.renameSync(tmp, target);
+		fs$11.writeFileSync(tmp, JSON.stringify(store, null, 2), "utf-8");
+		fs$11.renameSync(tmp, target);
 	}
 	module.exports = { safeStore: {
 		setPassword(service, account, secret) {
@@ -55,9 +54,9 @@ var require_credentials = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	} };
 }));
 //#endregion
-//#region electron/modules/constants.js
+//#region electron/modules/core/constants.js
 var require_constants = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	var path$12 = require("path");
+	var path$13 = require("path");
 	module.exports = {
 		CONTROL_BAR_HEIGHT: 40,
 		ALLOWED_KEY_SERVICES: [
@@ -75,9 +74,9 @@ var require_constants = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 			"cereal-account-psn"
 		],
 		CHIAKI_SYSTEM_PATHS: [
-			path$12.join(process.env.ProgramFiles || "", "chiaki-ng", "chiaki.exe"),
-			path$12.join(process.env["ProgramFiles(x86)"] || "", "chiaki-ng", "chiaki.exe"),
-			path$12.join(process.env.LOCALAPPDATA || "", "chiaki-ng", "chiaki.exe")
+			path$13.join(process.env.ProgramFiles || "", "chiaki-ng", "chiaki.exe"),
+			path$13.join(process.env["ProgramFiles(x86)"] || "", "chiaki-ng", "chiaki.exe"),
+			path$13.join(process.env.LOCALAPPDATA || "", "chiaki-ng", "chiaki.exe")
 		],
 		ACCOUNT_SECRET_FIELDS: [
 			"accessToken",
@@ -91,20 +90,54 @@ var require_constants = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	};
 }));
 //#endregion
-//#region electron/modules/logger.js
+//#region electron/modules/core/logger.js
 var require_logger = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	var path$12 = require("path");
+	var fs$10 = require("fs");
+	var { app: app$6 } = require("electron");
 	var DEBUG = process.env.CEREAL_DEBUG === "1";
+	var _logFile = null;
+	function getLogFile() {
+		if (_logFile !== null) return _logFile;
+		if (!app$6.isPackaged) {
+			_logFile = false;
+			return false;
+		}
+		try {
+			const dir = app$6.getPath("logs");
+			fs$10.mkdirSync(dir, { recursive: true });
+			const date = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+			_logFile = path$12.join(dir, `cereal-${date}.log`);
+		} catch (_e) {
+			_logFile = false;
+		}
+		return _logFile;
+	}
+	function writeLine(level, tag, args) {
+		const f = getLogFile();
+		if (!f) return;
+		try {
+			const ts = (/* @__PURE__ */ new Date()).toISOString();
+			const msg = args.map((a) => typeof a === "string" ? a : JSON.stringify(a)).join(" ");
+			fs$10.appendFileSync(f, `${ts} [${level}] [${tag}] ${msg}\n`);
+		} catch (_e) {}
+	}
 	function info(tag, ...args) {
 		console.log(`[${tag}]`, ...args);
+		writeLine("INFO", tag, args);
 	}
 	function warn(tag, ...args) {
 		console.warn(`[${tag}]`, ...args);
+		writeLine("WARN", tag, args);
 	}
 	function error(tag, ...args) {
 		console.error(`[${tag}]`, ...args);
+		writeLine("ERROR", tag, args);
 	}
 	function debug(tag, ...args) {
-		if (DEBUG) console.log(`[${tag}]`, ...args);
+		if (!DEBUG) return;
+		console.log(`[${tag}]`, ...args);
+		writeLine("DEBUG", tag, args);
 	}
 	module.exports = {
 		info,
@@ -115,7 +148,7 @@ var require_logger = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	};
 }));
 //#endregion
-//#region electron/modules/context.js
+//#region electron/modules/core/context.js
 var require_context = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	module.exports = {
 		db: null,
@@ -127,7 +160,7 @@ var require_context = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	};
 }));
 //#endregion
-//#region electron/modules/detection.js
+//#region electron/modules/metadata/detection.js
 var require_detection = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	var path$11 = require("path");
 	var fs$9 = require("fs");
@@ -150,12 +183,11 @@ var require_detection = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		const libraryFolders = [path$11.join(steamRoot, "steamapps")];
 		const vdfPath = path$11.join(steamRoot, "steamapps", "libraryfolders.vdf");
 		if (fs$9.existsSync(vdfPath)) {
-			const pathMatches = fs$9.readFileSync(vdfPath, "utf-8").match(/"path"\s+"([^"]+)"/g);
-			if (pathMatches) pathMatches.forEach((m) => {
-				const p = m.match(/"path"\s+"([^"]+)"/)[1].replace(/\\\\/g, "\\");
-				const appsDir = path$11.join(p, "steamapps");
+			const vdfContent = fs$9.readFileSync(vdfPath, "utf-8");
+			for (const [, p] of vdfContent.matchAll(/"path"\s+"([^"]+)"/g)) {
+				const appsDir = path$11.join(p.replace(/\\\\/g, "\\"), "steamapps");
 				if (fs$9.existsSync(appsDir) && !libraryFolders.includes(appsDir)) libraryFolders.push(appsDir);
-			});
+			}
 		}
 		for (const libFolder of libraryFolders) {
 			if (!fs$9.existsSync(libFolder)) continue;
@@ -281,7 +313,7 @@ var require_detection = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	};
 }));
 //#endregion
-//#region electron/modules/paths.js
+//#region electron/modules/core/paths.js
 var require_paths = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	var path$10 = require("path");
 	var fs$8 = require("fs");
@@ -293,7 +325,7 @@ var require_paths = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	*/
 	function getResourcesRoot() {
 		if (app$5?.isPackaged) return process.resourcesPath;
-		return path$10.join(__dirname, "..");
+		return path$10.join(process.cwd(), "electron");
 	}
 	/**
 	* Get the path to a script in the scripts/ directory
@@ -302,12 +334,17 @@ var require_paths = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		return path$10.join(getResourcesRoot(), "scripts", scriptName);
 	}
 	/**
-	* Get the path to the providers/ directory
+	* Get the path to the providers/ directory (memoized — stable for the app lifetime)
 	*/
+	var _providersDir = null;
 	function getProvidersDir() {
-		const candidates = [path$10.join(__dirname, "..", "providers"), path$10.join(process.cwd(), "electron", "providers")];
+		if (_providersDir) return _providersDir;
+		const candidates = [path$10.join(process.cwd(), "electron", "providers")];
 		if (app$5?.isPackaged) candidates.unshift(path$10.join(process.resourcesPath, "providers"));
-		for (const candidate of candidates) if (fs$8.existsSync(path$10.join(candidate, "index.js"))) return candidate;
+		for (const candidate of candidates) if (fs$8.existsSync(path$10.join(candidate, "index.js"))) {
+			_providersDir = candidate;
+			return _providersDir;
+		}
 		throw new Error("Cannot find providers directory. Tried: " + candidates.join(", "));
 	}
 	/**
@@ -331,16 +368,15 @@ var require_paths = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	};
 }));
 //#endregion
-//#region electron/modules/accounts.js
+//#region electron/modules/integrations/accounts.js
 var require_accounts = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	var { BrowserWindow: BrowserWindow$1, session: session$2, ipcMain: ipcMain$9 } = require("electron");
-	var crypto$2 = require("crypto");
+	var crypto$3 = require("crypto");
 	var path$9 = require("path");
-	require("fs");
 	var ctx = require_context();
 	var { ACCOUNT_SECRET_FIELDS } = require_constants();
 	var { scanEpicInstalled, scanGogInstalled } = require_detection();
-	require_logger();
+	var log = require_logger();
 	var { getProvidersDir } = require_paths();
 	var providers = null;
 	var auth = null;
@@ -360,7 +396,7 @@ var require_accounts = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 			const raw = ctx.safeStore.getPassword(accountSecretService(platform), "tokens");
 			if (!raw) return {};
 			return JSON.parse(raw);
-		} catch (e) {
+		} catch (_e) {
 			return {};
 		}
 	}
@@ -370,7 +406,7 @@ var require_accounts = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 			if (secrets && Object.keys(secrets).length) ctx.safeStore.setPassword(service, "tokens", JSON.stringify(secrets));
 			else ctx.safeStore.deletePassword(service, "tokens");
 		} catch (e) {
-			console.error("account secret store error", platform, e && e.message);
+			log.error("accounts", "account secret store error", platform, e && e.message);
 		}
 	}
 	function detachAccountSecrets(platform, { save = true } = {}) {
@@ -437,7 +473,7 @@ var require_accounts = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	function generateOAuthState() {
 		const now = Date.now();
 		for (const [s, entry] of pendingOAuthStates) if (now - entry.timestamp >= AUTH_TIMEOUT_MS) pendingOAuthStates.delete(s);
-		const state = crypto$2.randomBytes(32).toString("hex");
+		const state = crypto$3.randomBytes(32).toString("hex");
 		pendingOAuthStates.set(state, { timestamp: now });
 		return state;
 	}
@@ -524,7 +560,7 @@ var require_accounts = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 				}
 				if (!keepSession) try {
 					authSession.clearStorageData();
-				} catch (e) {}
+				} catch (_e) {}
 			};
 			const finish = (result) => {
 				if (resolved) return;
@@ -532,7 +568,7 @@ var require_accounts = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 				cleanup();
 				try {
 					authWin.close();
-				} catch (e) {}
+				} catch (_e) {}
 				resolve(result);
 			};
 			authTimeout = setTimeout(() => finish({ error: "Authentication timed out" }), AUTH_TIMEOUT_MS);
@@ -588,7 +624,7 @@ var require_accounts = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 			if (!tokens) return false;
 			persistAccountData(platform, tokens);
 			return true;
-		} catch (e) {
+		} catch (_e) {
 			return false;
 		} finally {
 			releaseSecrets();
@@ -600,7 +636,7 @@ var require_accounts = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 				provider: providerId,
 				...evt
 			});
-		} catch (e) {}
+		} catch (_e) {}
 	}
 	function importCount(value) {
 		if (Array.isArray(value)) return value.length;
@@ -705,7 +741,7 @@ var require_accounts = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		let apiKey = null;
 		if (providerId === "itchio") try {
 			apiKey = ctx.safeStore.getPassword("cereal-itchio", "default") || null;
-		} catch (e) {}
+		} catch (_e) {}
 		return runProviderImportWithProgress(providerId, apiKey ? { apiKey } : {});
 	}
 	function extractOAuthCode(url) {
@@ -753,7 +789,7 @@ var require_accounts = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 			}
 			if (platform === "steam") try {
 				session$2.fromPartition("persist:steam-auth").clearStorageData();
-			} catch (e) {}
+			} catch (_e) {}
 			ctx.saveDB(ctx.db);
 			return sanitizeAccountsForRenderer(ctx.db.accounts);
 		});
@@ -794,7 +830,7 @@ var require_accounts = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 			try {
 				const r = ctx.safeStore.getPassword("cereal-steam", "default");
 				if (r) apiKey = r;
-			} catch (e) {}
+			} catch (_e) {}
 			const steamSession = session$2.fromPartition("persist:steam-auth");
 			const sessionFetch = steamSession.fetch.bind(steamSession);
 			return runProviderImportWithProgress("steam", {
@@ -967,7 +1003,7 @@ var require_accounts = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	};
 }));
 //#endregion
-//#region electron/modules/discord.js
+//#region electron/modules/integrations/discord.js
 var require_discord = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	var ctx = require_context();
 	var log = require_logger();
@@ -1062,10 +1098,11 @@ var require_discord = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	};
 }));
 //#endregion
-//#region electron/modules/metadata.js
+//#region electron/modules/metadata/metadata.js
 var require_metadata = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	var { net: net$4 } = require("electron");
 	var ctx = require_context();
+	var log = require_logger();
 	var METADATA_CACHE = /* @__PURE__ */ new Map();
 	var METADATA_CACHE_TTL = 10080 * 60 * 1e3;
 	function getMetadataSettings() {
@@ -1121,7 +1158,7 @@ var require_metadata = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 				isSoftware
 			};
 		} catch (e) {
-			console.log("[Metadata] Steam fetch failed for", appId, e.message);
+			log.debug("metadata", "Steam fetch failed for", appId, e.message);
 			return null;
 		}
 	}
@@ -1137,7 +1174,7 @@ var require_metadata = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 			}
 			return await fetchSteamMetadata(String(best.id));
 		} catch (e) {
-			console.log("[Metadata] Steam search failed for", gameName, e.message);
+			log.debug("metadata", "Steam search failed for", gameName, e.message);
 			return null;
 		}
 	}
@@ -1185,7 +1222,7 @@ var require_metadata = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 				_source: "wikipedia"
 			};
 		} catch (e) {
-			console.log("[Metadata] Wikipedia fetch failed for", gameName, e.message);
+			log.debug("metadata", "Wikipedia fetch failed for", gameName, e.message);
 			return null;
 		}
 	}
@@ -1210,7 +1247,7 @@ var require_metadata = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 			};
 			return null;
 		} catch (e) {
-			console.log("[Metadata] SteamGridDB art fetch failed for", gameName, e.message);
+			log.debug("metadata", "SteamGridDB art fetch failed for", gameName, e.message);
 			return null;
 		}
 	}
@@ -1329,7 +1366,7 @@ var require_metadata = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 					game.categories = [...cats, "Software"];
 					changed = true;
 				}
-			} catch (e) {}
+			} catch (_e) {}
 		}
 		return changed;
 	}
@@ -1349,7 +1386,7 @@ var require_metadata = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	};
 }));
 //#endregion
-//#region electron/modules/covers.js
+//#region electron/modules/games/covers.js
 var require_covers = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	var { app: app$4, net: net$3 } = require("electron");
 	var path$8 = require("path");
@@ -1357,14 +1394,17 @@ var require_covers = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	var ctx = require_context();
 	var { fetchGameMetadata, applyMetadataToGame } = require_metadata();
 	var log = require_logger();
+	var _coversDir = null;
 	function getCoversDir() {
+		if (_coversDir) return _coversDir;
 		const dir = path$8.join(app$4.getPath("userData"), "covers");
 		try {
-			if (!fs$7.existsSync(dir)) fs$7.mkdirSync(dir, { recursive: true });
+			fs$7.mkdirSync(dir, { recursive: true });
 		} catch (e) {
 			log.warn("covers", "Failed to create covers directory:", e.message);
 		}
-		return dir;
+		_coversDir = dir;
+		return _coversDir;
 	}
 	async function downloadToFile(url, destPath) {
 		try {
@@ -1395,12 +1435,6 @@ var require_covers = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	var coverRetries = /* @__PURE__ */ new Map();
 	var MAX_COVER_RETRIES = 2;
 	var coverWorkerRunning = false;
-	var _coversDirCache = null;
-	function getCoversDirCached() {
-		if (_coversDirCache) return _coversDirCache;
-		_coversDirCache = getCoversDir();
-		return _coversDirCache;
-	}
 	function enqueueCoverFetch(gameId) {
 		if (!gameId) return;
 		coverQueue.add(gameId);
@@ -1408,7 +1442,7 @@ var require_covers = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	}
 	async function processCoverQueue() {
 		coverWorkerRunning = true;
-		const coversDir = getCoversDirCached();
+		const coversDir = getCoversDir();
 		const db = ctx.db;
 		while (coverQueue.size > 0) {
 			const batch = [];
@@ -1439,7 +1473,7 @@ var require_covers = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 							coverRetries.delete(gid);
 							downloaded = true;
 							break;
-						} catch (e) {}
+						} catch (_e) {}
 						if (!downloaded && !game.headerUrl) try {
 							const meta = await fetchGameMetadata(game);
 							if (meta) {
@@ -1453,9 +1487,9 @@ var require_covers = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 									game._imgStamp = Date.now();
 									coverRetries.delete(gid);
 									downloaded = true;
-								} catch (e) {}
+								} catch (_e) {}
 							}
-						} catch (e) {}
+						} catch (_e) {}
 						if (!downloaded) {
 							const total = [game.coverUrl, game.sgdbCoverUrl].filter(Boolean).length;
 							if (total > 0) throw new Error("All cover URLs failed (" + total + " candidates)");
@@ -1508,7 +1542,7 @@ var require_covers = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	};
 }));
 //#endregion
-//#region electron/modules/chiaki.js
+//#region electron/modules/integrations/chiaki.js
 var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	var path$7 = require("path");
 	var fs$6 = require("fs");
@@ -1520,7 +1554,7 @@ var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	var ctx = require_context();
 	var { CONTROL_BAR_HEIGHT, CHIAKI_SYSTEM_PATHS } = require_constants();
 	var { connectDiscord, setDiscordPresence, clearDiscordPresence, isDiscordEnabled } = require_discord();
-	require_logger();
+	var log = require_logger();
 	var { getScriptPath, getResourcePath } = require_paths();
 	function getChiakiDir() {
 		const userData = path$7.join(app$3.getPath("userData"), "chiaki-ng");
@@ -1543,7 +1577,7 @@ var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 				const p = path$7.join(dir, entry.name, name);
 				if (fs$6.existsSync(p)) return p;
 			}
-		} catch (e) {}
+		} catch (_e) {}
 		return null;
 	}
 	function getBundledChiakiVersion() {
@@ -1552,7 +1586,7 @@ var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		const vf = path$7.join(dir, ".version");
 		try {
 			return fs$6.readFileSync(vf, "utf-8").trim();
-		} catch (e) {
+		} catch (_e) {
 			return null;
 		}
 	}
@@ -1645,7 +1679,7 @@ var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 			if (trimmed.startsWith("{")) try {
 				handleChiakiJsonEvent(gameId, JSON.parse(trimmed));
 				return;
-			} catch (e) {}
+			} catch (_e) {}
 			handleChiakiLogLine(gameId, trimmed);
 		};
 		readline.createInterface({ input: session.process.stdout }).on("line", processLine);
@@ -1740,9 +1774,9 @@ var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 			setTimeout(() => {
 				try {
 					if (!session.process.killed) session.process.kill("SIGKILL");
-				} catch (e) {}
+				} catch (_e) {}
 			}, 3e3);
-		} catch (e) {}
+		} catch (_e) {}
 		chiakiSessions.delete(gameId);
 		return true;
 	}
@@ -1755,7 +1789,7 @@ var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 				x: winBounds.x + winBounds.width / 2,
 				y: winBounds.y + winBounds.height / 2
 			}).scaleFactor || 1;
-		} catch (e) {}
+		} catch (_e) {}
 		const barH = Math.round(CONTROL_BAR_HEIGHT * sf);
 		return {
 			x: 0,
@@ -1771,7 +1805,7 @@ var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		const b = getStreamBounds();
 		const psScript = getScriptPath("win32-stream.ps1");
 		if (!fs$6.existsSync(psScript)) {
-			console.warn("[chiaki] win32-stream.ps1 not found, skipping embed");
+			log.warn("chiaki", "win32-stream.ps1 not found, skipping embed");
 			return;
 		}
 		const ps = spawn$2("powershell.exe", [
@@ -1804,14 +1838,14 @@ var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 				session.embedded = true;
 				sendChiakiEvent(gameId, "embedded", { embedded: true });
 			} else if (trimmed.startsWith("error:")) {
-				console.error("[win32-stream]", trimmed);
+				log.error("win32-stream", trimmed);
 				sendChiakiEvent(gameId, "embedded", {
 					embedded: false,
 					error: trimmed
 				});
 			}
 		});
-		ps.stderr.on("data", (d) => console.error("[win32-stream stderr]", d.toString().trimEnd()));
+		ps.stderr.on("data", (d) => log.error("win32-stream", d.toString().trimEnd()));
 		ps.on("exit", () => {
 			session.embedProcess = null;
 		});
@@ -1822,11 +1856,11 @@ var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		session.embedProcess = null;
 		try {
 			ps.stdin.write("exit\n");
-		} catch (e) {}
+		} catch (_e) {}
 		setTimeout(() => {
 			try {
 				if (!ps.killed) ps.kill();
-			} catch (e) {}
+			} catch (_e) {}
 		}, 500);
 	}
 	function sendEmbedBoundsToAll() {
@@ -1834,7 +1868,7 @@ var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		const b = getStreamBounds();
 		for (const session of chiakiSessions.values()) if (session.embedProcess && !session.embedProcess.killed) try {
 			session.embedProcess.stdin.write(`bounds ${b.x} ${b.y} ${b.w} ${b.h}\n`);
-		} catch (e) {}
+		} catch (_e) {}
 	}
 	function handleChiakiJsonEvent(gameId, evt) {
 		const session = chiakiSessions.get(gameId);
@@ -1973,25 +2007,23 @@ var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		});
 	}
 	function getActiveSessions() {
-		const result = {};
-		for (const [gameId, session] of chiakiSessions) result[gameId] = {
-			state: session.state,
-			startTime: session.startTime,
-			streamInfo: session.streamInfo || {},
-			quality: session.quality || {},
-			exitCode: session.exitCode,
-			reconnectAttempts: session._reconnectAttempts || 0
-		};
-		return result;
+		return Object.fromEntries([...chiakiSessions].map(([gameId, s]) => [gameId, {
+			state: s.state,
+			startTime: s.startTime,
+			streamInfo: s.streamInfo || {},
+			quality: s.quality || {},
+			exitCode: s.exitCode,
+			reconnectAttempts: s._reconnectAttempts || 0
+		}]));
 	}
 	function autoSetupChiakiIfMissing() {
 		if (getBundledChiakiExe()) return;
 		if (CHIAKI_SYSTEM_PATHS.some((p) => fs$6.existsSync(p))) return;
-		console.log("[chiaki] Not found — starting automatic setup...");
+		log.info("chiaki", "Not found — starting automatic setup...");
 		ctx.sendToRenderer("chiaki:event", { type: "setup_started" });
 		const scriptPath = getScriptPath("setup-chiaki.ps1");
 		if (!fs$6.existsSync(scriptPath)) {
-			console.warn("[chiaki] setup-chiaki.ps1 not found, skipping auto-setup");
+			log.warn("chiaki", "setup-chiaki.ps1 not found, skipping auto-setup");
 			return;
 		}
 		const SETUP_TIMEOUT = 300 * 1e3;
@@ -2013,8 +2045,8 @@ var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 			finished = true;
 			try {
 				child.kill();
-			} catch (_) {}
-			console.error("[chiaki] Auto-setup timed out after 5 minutes");
+			} catch (_e) {}
+			log.error("chiaki", "Auto-setup timed out after 5 minutes");
 			ctx.sendToRenderer("chiaki:event", {
 				type: "setup_failed",
 				error: "Setup timed out after 5 minutes"
@@ -2028,13 +2060,13 @@ var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 			clearTimeout(setupTimer);
 			if (code === 0) {
 				const version = getBundledChiakiVersion();
-				console.log(`[chiaki] Auto-setup complete — v${version}`);
+				log.info("chiaki", `Auto-setup complete — v${version}`);
 				ctx.sendToRenderer("chiaki:event", {
 					type: "setup_complete",
 					version
 				});
 			} else {
-				console.error(`[chiaki] Auto-setup failed (exit ${code}):`, output);
+				log.error("chiaki", `Auto-setup failed (exit ${code}):`, output);
 				ctx.sendToRenderer("chiaki:event", {
 					type: "setup_failed",
 					error: `Setup exited with code ${code}`
@@ -2045,7 +2077,7 @@ var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 			if (finished) return;
 			finished = true;
 			clearTimeout(setupTimer);
-			console.error("[chiaki] Auto-setup spawn error:", err.message);
+			log.error("chiaki", "Auto-setup spawn error:", err.message);
 		});
 	}
 	function registerChiakiIpcHandlers() {
@@ -2054,7 +2086,7 @@ var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 			const session = chiakiSessions.get(gameId);
 			if (session?.embedProcess && !session.embedProcess.killed) try {
 				session.embedProcess.stdin.write(`bounds ${x} ${y} ${width} ${height}\n`);
-			} catch (e) {}
+			} catch (_e) {}
 			return { success: true };
 		});
 		ipcMain$8.handle("chiaki:status", () => {
@@ -2125,7 +2157,7 @@ var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 					const timer = setTimeout(() => {
 						try {
 							child.kill();
-						} catch (_) {}
+						} catch (_e) {}
 						finish({ error: "Setup timed out after 5 minutes" });
 					}, SETUP_TIMEOUT);
 					child.stdout.on("data", (d) => output += d.toString());
@@ -2313,7 +2345,7 @@ var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 					if (!statusMatch) return;
 					const httpCode = parseInt(statusMatch[1], 10);
 					if (httpCode !== 200 && httpCode !== 620) return;
-					console.log("[discovery] response from", rinfo.address, "status:", httpCode);
+					log.debug("discovery", "response from", rinfo.address, "status:", httpCode);
 					const state = httpCode === 200 ? "ready" : "standby";
 					const entry = {
 						host: rinfo.address,
@@ -2349,13 +2381,13 @@ var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 						if (err.code === "EADDRINUSE" && idx + 1 < ports.length) {
 							try {
 								s.close();
-							} catch (e) {}
+							} catch (_e) {}
 							tryBind(idx + 1);
 						} else {
-							console.error("[discovery] bind failed:", err.message);
+							log.error("discovery", "bind failed:", err.message);
 							try {
 								s.close();
-							} catch (e) {}
+							} catch (_e) {}
 							resolve({
 								success: false,
 								consoles: [],
@@ -2364,7 +2396,7 @@ var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 						}
 					});
 					s.bind(ports[idx], () => {
-						console.log("[discovery] bound to port", ports[idx] || "(random)");
+						log.debug("discovery", "bound to port", ports[idx] || "(random)");
 						onBoundSock(s);
 					});
 				}
@@ -2395,10 +2427,10 @@ var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 					setTimeout(sendRound, 500);
 					setTimeout(sendRound, 1500);
 					setTimeout(() => {
-						console.log("[discovery] done, found", found.size, "console(s)");
+						log.debug("discovery", "done, found", found.size, "console(s)");
 						try {
 							s.close();
-						} catch (e) {}
+						} catch (_e) {}
 						resolve({
 							success: true,
 							consoles: [...found.values()]
@@ -2478,10 +2510,10 @@ var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 					}];
 					const sock = dgram.createSocket("udp4");
 					sock.on("error", (err) => {
-						console.error("[wake] socket error:", err.message);
+						log.error("wake", "socket error:", err.message);
 						try {
 							sock.close();
-						} catch (e) {}
+						} catch (_e) {}
 						finish({
 							success: false,
 							error: err.message,
@@ -2499,13 +2531,13 @@ var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 						let total = hosts.length * WAKE_TARGETS.length;
 						let sent = 0;
 						for (const target of hosts) for (const { port, msg } of WAKE_TARGETS) sock.send(msg, port, target, (err) => {
-							if (err) console.error("[wake] send error:", target, port, err.message);
+							if (err) log.error("wake", "send error:", target, port, err.message);
 							sent++;
 							if (sent === total) setTimeout(() => {
 								try {
 									sock.close();
-								} catch (e) {}
-								console.log("[wake] sent to", host, "(both ports)");
+								} catch (_e) {}
+								log.info("wake", "sent to", host, "(both ports)");
 								finish({
 									success: true,
 									method: "udp"
@@ -2538,12 +2570,12 @@ var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	};
 }));
 //#endregion
-//#region electron/modules/xcloud.js
+//#region electron/modules/integrations/xcloud.js
 var require_xcloud = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	var { WebContentsView, session: session$1 } = require("electron");
 	var ctx = require_context();
 	var { CONTROL_BAR_HEIGHT } = require_constants();
-	require_logger();
+	var log = require_logger();
 	var xcloudSessions = /* @__PURE__ */ new Map();
 	function sendStreamEvent(gameId, type, data) {
 		ctx.sendToRenderer("chiaki:event", {
@@ -2566,7 +2598,7 @@ var require_xcloud = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		const b = getXcloudBounds();
 		try {
 			sess.view.setBounds(b);
-		} catch (e) {}
+		} catch (_e) {}
 	}
 	function updateAllXcloudBounds() {
 		for (const sess of xcloudSessions.values()) updateXcloudBounds(sess);
@@ -2597,7 +2629,7 @@ var require_xcloud = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 				platform: "xbox"
 			});
 		});
-		view.webContents.on("did-fail-load", (e, code, desc) => {
+		view.webContents.on("did-fail-load", (_e, code, desc) => {
 			sess.state = "disconnected";
 			sendStreamEvent(gameId, "disconnected", {
 				reason: desc,
@@ -2618,7 +2650,7 @@ var require_xcloud = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		try {
 			try {
 				if (ctx.mainWindow && !ctx.mainWindow.isDestroyed()) ctx.mainWindow.contentView.removeChildView(sess.view);
-			} catch (e) {}
+			} catch (_e) {}
 			xcloudSessions.delete(gameId);
 			sendStreamEvent(gameId, "disconnected", {
 				reason: "stopped",
@@ -2626,7 +2658,7 @@ var require_xcloud = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 			});
 			if (sess.view?.webContents && !sess.view.webContents.isDestroyed()) try {
 				sess.view.webContents.loadURL("https://www.xbox.com/play");
-			} catch (e) {}
+			} catch (_e) {}
 			setTimeout(() => {
 				if (sess.view?.webContents?.session && !sess.view.webContents.isDestroyed()) try {
 					sess.view.webContents.session.clearStorageData({
@@ -2638,22 +2670,22 @@ var require_xcloud = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 							"cachestorage"
 						]
 					}).catch(() => {});
-				} catch (e) {}
+				} catch (_e) {}
 				try {
 					if (sess.view?.webContents && !sess.view.webContents.isDestroyed()) sess.view.webContents.close();
-				} catch (e) {}
+				} catch (_e) {}
 				sess.view = null;
-				console.log(`[xcloud] Session ${gameId} stopped gracefully`);
+				log.info("xcloud", `Session ${gameId} stopped gracefully`);
 			}, 500);
 			return true;
 		} catch (e) {
-			console.error("[xcloud] Error stopping session:", e);
+			log.error("xcloud", "Error stopping session:", e.message);
 			try {
 				ctx.mainWindow?.contentView?.removeChildView(sess.view);
-			} catch (_) {}
+			} catch (_e) {}
 			try {
 				sess.view?.webContents?.close();
-			} catch (_) {}
+			} catch (_e) {}
 			xcloudSessions.delete(gameId);
 			sendStreamEvent(gameId, "disconnected", {
 				reason: "error",
@@ -2664,13 +2696,11 @@ var require_xcloud = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		}
 	}
 	function getActiveXcloudSessions() {
-		const result = {};
-		for (const [gameId, sess] of xcloudSessions) result[gameId] = {
+		return Object.fromEntries([...xcloudSessions].map(([gameId, sess]) => [gameId, {
 			state: sess.state,
 			platform: "xbox",
 			startTime: sess.startTime
-		};
-		return result;
+		}]));
 	}
 	module.exports = {
 		xcloudSessions,
@@ -2681,12 +2711,12 @@ var require_xcloud = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	};
 }));
 //#endregion
-//#region electron/modules/gameCrud.js
+//#region electron/modules/games/gameCrud.js
 var require_gameCrud = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	var { ipcMain: ipcMain$7 } = require("electron");
 	var fs$5 = require("fs");
 	var path$6 = require("path");
-	var crypto$1 = require("crypto");
+	var crypto$2 = require("crypto");
 	var ctx = require_context();
 	var { getProvidersDir } = require_paths();
 	var { enqueueCoverFetch } = require_covers();
@@ -2731,14 +2761,10 @@ var require_gameCrud = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 				db.games[db.games.findIndex((g) => g.id === prev.id)] = merged;
 				ctx.saveDB(db);
 				ctx.sendToRenderer("games:refresh", db.games);
-				try {
-					enqueueCoverFetch(merged.id);
-				} catch (e) {
-					log.debug("covers", "enqueue failed", e);
-				}
+				enqueueCoverFetch(merged.id);
 				return merged;
 			}
-			game.id = Date.now().toString(36) + crypto$1.randomBytes(4).toString("hex");
+			game.id = Date.now().toString(36) + crypto$2.randomBytes(4).toString("hex");
 			game.addedAt = (/* @__PURE__ */ new Date()).toISOString();
 			game.lastPlayed = null;
 			game.playtimeMinutes = 0;
@@ -2746,20 +2772,12 @@ var require_gameCrud = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 			if (game.coverUrl) game._imgStamp = Date.now();
 			db.games.push(game);
 			ctx.saveDB(db);
-			try {
-				enqueueCoverFetch(game.id);
-			} catch (e) {
-				log.debug("covers", "enqueue failed", e);
-			}
+			enqueueCoverFetch(game.id);
 			fetchGameMetadata(game).then((meta) => {
 				if (meta && applyMetadataToGame(game, meta)) {
 					ctx.saveDB(db);
 					ctx.sendToRenderer("games:refresh", db.games);
-					try {
-						enqueueCoverFetch(game.id);
-					} catch (e) {
-						log.debug("covers", "enqueue failed", e);
-					}
+					enqueueCoverFetch(game.id);
 				}
 			}).catch((e) => log.debug("gameCrud", "auto-metadata failed", e.message));
 			return game;
@@ -2803,11 +2821,7 @@ var require_gameCrud = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 				db.games[idx] = merged;
 				ctx.saveDB(db);
 				ctx.sendToRenderer("games:refresh", db.games);
-				try {
-					enqueueCoverFetch(updatedGame.id);
-				} catch (e) {
-					log.debug("covers", "enqueue failed", e);
-				}
+				enqueueCoverFetch(updatedGame.id);
 				return db.games[idx];
 			}
 			return null;
@@ -2830,13 +2844,9 @@ var require_gameCrud = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 			}
 			return null;
 		});
-		ipcMain$7.handle("covers:fetchNow", async (_event, gameId) => {
-			try {
-				enqueueCoverFetch(gameId);
-				return { queued: true };
-			} catch (e) {
-				return { error: e.message };
-			}
+		ipcMain$7.handle("covers:fetchNow", (_event, gameId) => {
+			enqueueCoverFetch(gameId);
+			return { queued: true };
 		});
 		ipcMain$7.handle("categories:add", (_event, category) => {
 			const db = ctx.db;
@@ -2855,17 +2865,16 @@ var require_gameCrud = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 			ctx.saveDB(db);
 			return db.categories;
 		});
-		ipcMain$7.handle("tabs:switch", () => {});
-		ipcMain$7.handle("tabs:close", () => {});
 	}
 	module.exports = { registerGameCrudIpcHandlers };
 }));
 //#endregion
-//#region electron/modules/database.js
+//#region electron/modules/core/database.js
 var require_database = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	var { app: app$2 } = require("electron");
 	var path$5 = require("path");
 	var fs$4 = require("fs");
+	var log = require_logger();
 	var DB_PATH = path$5.join(app$2 ? app$2.getPath("userData") : ".", "games.json");
 	function writeDBSync(data) {
 		try {
@@ -2883,7 +2892,7 @@ var require_database = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 			try {
 				writeDBSync(data);
 			} catch (e) {
-				console.error("Failed to save DB:", e.message);
+				log.error("db", "Failed to save DB:", e.message);
 			}
 		}, 150);
 	}
@@ -2894,7 +2903,7 @@ var require_database = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 			try {
 				writeDBSync(db);
 			} catch (e) {
-				console.error("Failed to flush DB:", e.message);
+				log.error("db", "Failed to flush DB:", e.message);
 			}
 		}
 	}
@@ -2902,7 +2911,7 @@ var require_database = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		for (const filePath of [DB_PATH, DB_PATH + ".bak"]) try {
 			if (!fs$4.existsSync(filePath)) continue;
 			const data = JSON.parse(fs$4.readFileSync(filePath, "utf-8"));
-			if (filePath !== DB_PATH) console.warn("[DB] Loaded from backup — primary was corrupt");
+			if (filePath !== DB_PATH) log.warn("db", "Loaded from backup — primary was corrupt");
 			if (data.games) {
 				const before = data.games.length;
 				data.games = data.games.filter((g) => g.platform !== "psn" && g.platform !== "psremote");
@@ -2910,7 +2919,7 @@ var require_database = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 			}
 			return data;
 		} catch (e) {
-			console.error("[DB] Failed to load", filePath, e.message);
+			log.error("db", "Failed to load", filePath, e.message);
 		}
 		const seed = {
 			categories: [
@@ -2940,10 +2949,10 @@ var require_database = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	};
 }));
 //#endregion
-//#region electron/modules/keys.js
+//#region electron/modules/integrations/keys.js
 var require_keys = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	var { ipcMain: ipcMain$6, dialog: dialog$2, shell: shell$2, clipboard } = require("electron");
-	var crypto = require("crypto");
+	var crypto$1 = require("crypto");
 	var path$4 = require("path");
 	var ctx = require_context();
 	var { ALLOWED_KEY_SERVICES } = require_constants();
@@ -2954,6 +2963,7 @@ var require_keys = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		return providers;
 	}
 	var { httpGetJson } = require(path$4.join(getProvidersDir(), "http"));
+	var log = require_logger();
 	function summarizeSecret(secret) {
 		if (!secret) return {
 			hasSecret: false,
@@ -2962,7 +2972,7 @@ var require_keys = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		try {
 			return {
 				hasSecret: true,
-				fingerprint: crypto.createHash("sha256").update(secret).digest("hex").slice(0, 8)
+				fingerprint: crypto$1.createHash("sha256").update(secret).digest("hex").slice(0, 8)
 			};
 		} catch (_e) {
 			return {
@@ -2978,7 +2988,7 @@ var require_keys = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 			provider,
 			error: "missing-key"
 		};
-		if (providers && providers[provider] && typeof providers[provider].validateKey === "function") try {
+		if (providers[provider] && typeof providers[provider].validateKey === "function") try {
 			const res = await providers[provider].validateKey(apiKey);
 			return {
 				ok: !!res.ok,
@@ -3025,7 +3035,7 @@ var require_keys = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 					...summarizeSecret(secret)
 				};
 			} catch (err) {
-				console.error("keys:set error", err);
+				log.error("keys", "keys:set error", err && err.message);
 				return {
 					ok: false,
 					error: err && err.message
@@ -3043,7 +3053,7 @@ var require_keys = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 					...summarizeSecret(ctx.safeStore.getPassword(service, account))
 				};
 			} catch (err) {
-				console.error("keys:get error", err);
+				log.error("keys", "keys:get error", err && err.message);
 				return {
 					ok: false,
 					error: err && err.message
@@ -3058,7 +3068,7 @@ var require_keys = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 			try {
 				return { ok: ctx.safeStore.deletePassword(service, account) };
 			} catch (err) {
-				console.error("keys:delete error", err);
+				log.error("keys", "keys:delete error", err && err.message);
 				return {
 					ok: false,
 					error: err && err.message
@@ -3069,7 +3079,7 @@ var require_keys = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 			try {
 				return await validateProviderKey(provider, apiKey);
 			} catch (err) {
-				console.error("keys:validate error", err);
+				log.error("keys", "keys:validate error", err && err.message);
 				return {
 					ok: false,
 					error: err && err.message
@@ -3090,7 +3100,7 @@ var require_keys = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 				};
 				return await validateProviderKey(provider, secret);
 			} catch (err) {
-				console.error("keys:validateStored error", err);
+				log.error("keys", "keys:validateStored error", err && err.message);
 				return {
 					ok: false,
 					error: err && err.message
@@ -3136,7 +3146,7 @@ var require_keys = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	};
 }));
 //#endregion
-//#region electron/modules/metadataSearch.js
+//#region electron/modules/metadata/metadataSearch.js
 var require_metadataSearch = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	var { net: net$1, ipcMain: ipcMain$5 } = require("electron");
 	var { getMetadataSettings, httpGet } = require_metadata();
@@ -3260,14 +3270,13 @@ var require_metadataSearch = /* @__PURE__ */ __commonJSMin(((exports, module) =>
 	module.exports = { registerMetadataSearchHandlers };
 }));
 //#endregion
-//#region electron/modules/metadataIpc.js
+//#region electron/modules/metadata/metadataIpc.js
 var require_metadataIpc = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	var { ipcMain: ipcMain$4 } = require("electron");
 	var ctx = require_context();
 	var { fetchGameMetadata, applyMetadataToGame, invalidateMetadataCache } = require_metadata();
 	var { enqueueCoverFetch } = require_covers();
 	var { registerMetadataSearchHandlers } = require_metadataSearch();
-	var log = require_logger();
 	function registerMetadataIpcHandlers() {
 		registerMetadataSearchHandlers();
 		ipcMain$4.handle("metadata:fetch", async (_event, gameId) => {
@@ -3315,11 +3324,7 @@ var require_metadataIpc = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 					}
 					ctx.saveDB(db);
 					ctx.sendToRenderer("games:refresh", db.games);
-					try {
-						enqueueCoverFetch(game.id);
-					} catch (e) {
-						log.debug("covers", "enqueue failed", e);
-					}
+					enqueueCoverFetch(game.id);
 					return {
 						success: true,
 						game
@@ -3328,11 +3333,7 @@ var require_metadataIpc = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 					if (applyMetadataToGame(game, meta)) {
 						ctx.saveDB(db);
 						ctx.sendToRenderer("games:refresh", db.games);
-						try {
-							enqueueCoverFetch(game.id);
-						} catch (e) {
-							log.debug("covers", "enqueue failed", e);
-						}
+						enqueueCoverFetch(game.id);
 					}
 					return {
 						success: true,
@@ -3384,11 +3385,7 @@ var require_metadataIpc = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 					if (applyMetadataToGame(r.value.game, r.value.meta)) {
 						updated++;
 						batchUpdated++;
-						try {
-							enqueueCoverFetch(r.value.game.id);
-						} catch (e) {
-							log.debug("covers", "enqueue failed", e);
-						}
+						enqueueCoverFetch(r.value.game.id);
 					}
 				} else failed++;
 				if (batchUpdated > 0) {
@@ -3426,7 +3423,7 @@ var require_metadataIpc = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	module.exports = { registerMetadataIpcHandlers };
 }));
 //#endregion
-//#region electron/modules/launcher.js
+//#region electron/modules/games/launcher.js
 var require_launcher = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	var path$3 = require("path");
 	var fs$3 = require("fs");
@@ -3457,7 +3454,7 @@ var require_launcher = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 				const itchBase = path$3.join(process.env.LOCALAPPDATA || "", "itch");
 				try {
 					return fs$3.readdirSync(itchBase, { withFileTypes: true }).filter((d) => d.isDirectory() && d.name.startsWith("app-")).sort((a, b) => b.name.localeCompare(a.name, void 0, { numeric: true })).map((d) => path$3.join(itchBase, d.name, "itch.exe"));
-				} catch (e) {
+				} catch (_e) {
 					return [];
 				}
 			}
@@ -3465,6 +3462,7 @@ var require_launcher = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 			default: return [];
 		}
 	}
+	var uniq = (arr) => Array.from(new Set(arr.filter(Boolean)));
 	function buildPlatformUris(game, action) {
 		const platform = normalizePlatform(game.platform);
 		const platformId = game.platformId ? String(game.platformId) : "";
@@ -3483,7 +3481,6 @@ var require_launcher = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 			const m = String(storeUrl).match(/\/openGameView\/(\d+)/i);
 			return m ? m[1] : "";
 		})();
-		const uniq = (arr) => Array.from(new Set(arr.filter(Boolean)));
 		if (platform === "steam" && steamId) {
 			if (action === "install") return uniq([
 				`steam://install/${steamId}`,
@@ -3592,7 +3589,7 @@ var require_launcher = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	};
 }));
 //#endregion
-//#region electron/modules/detectionIpc.js
+//#region electron/modules/metadata/detectionIpc.js
 var require_detectionIpc = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	var { ipcMain: ipcMain$3 } = require("electron");
 	var path$2 = require("path");
@@ -3646,8 +3643,7 @@ var require_detectionIpc = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 					result.version = getBundledChiakiVersion();
 				}
 				if (!result.found) {
-					const systemPaths = CHIAKI_SYSTEM_PATHS;
-					for (const p of systemPaths) if (fs$2.existsSync(p)) {
+					for (const p of CHIAKI_SYSTEM_PATHS) if (fs$2.existsSync(p)) {
 						result.found = true;
 						result.bundled = false;
 						result.executablePath = p;
@@ -3746,10 +3742,6 @@ var require_detectionIpc = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 						}
 					}
 				}
-				try {
-					const gogDbPath = path$2.join(process.env.PROGRAMDATA || "C:\\ProgramData", "GOG.com", "Galaxy", "storage", "galaxy-2.0.db");
-					if (fs$2.existsSync(gogDbPath)) {}
-				} catch (_e) {}
 				if (updated.length > 0) {
 					ctx.saveDB(db);
 					ctx.sendToRenderer("games:refresh", db.games);
@@ -3769,10 +3761,11 @@ var require_detectionIpc = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	module.exports = { registerDetectionIpcHandlers: registerDetectionIpcHandlers$1 };
 }));
 //#endregion
-//#region electron/modules/settings.js
+//#region electron/modules/games/settings.js
 var require_settings = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	var { app: app$1, ipcMain: ipcMain$2, dialog: dialog$1 } = require("electron");
 	var fs$1 = require("fs");
+	var crypto = require("crypto");
 	var ctx = require_context();
 	var { connectDiscord, disconnectDiscord } = require_discord();
 	var { cleanupFile } = require_covers();
@@ -3864,18 +3857,14 @@ var require_settings = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 					for (const g of imported.games) {
 						const key = (g.name || "") + "|" + (g.platform || "");
 						if (!existingIds.has(key)) {
-							g.id = Date.now().toString(36) + Math.random().toString(36).substring(2, 7);
+							g.id = Date.now().toString(36) + crypto.randomBytes(4).toString("hex");
 							ctx.db.games.push(g);
 							existingIds.add(key);
 							addedCount++;
 						}
 					}
 				}
-				if (imported.categories && Array.isArray(imported.categories)) {
-					const catSet = new Set(ctx.db.categories);
-					imported.categories.forEach((c) => catSet.add(c));
-					ctx.db.categories = [...catSet];
-				}
+				if (imported.categories && Array.isArray(imported.categories)) ctx.db.categories = [...new Set([...ctx.db.categories, ...imported.categories])];
 				ctx.saveDB(ctx.db);
 				return {
 					success: true,
@@ -3927,38 +3916,16 @@ var require_settings = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	};
 }));
 //#endregion
-//#region electron/native/smtc/index.js
-var require_smtc = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	var path$1 = require("path");
-	var { exec } = require("child_process");
-	var EXE_PATH = path$1.join(__dirname, "..", "MediaInfoTool.exe").replace("app.asar", "app.asar.unpacked");
-	function runExe(args) {
-		return new Promise((resolve) => {
-			const safeArgs = (args || []).map((a) => "\"" + String(a).replace(/["%!^&|<>]/g, "") + "\"").join(" ");
-			exec("\"" + EXE_PATH + "\"" + (safeArgs ? " " + safeArgs : ""), { timeout: 5e3 }, (err, stdout) => {
-				try {
-					resolve(JSON.parse(stdout.trim()));
-				} catch {
-					resolve({ error: err ? err.message : "parse error" });
-				}
-			});
-		});
-	}
-	module.exports = {
-		getMediaInfo: () => runExe(),
-		sendMediaKey: (action) => runExe(["sendKey", action])
-	};
-}));
-//#endregion
-//#region electron/modules/media.js
+//#region electron/modules/integrations/media.js
 var require_media = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	var { ipcMain: ipcMain$1 } = require("electron");
+	var path$1 = require("path");
 	var { startXcloudSession, stopXcloudSession, getActiveXcloudSessions } = require_xcloud();
 	var log = require_logger();
 	var smtcNative = null;
 	function getSmtcNative() {
 		if (!smtcNative) try {
-			smtcNative = require_smtc();
+			smtcNative = require(path$1.join(__dirname, "native", "smtc"));
 			log.info("media", "native addon loaded");
 		} catch (e) {
 			log.warn("media", "failed to load native addon:", e.message);
@@ -4119,10 +4086,9 @@ function createWindow() {
 		try {
 			toggleDevTools();
 		} catch (e) {
-			console.error("Auto DevTools failed:", e.message);
+			log.error("main", "Auto DevTools failed:", e.message);
 		}
 	});
-	ipcMain.on("window:ready", () => {});
 	mainWindow.webContents.on("will-navigate", (event, url) => {
 		const devServer = process.env.VITE_DEV_SERVER_URL;
 		if (devServer && url.startsWith(devServer)) return;
@@ -4134,7 +4100,7 @@ function createWindow() {
 		if (input.type !== "keyDown") return;
 		if (!(input.control && input.shift && input.code === "KeyI" || input.code === "F12")) return;
 		event.preventDefault();
-		toggleDevTools();
+		if (!app.isPackaged) toggleDevTools();
 	});
 	mainWindow.on("resize", onWindowBoundsChanged);
 	mainWindow.on("move", onWindowBoundsChanged);
@@ -4264,7 +4230,7 @@ app.whenReady().then(() => {
 				coversCleaned++;
 			}
 		}
-		if (coversCleaned > 0) console.log("[CoverFetcher] Cleaned", coversCleaned, "corrupt cover references");
+		if (coversCleaned > 0) log.info("main", "Cleaned", coversCleaned, "corrupt cover references");
 		try {
 			const coversDir = getCoversDir();
 			let purged = 0;
@@ -4277,7 +4243,7 @@ app.whenReady().then(() => {
 					}
 				} catch (_e) {}
 			}
-			if (purged > 0) console.log("[CoverFetcher] Purged", purged, "corrupt files from covers directory");
+			if (purged > 0) log.info("main", "Purged", purged, "corrupt files from covers directory");
 		} catch (_e) {}
 	}
 	if (lastMigration < 2) {
@@ -4286,7 +4252,7 @@ app.whenReady().then(() => {
 			game.headerUrl = `https://shared.steamstatic.com/store_item_assets/steam/apps/${game.platformId}/header.jpg`;
 			backfilled++;
 		}
-		if (backfilled > 0) console.log("[Migration] Backfilled", backfilled, "Steam header URLs");
+		if (backfilled > 0) log.info("main", "Backfilled", backfilled, "Steam header URLs");
 	}
 	if (lastMigration < CURRENT_MIGRATION) {
 		db.settings = db.settings || {};
@@ -4303,7 +4269,7 @@ app.whenReady().then(() => {
 				requeued++;
 			}
 		}
-		if (requeued > 0) console.log("[CoverFetcher] Re-enqueued", requeued, "games for cover download");
+		if (requeued > 0) log.info("main", "Re-enqueued", requeued, "games for cover download");
 	}, 3e3);
 	session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
 		callback([
@@ -4321,7 +4287,14 @@ app.whenReady().then(() => {
 				"style-src 'self' 'unsafe-inline'",
 				"img-src 'self' data: local-image: https: http:",
 				"font-src 'self' data:",
-				"connect-src 'self' https://*.steampowered.com https://*.steamstatic.com https://store.steampowered.com https://api.steampowered.com https://steamcdn-a.akamaihd.net https://*.steamgriddb.com https://*.gog.com https://*.epicgames.com https://*.xbox.com https://*.xboxlive.com https://*.wikipedia.org https://*.wikidata.org https://*.wikimedia.org https://*.duckduckgo.com https://localhost ws://localhost wss://localhost"
+				[
+					"connect-src 'self'",
+					"https://*.steampowered.com https://*.steamstatic.com https://store.steampowered.com https://api.steampowered.com https://steamcdn-a.akamaihd.net",
+					"https://*.steamgriddb.com https://*.gog.com https://*.epicgames.com",
+					"https://*.xbox.com https://*.xboxlive.com",
+					"https://*.wikipedia.org https://*.wikidata.org https://*.wikimedia.org https://*.duckduckgo.com",
+					...!app.isPackaged ? ["https://localhost ws://localhost wss://localhost"] : []
+				].join(" ")
 			].join("; ")
 		} });
 	});
@@ -4447,7 +4420,7 @@ function saveWindowBounds() {
 	try {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
 		if (db && db.settings && db.settings.rememberWindowBounds === false) return;
-		const isMax = mainWindow.isMaximized ? mainWindow.isMaximized() : false;
+		const isMax = mainWindow.isMaximized();
 		const bounds = isMax ? db.settings && db.settings.windowBounds ? db.settings.windowBounds : {} : mainWindow.getBounds();
 		db.settings = db.settings || {};
 		db.settings.windowBounds = {
@@ -4459,7 +4432,7 @@ function saveWindowBounds() {
 		};
 		saveDB(db);
 	} catch (e) {
-		console.error("Failed saving window bounds", e && e.message);
+		log.error("main", "Failed saving window bounds", e && e.message);
 	}
 }
 function onWindowBoundsChanged() {
@@ -4638,9 +4611,7 @@ ipcMain.handle("dialog:pickImage", async () => {
 		}
 		const ext = path.extname(src);
 		const destName = `cover_${Date.now()}${ext}`;
-		const destDir = path.join(app.getPath("userData"), "covers");
-		if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
-		const dest = path.join(destDir, destName);
+		const dest = path.join(getCoversDir(), destName);
 		fs.copyFileSync(src, dest);
 		return dest;
 	}

@@ -1,7 +1,7 @@
 // ─── Metadata Art Search (moved from main.js) ─────────────────────────────────
 const { net, ipcMain } = require('electron');
 const { getMetadataSettings, httpGet } = require('./metadata');
-const log = require('./logger');
+const log = require('../core/logger');
 
 async function searchSteam(gameName) {
   const results = [];

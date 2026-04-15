@@ -2,6 +2,7 @@
 const { app } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const log = require('./logger');
 
 const DB_PATH = path.join(app ? app.getPath('userData') : '.', 'games.json');
 
@@ -18,7 +19,7 @@ function saveDB(data) {
   _saveDBTimer = setTimeout(() => {
     _saveDBTimer = null;
     try { writeDBSync(data); }
-    catch (e) { console.error('Failed to save DB:', e.message); }
+    catch (e) { log.error('db', 'Failed to save DB:', e.message); }
   }, 150);
 }
 
@@ -27,7 +28,7 @@ function flushDB(db) {
     clearTimeout(_saveDBTimer);
     _saveDBTimer = null;
     try { writeDBSync(db); }
-    catch (e) { console.error('Failed to flush DB:', e.message); }
+    catch (e) { log.error('db', 'Failed to flush DB:', e.message); }
   }
 }
 
@@ -37,7 +38,7 @@ function loadDB() {
     try {
       if (!fs.existsSync(filePath)) continue;
       const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-      if (filePath !== DB_PATH) console.warn('[DB] Loaded from backup — primary was corrupt');
+      if (filePath !== DB_PATH) log.warn('db', 'Loaded from backup — primary was corrupt');
       // Purge PSN/psremote streaming bookmark entries — these are ephemeral session stubs,
       // not library games. Xbox games are imported via accounts:xbox:import and must persist.
       if (data.games) {
@@ -47,7 +48,7 @@ function loadDB() {
       }
       return data;
     } catch (e) {
-      console.error('[DB] Failed to load', filePath, e.message);
+      log.error('db', 'Failed to load', filePath, e.message);
     }
   }
   // Both failed or missing — start with empty library on first run

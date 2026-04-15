@@ -34,7 +34,7 @@ $releaseUrl = "https://api.github.com/repos/$repo/releases/latest"
 try {
     $response = Invoke-WebRequest -Uri $releaseUrl -Headers $headers -UseBasicParsing
     if ($response.StatusCode -eq 403 -or $response.StatusCode -eq 429) {
-        Write-Error "GitHub API rate limit exceeded. Try again in a few minutes."
+        Write-Host "ERROR: GitHub API rate limit exceeded. Try again in a few minutes."
         exit 1
     }
     $release = $response.Content | ConvertFrom-Json
@@ -44,7 +44,7 @@ try {
     } else {
         "Failed to fetch release info: $_"
     }
-    Write-Error $msg
+    Write-Host "ERROR: $msg"
     exit 1
 }
 
@@ -61,17 +61,18 @@ if (-not $asset) {
 }
 
 if (-not $asset) {
-    Write-Error 'No suitable Windows x64 portable zip found in the latest chiaki-ng release.'
+    Write-Host 'ERROR: No suitable Windows x64 portable zip found in the latest chiaki-ng release.'
     exit 1
 }
 
 Write-Output "Downloading $($asset.name) ($([math]::Round($asset.size / 1MB, 1)) MB)..."
 
-$tmpZip = Join-Path $env:TEMP 'chiaki-ng-setup.zip'
+$tmpZip = Join-Path $env:TEMP "chiaki-ng-setup-$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()).zip"
 try {
     Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $tmpZip -Headers $headers
 } catch {
-    Write-Error "Download failed: $_"
+    Remove-Item $tmpZip -Force -ErrorAction SilentlyContinue
+    Write-Host "ERROR: Download failed: $_"
     exit 1
 }
 
@@ -83,7 +84,7 @@ New-Item -ItemType Directory -Path $installDir -Force | Out-Null
 try {
     Expand-Archive -Path $tmpZip -DestinationPath $installDir -Force
 } catch {
-    Write-Error "Failed to extract archive: $_"
+    Write-Host "ERROR: Failed to extract archive: $_"
     Remove-Item $tmpZip -Force -ErrorAction SilentlyContinue
     exit 1
 }

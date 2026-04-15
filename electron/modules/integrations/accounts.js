@@ -2,12 +2,11 @@
 const { BrowserWindow, session, ipcMain } = require('electron');
 const crypto = require('crypto');
 const path = require('path');
-const fs = require('fs');
-const ctx = require('./context');
-const { ACCOUNT_SECRET_FIELDS } = require('./constants');
-const { scanEpicInstalled, scanGogInstalled } = require('./detection');
-const log = require('./logger');
-const { getProvidersDir } = require('./paths');
+const ctx = require('../core/context');
+const { ACCOUNT_SECRET_FIELDS } = require('../core/constants');
+const { scanEpicInstalled, scanGogInstalled } = require('../metadata/detection');
+const log = require('../core/logger');
+const { getProvidersDir } = require('../core/paths');
 
 // Lazy-loaded — these are resolved at call time (after app.whenReady)
 let providers = null;
@@ -33,7 +32,7 @@ function loadAccountSecrets(platform) {
     const raw = ctx.safeStore.getPassword(accountSecretService(platform), 'tokens');
     if (!raw) return {};
     return JSON.parse(raw);
-  } catch (e) {
+  } catch (_e) {
     return {};
   }
 }
@@ -47,7 +46,7 @@ function storeAccountSecrets(platform, secrets) {
       ctx.safeStore.deletePassword(service, 'tokens');
     }
   } catch (e) {
-    console.error('account secret store error', platform, e && e.message);
+    log.error('accounts', 'account secret store error', platform, e && e.message);
   }
 }
 
@@ -204,14 +203,14 @@ function runOAuthFlow({ partition, width, height, authUrl, redirectMatch, onRedi
     const cleanup = () => {
       if (authTimeout) { clearTimeout(authTimeout); authTimeout = null; }
       if (!keepSession) {
-        try { authSession.clearStorageData(); } catch (e) {}
+        try { authSession.clearStorageData(); } catch (_e) { /* best-effort */ }
       }
     };
     const finish = (result) => {
       if (resolved) return;
       resolved = true;
       cleanup();
-      try { authWin.close(); } catch (e) {}
+      try { authWin.close(); } catch (_e) { /* best-effort */ }
       resolve(result);
     };
     authTimeout = setTimeout(() => finish({ error: 'Authentication timed out' }), AUTH_TIMEOUT_MS);
@@ -260,7 +259,7 @@ async function refreshAccountToken(platform) {
     if (!tokens) return false;
     persistAccountData(platform, tokens);
     return true;
-  } catch (e) { return false; }
+  } catch (_e) { return false; }
   finally { releaseSecrets(); }
 }
 
@@ -268,7 +267,7 @@ async function refreshAccountToken(platform) {
 function emitImportProgress(providerId, evt) {
   try {
     ctx.sendToRenderer('import:progress', { provider: providerId, ...evt });
-  } catch (e) { /* ignore */ }
+  } catch (_e) { /* ignore */ }
 }
 
 function importCount(value) {
@@ -379,7 +378,7 @@ async function handleLocalProviderAuth(providerId, displayName) {
 async function handleProviderImport(providerId) {
   let apiKey = null;
   if (providerId === 'itchio') {
-    try { apiKey = ctx.safeStore.getPassword('cereal-itchio', 'default') || null; } catch (e) { /* ignore */ }
+    try { apiKey = ctx.safeStore.getPassword('cereal-itchio', 'default') || null; } catch (_e) { /* ignore */ }
   }
   return runProviderImportWithProgress(providerId, apiKey ? { apiKey } : {});
 }
@@ -427,7 +426,7 @@ function registerAccountIpcHandlers() {
       delete ctx.db.accounts[platform];
     }
     if (platform === 'steam') {
-      try { session.fromPartition('persist:steam-auth').clearStorageData(); } catch (e) {}
+      try { session.fromPartition('persist:steam-auth').clearStorageData(); } catch (_e) { /* best-effort */ }
     }
     ctx.saveDB(ctx.db);
     return sanitizeAccountsForRenderer(ctx.db.accounts);
@@ -456,7 +455,7 @@ function registerAccountIpcHandlers() {
   ipcMain.handle('accounts:steam:import', async () => {
     if (!p?.steam?.importLibrary) return { error: 'Steam provider not available' };
     let apiKey = null;
-    try { const r = ctx.safeStore.getPassword('cereal-steam', 'default'); if (r) apiKey = r; } catch (e) {}
+    try { const r = ctx.safeStore.getPassword('cereal-steam', 'default'); if (r) apiKey = r; } catch (_e) { /* best-effort */ }
     const steamSession = session.fromPartition('persist:steam-auth');
     const sessionFetch = steamSession.fetch.bind(steamSession);
     return runProviderImportWithProgress('steam', { apiKey, sessionFetch });

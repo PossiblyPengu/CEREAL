@@ -2,11 +2,11 @@
 const { ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const ctx = require('./context');
-const { CHIAKI_SYSTEM_PATHS } = require('./constants');
+const ctx = require('../core/context');
+const { CHIAKI_SYSTEM_PATHS } = require('../core/constants');
 const { findSteamRoot, scanSteamInstalled, scanEpicInstalled, scanGogInstalled, scanXboxInstalled } = require('./detection');
-const { getBundledChiakiExe, getBundledChiakiVersion } = require('./chiaki');
-const { getProvidersDir } = require('./paths');
+const { getBundledChiakiExe, getBundledChiakiVersion } = require('../integrations/chiaki');
+const { getProvidersDir } = require('../core/paths');
 
 function registerDetectionIpcHandlers() {
   const providersDir = getProvidersDir();
@@ -49,8 +49,7 @@ function registerDetectionIpcHandlers() {
 
       // 2. Fallback to system-installed
       if (!result.found) {
-        const systemPaths = CHIAKI_SYSTEM_PATHS;
-        for (const p of systemPaths) {
+        for (const p of CHIAKI_SYSTEM_PATHS) {
           if (fs.existsSync(p)) {
             result.found = true;
             result.bundled = false;
@@ -145,20 +144,7 @@ function registerDetectionIpcHandlers() {
         // and appinfo.vdf — but localconfig is the primary source
       }
 
-      // ── GOG playtime via galaxy-2.0.db ──
-      try {
-        const gogDbPath = path.join(
-          process.env.PROGRAMDATA || 'C:\\ProgramData',
-          'GOG.com', 'Galaxy', 'storage', 'galaxy-2.0.db'
-        );
-        if (fs.existsSync(gogDbPath)) {
-          // GOG stores playtime in SQLite — we'd need better-sqlite3 or similar
-          // For now, skip GOG DB playtime (would need native module)
-        }
-      } catch (_e) { /* skip GOG playtime */ }
-
-      // ── Epic Games — no local playtime file available ──
-      // Epic doesn't store local playtime data in an accessible format
+      // ── Epic / GOG — no accessible local playtime data without native SQLite ──
 
       if (updated.length > 0) {
         ctx.saveDB(db);

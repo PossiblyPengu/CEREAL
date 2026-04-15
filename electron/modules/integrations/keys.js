@@ -2,9 +2,9 @@
 const { ipcMain, dialog, shell, clipboard } = require('electron');
 const crypto = require('crypto');
 const path = require('path');
-const ctx = require('./context');
-const { ALLOWED_KEY_SERVICES } = require('./constants');
-const { getProvidersDir } = require('./paths');
+const ctx = require('../core/context');
+const { ALLOWED_KEY_SERVICES } = require('../core/constants');
+const { getProvidersDir } = require('../core/paths');
 
 // Lazy-load providers
 let providers = null;
@@ -14,6 +14,7 @@ function getProviders() {
 }
 
 const { httpGetJson } = require(path.join(getProvidersDir(), 'http'));
+const log = require('../core/logger');
 
 function summarizeSecret(secret) {
   if (!secret) return { hasSecret: false, fingerprint: null };
@@ -28,7 +29,7 @@ function summarizeSecret(secret) {
 async function validateProviderKey(provider, apiKey) {
   const providers = getProviders();
   if (!apiKey) return { ok: false, provider, error: 'missing-key' };
-  if (providers && providers[provider] && typeof providers[provider].validateKey === 'function') {
+  if (providers[provider] && typeof providers[provider].validateKey === 'function') {
     try {
       const res = await providers[provider].validateKey(apiKey);
       return { ok: !!res.ok, provider, info: res.info, error: res.error };
@@ -56,7 +57,7 @@ function registerKeysIpcHandlers() {
       ctx.safeStore.setPassword(service, account, secret);
       return {ok: true, ...summarizeSecret(secret)};
     } catch (err) {
-      console.error('keys:set error', err);
+      log.error('keys', 'keys:set error', err && err.message);
       return {ok: false, error: err && err.message};
     }
   });
@@ -67,7 +68,7 @@ function registerKeysIpcHandlers() {
       const secret = ctx.safeStore.getPassword(service, account);
       return {ok: true, ...summarizeSecret(secret)};
     } catch (err) {
-      console.error('keys:get error', err);
+      log.error('keys', 'keys:get error', err && err.message);
       return {ok: false, error: err && err.message};
     }
   });
@@ -78,7 +79,7 @@ function registerKeysIpcHandlers() {
       const res = ctx.safeStore.deletePassword(service, account);
       return {ok: res};
     } catch (err) {
-      console.error('keys:delete error', err);
+      log.error('keys', 'keys:delete error', err && err.message);
       return {ok: false, error: err && err.message};
     }
   });
@@ -87,7 +88,7 @@ function registerKeysIpcHandlers() {
     try {
       return await validateProviderKey(provider, apiKey);
     } catch (err) {
-      console.error('keys:validate error', err);
+      log.error('keys', 'keys:validate error', err && err.message);
       return {ok: false, error: err && err.message};
     }
   });
@@ -99,7 +100,7 @@ function registerKeysIpcHandlers() {
       if (!secret) return { ok: false, error: 'no-secret', provider };
       return await validateProviderKey(provider, secret);
     } catch (err) {
-      console.error('keys:validateStored error', err);
+      log.error('keys', 'keys:validateStored error', err && err.message);
       return { ok: false, error: err && err.message };
     }
   });

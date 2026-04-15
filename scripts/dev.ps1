@@ -1,4 +1,4 @@
-$projectDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$projectDir = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $csproj = "$projectDir\electron\native\MediaInfoTool\MediaInfoTool.csproj"
 $publishOut = "$projectDir\electron\native\MediaInfoTool\publish"
 

@@ -16,37 +16,37 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'local-image', privileges: { standard: false, supportFetchAPI: true, stream: true, bypassCSP: false } }
 ]);
 // ─── Secure Credential Store (extracted to modules/credentials.js) ────────────
-const { safeStore } = require('./modules/credentials');
+const { safeStore } = require('./modules/core/credentials');
 const { spawn } = require('child_process');
 const os = require('os');
 
 // ─── Constants (extracted to modules/constants.js) ────────────────────────────
-const { ACCOUNT_SECRET_FIELDS } = require('./modules/constants');
-const log = require('./modules/logger');
+const { ACCOUNT_SECRET_FIELDS } = require('./modules/core/constants');
+const log = require('./modules/core/logger');
 
 // ─── Account Management (extracted to modules/accounts.js) ────────────────────
-const { detachAccountSecrets, registerAccountIpcHandlers } = require('./modules/accounts');
+const { detachAccountSecrets, registerAccountIpcHandlers } = require('./modules/integrations/accounts');
 
 // ─── Discord Rich Presence (extracted to modules/discord.js) ──────────────────
-const { connectDiscord, disconnectDiscord, setDiscordPresence, isDiscordEnabled, getDiscordStatus } = require('./modules/discord');
+const { connectDiscord, disconnectDiscord, setDiscordPresence, isDiscordEnabled, getDiscordStatus } = require('./modules/integrations/discord');
 ipcMain.handle('discord:status', () => getDiscordStatus());
 
 
 // ─── Cover Image Caching (extracted to modules/covers.js) ─────────────────────
-const { getCoversDir, cleanupFile, enqueueCoverFetch } = require('./modules/covers');
+const { getCoversDir, cleanupFile, enqueueCoverFetch } = require('./modules/games/covers');
 
 // ─── Chiaki + Win32 Embed (extracted to modules/chiaki.js) ────────────────────
-const { chiakiSessions, resolveChiakiExe, buildChiakiArgs, startChiakiSession, sendEmbedBoundsToAll, autoSetupChiakiIfMissing, registerChiakiIpcHandlers } = require('./modules/chiaki');
+const { chiakiSessions, resolveChiakiExe, buildChiakiArgs, startChiakiSession, sendEmbedBoundsToAll, autoSetupChiakiIfMissing, registerChiakiIpcHandlers } = require('./modules/integrations/chiaki');
 
 // ─── xCloud (extracted to modules/xcloud.js) ─────────────────────────────────
-const { xcloudSessions, updateAllXcloudBounds, startXcloudSession } = require('./modules/xcloud');
+const { xcloudSessions, updateAllXcloudBounds, startXcloudSession } = require('./modules/integrations/xcloud');
 
 // ─── Game CRUD + Categories (extracted to modules/gameCrud.js) ────────────────────
-const { registerGameCrudIpcHandlers } = require('./modules/gameCrud');
+const { registerGameCrudIpcHandlers } = require('./modules/games/gameCrud');
 registerGameCrudIpcHandlers();
 
 // ─── Database (extracted to modules/database.js) ─────────────────────────────
-const { DB_PATH, loadDB, saveDB, flushDB } = require('./modules/database');
+const { DB_PATH, loadDB, saveDB, flushDB } = require('./modules/core/database');
 let db = null;
 
 // ─── Window ───────────────────────────────────────────────────────────────────
@@ -110,12 +110,9 @@ function createWindow() {
 
   if (process.env.CEREAL_DEVTOOLS === '1') {
     mainWindow.webContents.once('did-finish-load', () => {
-      try { toggleDevTools(); } catch (e) { console.error('Auto DevTools failed:', e.message); }
+      try { toggleDevTools(); } catch (e) { log.error('main', 'Auto DevTools failed:', e.message); }
     });
   }
-
-  // signalReady is kept for future use but window is already visible
-  ipcMain.on('window:ready', () => {});
 
   // Security: prevent main window from navigating to external URLs
   mainWindow.webContents.on('will-navigate', (event, url) => {
@@ -223,7 +220,7 @@ app.whenReady().then(() => {
 
   db = loadDB();
   // Populate shared context for extracted modules
-  const ctx = require('./modules/context');
+  const ctx = require('./modules/core/context');
   ctx.db = db;
   ctx.safeStore = safeStore;
   ctx.saveDB = saveDB;
@@ -268,7 +265,7 @@ app.whenReady().then(() => {
         } catch (_e) { game.localHeaderPath = null; coversCleaned++; }
       }
     }
-    if (coversCleaned > 0) console.log('[CoverFetcher] Cleaned', coversCleaned, 'corrupt cover references');
+    if (coversCleaned > 0) log.info('main', 'Cleaned', coversCleaned, 'corrupt cover references');
     // Purge small corrupt files from covers directory
     try {
       const coversDir = getCoversDir();
@@ -277,7 +274,7 @@ app.whenReady().then(() => {
         const fp = path.join(coversDir, f);
         try { if (fs.statSync(fp).size < 1024) { fs.unlinkSync(fp); purged++; } } catch (_e) { /* ignore */ }
       }
-      if (purged > 0) console.log('[CoverFetcher] Purged', purged, 'corrupt files from covers directory');
+      if (purged > 0) log.info('main', 'Purged', purged, 'corrupt files from covers directory');
     } catch (_e) { /* ignore */ }
   }
   if (lastMigration < 2) {
@@ -289,7 +286,7 @@ app.whenReady().then(() => {
         backfilled++;
       }
     }
-    if (backfilled > 0) console.log('[Migration] Backfilled', backfilled, 'Steam header URLs');
+    if (backfilled > 0) log.info('main', 'Backfilled', backfilled, 'Steam header URLs');
   }
   if (lastMigration < CURRENT_MIGRATION) {
     db.settings = db.settings || {};
@@ -308,7 +305,7 @@ app.whenReady().then(() => {
         requeued++;
       }
     }
-    if (requeued > 0) console.log('[CoverFetcher] Re-enqueued', requeued, 'games for cover download');
+    if (requeued > 0) log.info('main', 'Re-enqueued', requeued, 'games for cover download');
   }, 3000);
   // Security: restrict permissions requested by renderer
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
@@ -443,7 +440,7 @@ function saveWindowBounds() {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     // Respect user preference for remembering window bounds
     if (db && db.settings && db.settings.rememberWindowBounds === false) return;
-    const isMax = mainWindow.isMaximized ? mainWindow.isMaximized() : false;
+    const isMax = mainWindow.isMaximized();
     const bounds = isMax ? (db.settings && db.settings.windowBounds ? db.settings.windowBounds : {}) : mainWindow.getBounds();
     db.settings = db.settings || {};
     db.settings.windowBounds = {
@@ -454,7 +451,7 @@ function saveWindowBounds() {
       isMaximized: !!isMax
     };
     saveDB(db);
-  } catch (e) { console.error('Failed saving window bounds', e && e.message); }
+  } catch (e) { log.error('main', 'Failed saving window bounds', e && e.message); }
 }
 
 function onWindowBoundsChanged() {
@@ -467,15 +464,15 @@ function onWindowBoundsChanged() {
 }
 
 // ─── Key Storage & Validation (extracted to modules/keys.js) ──────────────────
-const { registerKeysIpcHandlers } = require('./modules/keys');
+const { registerKeysIpcHandlers } = require('./modules/integrations/keys');
 registerKeysIpcHandlers();
 
 // ─── Metadata IPC (extracted to modules/metadataIpc.js) ───────────────────────
-const { registerMetadataIpcHandlers } = require('./modules/metadataIpc');
+const { registerMetadataIpcHandlers } = require('./modules/metadata/metadataIpc');
 registerMetadataIpcHandlers();
 
 // ─── Launch Helpers (extracted to modules/launcher.js) ────────────────────────
-const { normalizePlatform, openInPlatformClient } = require('./modules/launcher');
+const { normalizePlatform, openInPlatformClient } = require('./modules/games/launcher');
 
 ipcMain.handle('games:launch', async (event, id) => {
   const game = db.games.find(g => g.id === id);
@@ -623,9 +620,7 @@ ipcMain.handle('dialog:pickImage', async () => {
     } catch (_e) { return null; }
     const ext = path.extname(src);
     const destName = `cover_${Date.now()}${ext}`;
-    const destDir = path.join(app.getPath('userData'), 'covers');
-    if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
-    const dest = path.join(destDir, destName);
+    const dest = path.join(getCoversDir(), destName);
     fs.copyFileSync(src, dest);
     return dest;
   }
@@ -633,11 +628,11 @@ ipcMain.handle('dialog:pickImage', async () => {
 });
 
 // ─── Detection + Playtime (extracted to modules/detectionIpc.js) ──────────────
-const { registerDetectionIpcHandlers } = require('./modules/detectionIpc');
+const { registerDetectionIpcHandlers } = require('./modules/metadata/detectionIpc');
 registerDetectionIpcHandlers();
 
 // ─── Settings (extracted to modules/settings.js) ─────────────────────────────
-const { registerSettingsIpcHandlers } = require('./modules/settings');
+const { registerSettingsIpcHandlers } = require('./modules/games/settings');
 registerSettingsIpcHandlers({ createTray, destroyTray, DB_PATH });
 
 // ─── Auto-Update ──────────────────────────────────────────────────────────────
@@ -657,7 +652,7 @@ registerAccountIpcHandlers();
 registerChiakiIpcHandlers();
 
 // ─── xCloud + Media (extracted to modules/media.js) ───────────────────────────
-const { registerMediaIpcHandlers } = require('./modules/media');
+const { registerMediaIpcHandlers } = require('./modules/integrations/media');
 registerMediaIpcHandlers();
 
 

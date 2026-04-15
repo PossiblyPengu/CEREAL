@@ -4,14 +4,11 @@ import type { Game } from './types';
 
 // ─── UI scale & theme ────────────────────────────────────────────────────────
 
+const SCALE_FONT: Record<string, string> = { '0.9': '11px', '1': '13px', '1.1': '15px', '1.25': '17px' };
+
 export function applyUiScale(scale: string | undefined): void {
   document.documentElement.style.zoom = scale || '1';
-  let px = '13px';
-  if (scale === '0.9') px = '11px';
-  else if (scale === '1') px = '13px';
-  else if (scale === '1.1') px = '15px';
-  else if (scale === '1.25') px = '17px';
-  document.documentElement.style.setProperty('--font-size', px);
+  document.documentElement.style.setProperty('--font-size', SCALE_FONT[scale ?? '1'] ?? '13px');
 }
 
 export function applyTheme(themeKey: string): void {

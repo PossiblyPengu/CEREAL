@@ -15,8 +15,8 @@ function getResourcesRoot() {
   if (app?.isPackaged) {
     return process.resourcesPath;
   }
-  // Development: go up from electron/modules/ to electron/
-  return path.join(__dirname, '..');
+  // Development: npm run dev is always invoked from the project root
+  return path.join(process.cwd(), 'electron');
 }
 
 /**
@@ -27,22 +27,22 @@ function getScriptPath(scriptName) {
 }
 
 /**
- * Get the path to the providers/ directory
+ * Get the path to the providers/ directory (memoized — stable for the app lifetime)
  */
+let _providersDir = null;
 function getProvidersDir() {
+  if (_providersDir) return _providersDir;
   const candidates = [
-    path.join(__dirname, '..', 'providers'),      // dev: electron/providers
-    path.join(process.cwd(), 'electron', 'providers'), // fallback
+    path.join(process.cwd(), 'electron', 'providers'), // dev: electron/providers
   ];
-  
   if (app?.isPackaged) {
     // In production, providers are in resources/
     candidates.unshift(path.join(process.resourcesPath, 'providers'));
   }
-  
   for (const candidate of candidates) {
     if (fs.existsSync(path.join(candidate, 'index.js'))) {
-      return candidate;
+      _providersDir = candidate;
+      return _providersDir;
     }
   }
   throw new Error('Cannot find providers directory. Tried: ' + candidates.join(', '));

@@ -1,5 +1,10 @@
 //#region electron/preload.js
 var { contextBridge, ipcRenderer } = require("electron");
+var ipcOn = (channel, cb) => {
+	const handler = (_event, data) => cb(data);
+	ipcRenderer.on(channel, handler);
+	return () => ipcRenderer.removeListener(channel, handler);
+};
 contextBridge.exposeInMainWorld("api", {
 	minimize: () => ipcRenderer.invoke("window:minimize"),
 	maximize: () => ipcRenderer.invoke("window:maximize"),
@@ -44,16 +49,8 @@ contextBridge.exposeInMainWorld("api", {
 	xcloudStart: (opts) => ipcRenderer.invoke("xcloud:start", opts),
 	xcloudStop: (gameId) => ipcRenderer.invoke("xcloud:stop", gameId),
 	xcloudGetSessions: () => ipcRenderer.invoke("xcloud:getSessions"),
-	onChiakiEvent: (callback) => {
-		const handler = (event, data) => callback(data);
-		ipcRenderer.on("chiaki:event", handler);
-		return () => ipcRenderer.removeListener("chiaki:event", handler);
-	},
-	onGamesRefresh: (callback) => {
-		const handler = (event, data) => callback(data);
-		ipcRenderer.on("games:refresh", handler);
-		return () => ipcRenderer.removeListener("games:refresh", handler);
-	},
+	onChiakiEvent: (cb) => ipcOn("chiaki:event", cb),
+	onGamesRefresh: (cb) => ipcOn("games:refresh", cb),
 	pickExecutable: () => ipcRenderer.invoke("dialog:pickExecutable"),
 	pickImage: () => ipcRenderer.invoke("dialog:pickImage"),
 	getCategories: () => ipcRenderer.invoke("games:getCategories"),
@@ -71,21 +68,9 @@ contextBridge.exposeInMainWorld("api", {
 	removeAccount: (platform) => ipcRenderer.invoke("accounts:remove", platform),
 	platformAuth: (platform) => ipcRenderer.invoke(`accounts:${platform}:auth`),
 	platformImport: (platform) => ipcRenderer.invoke(`accounts:${platform}:import`),
-	onImportProgress: (callback) => {
-		const handler = (event, data) => callback(data);
-		ipcRenderer.on("import:progress", handler);
-		return () => ipcRenderer.removeListener("import:progress", handler);
-	},
-	onMetadataProgress: (callback) => {
-		const handler = (event, data) => callback(data);
-		ipcRenderer.on("metadata:progress", handler);
-		return () => ipcRenderer.removeListener("metadata:progress", handler);
-	},
-	onCoverProgress: (callback) => {
-		const handler = (event, data) => callback(data);
-		ipcRenderer.on("cover:progress", handler);
-		return () => ipcRenderer.removeListener("cover:progress", handler);
-	},
+	onImportProgress: (cb) => ipcOn("import:progress", cb),
+	onMetadataProgress: (cb) => ipcOn("metadata:progress", cb),
+	onCoverProgress: (cb) => ipcOn("cover:progress", cb),
 	getSettings: () => ipcRenderer.invoke("settings:get"),
 	saveSettings: (s) => ipcRenderer.invoke("settings:save", s),
 	resetSettings: () => ipcRenderer.invoke("settings:reset"),
@@ -97,11 +82,7 @@ contextBridge.exposeInMainWorld("api", {
 	getAppVersion: () => ipcRenderer.invoke("settings:getAppVersion"),
 	checkForUpdate: () => ipcRenderer.invoke("update:check"),
 	installUpdate: () => ipcRenderer.invoke("update:install"),
-	onUpdateEvent: (callback) => {
-		const handler = (event, data) => callback(data);
-		ipcRenderer.on("update:event", handler);
-		return () => ipcRenderer.removeListener("update:event", handler);
-	},
+	onUpdateEvent: (cb) => ipcOn("update:event", cb),
 	getMediaInfo: () => ipcRenderer.invoke("media:getInfo"),
 	mediaControl: (action) => ipcRenderer.invoke("media:control", action),
 	saveApiKey: (provider, apiKey) => ipcRenderer.invoke("keys:set", {
@@ -127,18 +108,8 @@ contextBridge.exposeInMainWorld("api", {
 		account: "default"
 	}),
 	getDiscordStatus: () => ipcRenderer.invoke("discord:status"),
-	onTabsOpened: (callback) => {
-		const handler = (event, data) => callback(data);
-		ipcRenderer.on("tabs:opened", handler);
-		return () => ipcRenderer.removeListener("tabs:opened", handler);
-	},
-	onTabsClosed: (callback) => {
-		const handler = (event, data) => callback(data);
-		ipcRenderer.on("tabs:closed", handler);
-		return () => ipcRenderer.removeListener("tabs:closed", handler);
-	},
-	switchTab: (id) => ipcRenderer.invoke("tabs:switch", { id }),
-	closeTab: (id) => ipcRenderer.invoke("tabs:close", { id }),
+	onTabsOpened: (cb) => ipcOn("tabs:opened", cb),
+	onTabsClosed: (cb) => ipcOn("tabs:closed", cb),
 	signalReady: () => ipcRenderer.send("window:ready"),
 	getSystemSpecs: () => ipcRenderer.invoke("system:getSpecs")
 });

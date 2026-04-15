@@ -1,14 +1,15 @@
 // ─── Native SMTC media info + xCloud IPC handlers ────────────────────────────
 const { ipcMain } = require('electron');
+const path = require('path');
 const { startXcloudSession, stopXcloudSession, getActiveXcloudSessions } = require('./xcloud');
-const log = require('./logger');
+const log = require('../core/logger');
 
 // Native SMTC addon - lazy loaded
 let smtcNative = null;
 function getSmtcNative() {
   if (!smtcNative) {
     try {
-      smtcNative = require('../native/smtc');
+      smtcNative = require(path.join(__dirname, 'native', 'smtc'));
       log.info('media', 'native addon loaded');
     } catch (e) {
       log.warn('media', 'failed to load native addon:', e.message);

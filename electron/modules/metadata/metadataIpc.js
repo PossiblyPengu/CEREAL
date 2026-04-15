@@ -1,10 +1,9 @@
 // ─── Metadata Fetch IPC handlers ──────────────────────────────────────────────
 const { ipcMain } = require('electron');
-const ctx = require('./context');
+const ctx = require('../core/context');
 const { fetchGameMetadata, applyMetadataToGame, invalidateMetadataCache } = require('./metadata');
-const { enqueueCoverFetch } = require('./covers');
+const { enqueueCoverFetch } = require('../games/covers');
 const { registerMetadataSearchHandlers } = require('./metadataSearch');
-const log = require('./logger');
 
 function registerMetadataIpcHandlers() {
   registerMetadataSearchHandlers();
@@ -50,14 +49,14 @@ function registerMetadataIpcHandlers() {
         if (game.headerUrl !== prevHeaderUrl) { game.localHeaderPath = null; game._imgStamp = Date.now(); }
         ctx.saveDB(db);
         ctx.sendToRenderer('games:refresh', db.games);
-        try { enqueueCoverFetch(game.id); } catch(e) { log.debug('covers', 'enqueue failed', e); }
+        enqueueCoverFetch(game.id);
         return { success: true, game };
       } else {
         const changed = applyMetadataToGame(game, meta);
         if (changed) {
           ctx.saveDB(db);
           ctx.sendToRenderer('games:refresh', db.games);
-          try { enqueueCoverFetch(game.id); } catch(e) { log.debug('covers', 'enqueue failed', e); }
+          enqueueCoverFetch(game.id);
         }
         return { success: true, game };
       }
@@ -102,7 +101,7 @@ function registerMetadataIpcHandlers() {
           if (applyMetadataToGame(r.value.game, r.value.meta)) {
             updated++; batchUpdated++;
             // Enqueue cover download now that coverUrl may have been set
-            try { enqueueCoverFetch(r.value.game.id); } catch(e) { log.debug('covers', 'enqueue failed', e); }
+            enqueueCoverFetch(r.value.game.id);
           }
         } else { failed++; }
       }

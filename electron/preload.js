@@ -1,5 +1,11 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+const ipcOn = (channel, cb) => {
+  const handler = (_event, data) => cb(data);
+  ipcRenderer.on(channel, handler);
+  return () => ipcRenderer.removeListener(channel, handler);
+};
+
 contextBridge.exposeInMainWorld('api', {
   // Window controls
   minimize: () => ipcRenderer.invoke('window:minimize'),
@@ -57,18 +63,10 @@ contextBridge.exposeInMainWorld('api', {
   xcloudGetSessions: () => ipcRenderer.invoke('xcloud:getSessions'),
 
   // Unified stream events (PS + Xbox)
-  onChiakiEvent: (callback) => {
-    const handler = (event, data) => callback(data);
-    ipcRenderer.on('chiaki:event', handler);
-    return () => ipcRenderer.removeListener('chiaki:event', handler);
-  },
+  onChiakiEvent:  (cb) => ipcOn('chiaki:event',  cb),
 
   // Game list refresh (e.g. auto-created PS games from title detection)
-  onGamesRefresh: (callback) => {
-    const handler = (event, data) => callback(data);
-    ipcRenderer.on('games:refresh', handler);
-    return () => ipcRenderer.removeListener('games:refresh', handler);
-  },
+  onGamesRefresh: (cb) => ipcOn('games:refresh', cb),
 
   // Dialogs
   pickExecutable: () => ipcRenderer.invoke('dialog:pickExecutable'),
@@ -98,21 +96,9 @@ contextBridge.exposeInMainWorld('api', {
   platformImport: (platform) => ipcRenderer.invoke(`accounts:${platform}:import`),
 
   // Import progress events (provider -> main -> renderer)
-  onImportProgress: (callback) => {
-    const handler = (event, data) => callback(data);
-    ipcRenderer.on('import:progress', handler);
-    return () => ipcRenderer.removeListener('import:progress', handler);
-  },
-  onMetadataProgress: (callback) => {
-    const handler = (event, data) => callback(data);
-    ipcRenderer.on('metadata:progress', handler);
-    return () => ipcRenderer.removeListener('metadata:progress', handler);
-  },
-  onCoverProgress: (callback) => {
-    const handler = (event, data) => callback(data);
-    ipcRenderer.on('cover:progress', handler);
-    return () => ipcRenderer.removeListener('cover:progress', handler);
-  },
+  onImportProgress:   (cb) => ipcOn('import:progress',   cb),
+  onMetadataProgress: (cb) => ipcOn('metadata:progress', cb),
+  onCoverProgress:    (cb) => ipcOn('cover:progress',    cb),
 
   // Settings
   getSettings: () => ipcRenderer.invoke('settings:get'),
@@ -127,11 +113,7 @@ contextBridge.exposeInMainWorld('api', {
   // Auto-Update
   checkForUpdate: () => ipcRenderer.invoke('update:check'),
   installUpdate: () => ipcRenderer.invoke('update:install'),
-  onUpdateEvent: (callback) => {
-    const handler = (event, data) => callback(data);
-    ipcRenderer.on('update:event', handler);
-    return () => ipcRenderer.removeListener('update:event', handler);
-  },
+  onUpdateEvent: (cb) => ipcOn('update:event', cb),
 
   // System media controls (SMTC)
   getMediaInfo: () => ipcRenderer.invoke('media:getInfo'),
@@ -146,18 +128,8 @@ contextBridge.exposeInMainWorld('api', {
   getDiscordStatus: () => ipcRenderer.invoke('discord:status'),
 
   // Tab system
-  onTabsOpened: (callback) => {
-    const handler = (event, data) => callback(data);
-    ipcRenderer.on('tabs:opened', handler);
-    return () => ipcRenderer.removeListener('tabs:opened', handler);
-  },
-  onTabsClosed: (callback) => {
-    const handler = (event, data) => callback(data);
-    ipcRenderer.on('tabs:closed', handler);
-    return () => ipcRenderer.removeListener('tabs:closed', handler);
-  },
-  switchTab: (id) => ipcRenderer.invoke('tabs:switch', { id }),
-  closeTab: (id) => ipcRenderer.invoke('tabs:close', { id }),
+  onTabsOpened: (cb) => ipcOn('tabs:opened', cb),
+  onTabsClosed: (cb) => ipcOn('tabs:closed', cb),
 
   // Signal to main process that the renderer has finished loading all data
   signalReady: () => ipcRenderer.send('window:ready'),

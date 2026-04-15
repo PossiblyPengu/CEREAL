@@ -1,8 +1,8 @@
 // ─── xCloud (Xbox Cloud Gaming) WebContentsView Embedding ────────────────────
 const { WebContentsView, session } = require('electron');
-const ctx = require('./context');
-const { CONTROL_BAR_HEIGHT } = require('./constants');
-const log = require('./logger');
+const ctx = require('../core/context');
+const { CONTROL_BAR_HEIGHT } = require('../core/constants');
+const log = require('../core/logger');
 
 const xcloudSessions = new Map(); // gameId -> { view, state, startTime }
 
@@ -21,7 +21,7 @@ function getXcloudBounds() {
 function updateXcloudBounds(sess) {
   if (!sess || !sess.view) return;
   const b = getXcloudBounds();
-  try { sess.view.setBounds(b); } catch (e) { /* view may be destroyed */ }
+  try { sess.view.setBounds(b); } catch (_e) { /* view may be destroyed */ }
 }
 
 function updateAllXcloudBounds() {
@@ -59,7 +59,7 @@ function startXcloudSession(gameId, url) {
     sendStreamEvent(gameId, 'state', { state: 'streaming', platform: 'xbox' });
   });
 
-  view.webContents.on('did-fail-load', (e, code, desc) => {
+  view.webContents.on('did-fail-load', (_e, code, desc) => {
     sess.state = 'disconnected';
     sendStreamEvent(gameId, 'disconnected', { reason: desc, platform: 'xbox' });
   });
@@ -82,7 +82,7 @@ function stopXcloudSession(gameId) {
       if (ctx.mainWindow && !ctx.mainWindow.isDestroyed()) {
         ctx.mainWindow.contentView.removeChildView(sess.view);
       }
-    } catch (e) { /* ok - may already be removed */ }
+    } catch (_e) { /* ok - may already be removed */ }
 
     // 2. Remove from sessions map synchronously
     xcloudSessions.delete(gameId);
@@ -92,7 +92,7 @@ function stopXcloudSession(gameId) {
 
     // 4. Async cleanup: navigate to Xbox home to signal session end, then close
     if (sess.view?.webContents && !sess.view.webContents.isDestroyed()) {
-      try { sess.view.webContents.loadURL('https://www.xbox.com/play'); } catch (e) { /* ignore */ }
+      try { sess.view.webContents.loadURL('https://www.xbox.com/play'); } catch (_e) { /* ignore */ }
     }
 
     setTimeout(() => {
@@ -103,7 +103,7 @@ function stopXcloudSession(gameId) {
             origin: 'https://www.xbox.com',
             storages: ['cookies', 'localstorage', 'sessionstorage', 'cachestorage']
           }).catch(() => {});
-        } catch (e) { /* ignore */ }
+        } catch (_e) { /* ignore */ }
       }
 
       // 6. Close the webContents
@@ -111,18 +111,18 @@ function stopXcloudSession(gameId) {
         if (sess.view?.webContents && !sess.view.webContents.isDestroyed()) {
           sess.view.webContents.close();
         }
-      } catch (e) { /* ok */ }
+      } catch (_e) { /* ok — webContents may already be closed */ }
 
       sess.view = null;
-      console.log(`[xcloud] Session ${gameId} stopped gracefully`);
+      log.info('xcloud', `Session ${gameId} stopped gracefully`);
     }, 500);
 
     return true;
   } catch (e) {
-    console.error('[xcloud] Error stopping session:', e);
+    log.error('xcloud', 'Error stopping session:', e.message);
     // Force cleanup on error
-    try { ctx.mainWindow?.contentView?.removeChildView(sess.view); } catch (_) {}
-    try { sess.view?.webContents?.close(); } catch (_) {}
+    try { ctx.mainWindow?.contentView?.removeChildView(sess.view); } catch (_e) { /* best-effort */ }
+    try { sess.view?.webContents?.close(); } catch (_e) { /* best-effort */ }
     xcloudSessions.delete(gameId);
     sendStreamEvent(gameId, 'disconnected', { reason: 'error', platform: 'xbox', error: e.message });
     return false;
@@ -130,11 +130,9 @@ function stopXcloudSession(gameId) {
 }
 
 function getActiveXcloudSessions() {
-  const result = {};
-  for (const [gameId, sess] of xcloudSessions) {
-    result[gameId] = { state: sess.state, platform: 'xbox', startTime: sess.startTime };
-  }
-  return result;
+  return Object.fromEntries(
+    [...xcloudSessions].map(([gameId, sess]) => [gameId, { state: sess.state, platform: 'xbox', startTime: sess.startTime }])
+  );
 }
 
 module.exports = {

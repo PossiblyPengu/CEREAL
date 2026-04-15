@@ -158,8 +158,9 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
       const r = await (window.api as any)?.chiakiUpdate?.();
       if (r?.ok) { flash('chiaki-ng downloaded (v' + (r.version || '?') + ')'); await refreshChiaki(); }
       else {
-        const detail = r?.output ? ('\n' + String(r.output).trim().split('\n').pop()) : '';
-        flash((r?.error || 'Download failed') + detail);
+        const lines = r?.output ? String(r.output).split('\n') : [];
+        const errLine = lines.find(l => l.trimStart().startsWith('ERROR:')) || lines.filter(l => l.trim()).pop() || '';
+        flash((r?.error || 'Download failed') + (errLine ? ': ' + errLine.replace(/^ERROR:\s*/i, '').trim() : ''));
       }
     } catch (_) { flash('Download failed'); }
     setChiakiDownloading(false);

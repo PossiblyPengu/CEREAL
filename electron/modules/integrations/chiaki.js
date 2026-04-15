@@ -9,11 +9,11 @@ const { spawn } = require('child_process');
 const dgram = require('dgram');
 const os = require('os');
 const { screen: electronScreen, app, ipcMain, net } = require('electron');
-const ctx = require('./context');
-const { CONTROL_BAR_HEIGHT, CHIAKI_SYSTEM_PATHS } = require('./constants');
+const ctx = require('../core/context');
+const { CONTROL_BAR_HEIGHT, CHIAKI_SYSTEM_PATHS } = require('../core/constants');
 const { connectDiscord, setDiscordPresence, clearDiscordPresence, isDiscordEnabled } = require('./discord');
-const log = require('./logger');
-const { getScriptPath, getResourcePath } = require('./paths');
+const log = require('../core/logger');
+const { getScriptPath, getResourcePath } = require('../core/paths');
 
 // ─── chiaki-ng path resolution ───────────────────────────────────────────────
 // Priority: userData/chiaki-ng (downloaded by app) → dev resources fallback
@@ -51,7 +51,7 @@ function getBundledChiakiExe() {
         }
       }
     }
-  } catch (e) { /* ignore */ }
+  } catch (_e) { /* ignore */ }
 
   return null;
 }
@@ -61,7 +61,7 @@ function getBundledChiakiVersion() {
   if (!dir) return null;
   const vf = path.join(dir, '.version');
   try { return fs.readFileSync(vf, 'utf-8').trim(); }
-  catch (e) { return null; }
+  catch (_e) { return null; }
 }
 
 // ─── Chiaki Session Manager ──────────────────────────────────────────────────
@@ -178,7 +178,7 @@ function startChiakiSession(gameId, chiakiExe, args) {
         const evt = JSON.parse(trimmed);
         handleChiakiJsonEvent(gameId, evt);
         return;
-      } catch (e) { /* not JSON */ }
+      } catch (_e) { /* not JSON */ }
     }
     handleChiakiLogLine(gameId, trimmed);
   };
@@ -297,9 +297,9 @@ function stopChiakiSession(gameId) {
       // Force-kill after 3 seconds if still alive
       setTimeout(() => {
         try { if (!session.process.killed) session.process.kill('SIGKILL'); }
-        catch (e) { /* already dead */ }
+        catch (_e) { /* already dead */ }
       }, 3000);
-    } catch (e) { /* already dead */ }
+    } catch (_e) { /* already dead */ }
   }
 
   chiakiSessions.delete(gameId);
@@ -318,7 +318,7 @@ function getStreamBounds() {
     const winBounds = ctx.mainWindow.getBounds();
     const disp = electronScreen.getDisplayNearestPoint({ x: winBounds.x + winBounds.width / 2, y: winBounds.y + winBounds.height / 2 });
     sf = disp.scaleFactor || 1;
-  } catch (e) { /* fallback sf=1 */ }
+  } catch (_e) { /* fallback sf=1 */ }
   const barH = Math.round(CONTROL_BAR_HEIGHT * sf);  // physical pixels for the logical control bar
   return {
     x: 0, y: barH,
@@ -337,7 +337,7 @@ function startEmbedHelper(gameId, session) {
 
   const psScript = getScriptPath('win32-stream.ps1');
   if (!fs.existsSync(psScript)) {
-    console.warn('[chiaki] win32-stream.ps1 not found, skipping embed');
+    log.warn('chiaki', 'win32-stream.ps1 not found, skipping embed');
     return;
   }
   const ps = spawn('powershell.exe', [
@@ -357,12 +357,12 @@ function startEmbedHelper(gameId, session) {
       session.embedded = true;
       sendChiakiEvent(gameId, 'embedded', { embedded: true });
     } else if (trimmed.startsWith('error:')) {
-      console.error('[win32-stream]', trimmed);
+      log.error('win32-stream', trimmed);
       sendChiakiEvent(gameId, 'embedded', { embedded: false, error: trimmed });
     }
   });
 
-  ps.stderr.on('data', (d) => console.error('[win32-stream stderr]', d.toString().trimEnd()));
+  ps.stderr.on('data', (d) => log.error('win32-stream', d.toString().trimEnd()));
   ps.on('exit', () => { session.embedProcess = null; });
 }
 
@@ -370,9 +370,9 @@ function stopEmbedHelper(session) {
   if (!session.embedProcess) return;
   const ps = session.embedProcess;
   session.embedProcess = null;
-  try { ps.stdin.write('exit\n'); } catch (e) { /* ok */ }
+  try { ps.stdin.write('exit\n'); } catch (_e) { /* ok */ }
   setTimeout(() => {
-    try { if (!ps.killed) ps.kill(); } catch (e) { /* ok */ }
+    try { if (!ps.killed) ps.kill(); } catch (_e) { /* ok */ }
   }, 500);
 }
 
@@ -383,7 +383,7 @@ function sendEmbedBoundsToAll() {
     if (session.embedProcess && !session.embedProcess.killed) {
       try {
         session.embedProcess.stdin.write(`bounds ${b.x} ${b.y} ${b.w} ${b.h}\n`);
-      } catch (e) { /* ok */ }
+      } catch (_e) { /* ok */ }
     }
   }
 }
@@ -556,18 +556,16 @@ function handleChiakiLogLine(gameId, line) {
 }
 
 function getActiveSessions() {
-  const result = {};
-  for (const [gameId, session] of chiakiSessions) {
-    result[gameId] = {
-      state: session.state,
-      startTime: session.startTime,
-      streamInfo: session.streamInfo || {},
-      quality: session.quality || {},
-      exitCode: session.exitCode,
-      reconnectAttempts: session._reconnectAttempts || 0,
-    };
-  }
-  return result;
+  return Object.fromEntries(
+    [...chiakiSessions].map(([gameId, s]) => [gameId, {
+      state: s.state,
+      startTime: s.startTime,
+      streamInfo: s.streamInfo || {},
+      quality: s.quality || {},
+      exitCode: s.exitCode,
+      reconnectAttempts: s._reconnectAttempts || 0,
+    }])
+  );
 }
 
 // ─── chiaki-ng Auto-Setup (first run) ─────────────────────────────────────────
@@ -580,12 +578,12 @@ function autoSetupChiakiIfMissing() {
   // System install exists — no need to download
   if (CHIAKI_SYSTEM_PATHS.some(p => fs.existsSync(p))) return;
 
-  console.log('[chiaki] Not found — starting automatic setup...');
+  log.info('chiaki', 'Not found — starting automatic setup...');
   ctx.sendToRenderer('chiaki:event', { type: 'setup_started' });
 
   const scriptPath = getScriptPath('setup-chiaki.ps1');
   if (!fs.existsSync(scriptPath)) {
-    console.warn('[chiaki] setup-chiaki.ps1 not found, skipping auto-setup');
+    log.warn('chiaki', 'setup-chiaki.ps1 not found, skipping auto-setup');
     return;
   }
 
@@ -597,8 +595,8 @@ function autoSetupChiakiIfMissing() {
   const setupTimer = setTimeout(() => {
     if (finished) return;
     finished = true;
-    try { child.kill(); } catch (_) {}
-    console.error('[chiaki] Auto-setup timed out after 5 minutes');
+    try { child.kill(); } catch (_e) { /* best-effort */ }
+    log.error('chiaki', 'Auto-setup timed out after 5 minutes');
     ctx.sendToRenderer('chiaki:event', { type: 'setup_failed', error: 'Setup timed out after 5 minutes' });
   }, SETUP_TIMEOUT);
   child.stdout.on('data', d => output += d.toString());
@@ -609,10 +607,10 @@ function autoSetupChiakiIfMissing() {
     clearTimeout(setupTimer);
     if (code === 0) {
       const version = getBundledChiakiVersion();
-      console.log(`[chiaki] Auto-setup complete — v${version}`);
+      log.info('chiaki', `Auto-setup complete — v${version}`);
       ctx.sendToRenderer('chiaki:event', { type: 'setup_complete', version });
     } else {
-      console.error(`[chiaki] Auto-setup failed (exit ${code}):`, output);
+      log.error('chiaki', `Auto-setup failed (exit ${code}):`, output);
       ctx.sendToRenderer('chiaki:event', { type: 'setup_failed', error: `Setup exited with code ${code}` });
     }
   });
@@ -620,7 +618,7 @@ function autoSetupChiakiIfMissing() {
     if (finished) return;
     finished = true;
     clearTimeout(setupTimer);
-    console.error('[chiaki] Auto-setup spawn error:', err.message);
+    log.error('chiaki', 'Auto-setup spawn error:', err.message);
   });
 }
 
@@ -633,7 +631,7 @@ function registerChiakiIpcHandlers() {
     if (session?.embedProcess && !session.embedProcess.killed) {
       try {
         session.embedProcess.stdin.write(`bounds ${x} ${y} ${width} ${height}\n`);
-      } catch (e) { /* ok */ }
+      } catch (_e) { /* ok */ }
     }
     return { success: true };
   });
@@ -690,7 +688,7 @@ function registerChiakiIpcHandlers() {
         let resolved = false;
         const finish = (result) => { if (resolved) return; resolved = true; clearTimeout(timer); resolve(result); };
         const timer = setTimeout(() => {
-          try { child.kill(); } catch (_) {}
+          try { child.kill(); } catch (_e) { /* best-effort */ }
           finish({ error: 'Setup timed out after 5 minutes' });
         }, SETUP_TIMEOUT);
         child.stdout.on('data', d => output += d.toString());
@@ -848,7 +846,7 @@ function registerChiakiIpcHandlers() {
         const httpCode = parseInt(statusMatch[1], 10);
         if (httpCode !== 200 && httpCode !== 620) return;
 
-        console.log('[discovery] response from', rinfo.address, 'status:', httpCode);
+        log.debug('discovery', 'response from', rinfo.address, 'status:', httpCode);
 
         const state = httpCode === 200 ? 'ready' : 'standby';
         const entry = { host: rinfo.address, state };
@@ -887,16 +885,16 @@ function registerChiakiIpcHandlers() {
         s.on('message', onMessage);
         s.on('error', (err) => {
           if (err.code === 'EADDRINUSE' && idx + 1 < ports.length) {
-            try { s.close(); } catch(e) {}
+            try { s.close(); } catch (_e) { /* best-effort */ }
             tryBind(idx + 1);
           } else {
-            console.error('[discovery] bind failed:', err.message);
-            try { s.close(); } catch(e) {}
+            log.error('discovery', 'bind failed:', err.message);
+            try { s.close(); } catch (_e) { /* best-effort */ }
             resolve({ success: false, consoles: [], error: err.message });
           }
         });
         s.bind(ports[idx], () => {
-          console.log('[discovery] bound to port', ports[idx] || '(random)');
+          log.debug('discovery', 'bound to port', ports[idx] || '(random)');
           onBoundSock(s);
         });
       }
@@ -939,8 +937,8 @@ function registerChiakiIpcHandlers() {
         setTimeout(sendRound, 1500);
 
         setTimeout(() => {
-          console.log('[discovery] done, found', found.size, 'console(s)');
-          try { s.close(); } catch(e) {}
+          log.debug('discovery', 'done, found', found.size, 'console(s)');
+          try { s.close(); } catch (_e) { /* best-effort */ }
           resolve({ success: true, consoles: [...found.values()] });
         }, 4000);
       }
@@ -995,8 +993,8 @@ function registerChiakiIpcHandlers() {
 
         const sock = dgram.createSocket('udp4');
         sock.on('error', (err) => {
-          console.error('[wake] socket error:', err.message);
-          try { sock.close(); } catch(e) {}
+          log.error('wake', 'socket error:', err.message);
+          try { sock.close(); } catch (_e) { /* best-effort */ }
           finish({ success: false, error: err.message, method: 'udp' });
         });
 
@@ -1011,12 +1009,12 @@ function registerChiakiIpcHandlers() {
           for (const target of hosts) {
             for (const { port, msg } of WAKE_TARGETS) {
               sock.send(msg, port, target, (err) => {
-                if (err) console.error('[wake] send error:', target, port, err.message);
+                if (err) log.error('wake', 'send error:', target, port, err.message);
                 sent++;
                 if (sent === total) {
                   setTimeout(() => {
-                    try { sock.close(); } catch(e) {}
-                    console.log('[wake] sent to', host, '(both ports)');
+                    try { sock.close(); } catch (_e) { /* best-effort */ }
+                    log.info('wake', 'sent to', host, '(both ports)');
                     finish({ success: true, method: 'udp' });
                   }, 500);
                 }

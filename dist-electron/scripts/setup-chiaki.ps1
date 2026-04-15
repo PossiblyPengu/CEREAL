@@ -6,6 +6,9 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# GitHub requires TLS 1.2; Windows PowerShell defaults to TLS 1.0 on older systems
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
 $repo = 'streetpea/chiaki-ng'
 
 # InstallDir is passed by the app (userData/chiaki-ng). Fall back to a local path for manual use.
@@ -29,9 +32,19 @@ $headers = @{ 'User-Agent' = 'cereal-launcher' }
 $releaseUrl = "https://api.github.com/repos/$repo/releases/latest"
 
 try {
-    $release = Invoke-RestMethod -Uri $releaseUrl -Headers $headers
+    $response = Invoke-WebRequest -Uri $releaseUrl -Headers $headers -UseBasicParsing
+    if ($response.StatusCode -eq 403 -or $response.StatusCode -eq 429) {
+        Write-Host "ERROR: GitHub API rate limit exceeded. Try again in a few minutes."
+        exit 1
+    }
+    $release = $response.Content | ConvertFrom-Json
 } catch {
-    Write-Error "Failed to fetch release info: $_"
+    $msg = if ($_.Exception.Response.StatusCode.value__ -eq 403 -or $_.Exception.Response.StatusCode.value__ -eq 429) {
+        'GitHub API rate limit exceeded. Try again in a few minutes.'
+    } else {
+        "Failed to fetch release info: $_"
+    }
+    Write-Host "ERROR: $msg"
     exit 1
 }
 
@@ -48,17 +61,18 @@ if (-not $asset) {
 }
 
 if (-not $asset) {
-    Write-Error 'No suitable Windows x64 portable zip found in the latest chiaki-ng release.'
+    Write-Host 'ERROR: No suitable Windows x64 portable zip found in the latest chiaki-ng release.'
     exit 1
 }
 
 Write-Output "Downloading $($asset.name) ($([math]::Round($asset.size / 1MB, 1)) MB)..."
 
 $tmpZip = Join-Path $env:TEMP 'chiaki-ng-setup.zip'
+if (Test-Path $tmpZip) { Remove-Item $tmpZip -Force -ErrorAction SilentlyContinue }
 try {
     Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $tmpZip -Headers $headers
 } catch {
-    Write-Error "Download failed: $_"
+    Write-Host "ERROR: Download failed: $_"
     exit 1
 }
 
@@ -67,8 +81,14 @@ Write-Output 'Extracting...'
 if (Test-Path $installDir) { Remove-Item $installDir -Recurse -Force }
 New-Item -ItemType Directory -Path $installDir -Force | Out-Null
 
-Expand-Archive -Path $tmpZip -DestinationPath $installDir -Force
-Remove-Item $tmpZip -Force
+try {
+    Expand-Archive -Path $tmpZip -DestinationPath $installDir -Force
+} catch {
+    Write-Host "ERROR: Failed to extract archive: $_"
+    Remove-Item $tmpZip -Force -ErrorAction SilentlyContinue
+    exit 1
+}
+Remove-Item $tmpZip -Force -ErrorAction SilentlyContinue
 
 # Flatten one level if everything extracted into a single subdirectory
 $entries = Get-ChildItem -Path $installDir

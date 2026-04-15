@@ -3,12 +3,12 @@ const { ipcMain } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const ctx = require('./context');
-const { getProvidersDir } = require('./paths');
+const ctx = require('../core/context');
+const { getProvidersDir } = require('../core/paths');
 
 const { enqueueCoverFetch } = require('./covers');
-const { fetchGameMetadata, applyMetadataToGame } = require('./metadata');
-const log = require('./logger');
+const { fetchGameMetadata, applyMetadataToGame } = require('../metadata/metadata');
+const log = require('../core/logger');
 
 function registerGameCrudIpcHandlers() {
   const { canonicalize: canonicalizeName } = require(path.join(getProvidersDir(), 'utils'));
@@ -50,7 +50,7 @@ function registerGameCrudIpcHandlers() {
       ctx.saveDB(db);
       ctx.sendToRenderer('games:refresh', db.games);
       // If cover URL changed, enqueue fetch
-      try { enqueueCoverFetch(merged.id); } catch(e) { log.debug('covers', 'enqueue failed', e); }
+      enqueueCoverFetch(merged.id);
       return merged;
     }
 
@@ -66,7 +66,7 @@ function registerGameCrudIpcHandlers() {
     ctx.saveDB(db);
 
     // Enqueue cover fetch immediately in case the game already has a coverUrl
-    try { enqueueCoverFetch(game.id); } catch(e) { log.debug('covers', 'enqueue failed', e); }
+    enqueueCoverFetch(game.id);
 
     // Auto-fetch metadata in the background; re-enqueue cover after in case metadata sets coverUrl
     fetchGameMetadata(game).then(meta => {
@@ -74,7 +74,7 @@ function registerGameCrudIpcHandlers() {
         ctx.saveDB(db);
         ctx.sendToRenderer('games:refresh', db.games);
         // Cover URL may have just been set by metadata — download it
-        try { enqueueCoverFetch(game.id); } catch(e) { log.debug('covers', 'enqueue failed', e); }
+        enqueueCoverFetch(game.id);
       }
     }).catch(e => log.debug('gameCrud', 'auto-metadata failed', e.message));
 
@@ -110,7 +110,7 @@ function registerGameCrudIpcHandlers() {
       ctx.saveDB(db);
       ctx.sendToRenderer('games:refresh', db.games);
       // If cover URL changed, enqueue fetch
-      try { enqueueCoverFetch(updatedGame.id); } catch(e) { log.debug('covers', 'enqueue failed', e); }
+      enqueueCoverFetch(updatedGame.id);
       return db.games[idx];
     }
     return null;
@@ -136,11 +136,9 @@ function registerGameCrudIpcHandlers() {
     return null;
   });
 
-  ipcMain.handle('covers:fetchNow', async (_event, gameId) => {
-    try {
-      enqueueCoverFetch(gameId);
-      return { queued: true };
-    } catch (e) { return { error: e.message }; }
+  ipcMain.handle('covers:fetchNow', (_event, gameId) => {
+    enqueueCoverFetch(gameId);
+    return { queued: true };
   });
 
   // ─── Categories ─────────────────────────────────────────────────────────────
@@ -164,9 +162,6 @@ function registerGameCrudIpcHandlers() {
     return db.categories;
   });
 
-  // ─── Tab System (stubs — main process acknowledges renderer tab actions) ────
-  ipcMain.handle('tabs:switch', () => {});
-  ipcMain.handle('tabs:close', () => {});
 }
 
 module.exports = { registerGameCrudIpcHandlers };

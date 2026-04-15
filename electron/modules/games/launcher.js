@@ -53,7 +53,7 @@ function getLauncherExecutableCandidates(platform) {
           .filter(d => d.isDirectory() && d.name.startsWith('app-'))
           .sort((a, b) => b.name.localeCompare(a.name, undefined, { numeric: true }));
         return dirs.map(d => path.join(itchBase, d.name, 'itch.exe'));
-      } catch (e) { return []; }
+      } catch (_e) { return []; }
     }
     case 'xbox':
       return [
@@ -63,6 +63,8 @@ function getLauncherExecutableCandidates(platform) {
       return [];
   }
 }
+
+const uniq = arr => Array.from(new Set(arr.filter(Boolean)));
 
 function buildPlatformUris(game, action) {
   const platform = normalizePlatform(game.platform);
@@ -82,8 +84,6 @@ function buildPlatformUris(game, action) {
     const m = String(storeUrl).match(/\/openGameView\/(\d+)/i);
     return m ? m[1] : '';
   })();
-
-  const uniq = arr => Array.from(new Set(arr.filter(Boolean)));
 
   if (platform === 'steam' && steamId) {
     if (action === 'install') return uniq([`steam://install/${steamId}`, `steam://nav/games/details/${steamId}`, storeUrl]);

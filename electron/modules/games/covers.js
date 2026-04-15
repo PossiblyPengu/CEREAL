@@ -2,15 +2,18 @@
 const { app, net } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const ctx = require('./context');
-const { fetchGameMetadata, applyMetadataToGame } = require('./metadata');
-const log = require('./logger');
+const ctx = require('../core/context');
+const { fetchGameMetadata, applyMetadataToGame } = require('../metadata/metadata');
+const log = require('../core/logger');
 
-// --- Cover cache directory ---
+// --- Cover cache directory (memoized — path is stable for the lifetime of the app) ---
+let _coversDir = null;
 function getCoversDir() {
+  if (_coversDir) return _coversDir;
   const dir = path.join(app.getPath('userData'), 'covers');
-  try { if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true }); } catch (e) { log.warn('covers', 'Failed to create covers directory:', e.message); }
-  return dir;
+  try { fs.mkdirSync(dir, { recursive: true }); } catch (e) { log.warn('covers', 'Failed to create covers directory:', e.message); }
+  _coversDir = dir;
+  return _coversDir;
 }
 
 async function downloadToFile(url, destPath) {
@@ -38,14 +41,6 @@ const coverQueue = new Set();
 const coverRetries = new Map(); // gameId → retryCount
 const MAX_COVER_RETRIES = 2;
 let coverWorkerRunning = false;
-let _coversDirCache = null;
-
-function getCoversDirCached() {
-  if (_coversDirCache) return _coversDirCache;
-  _coversDirCache = getCoversDir();
-  return _coversDirCache;
-}
-
 function enqueueCoverFetch(gameId) {
   if (!gameId) return;
   coverQueue.add(gameId);
@@ -54,7 +49,7 @@ function enqueueCoverFetch(gameId) {
 
 async function processCoverQueue() {
   coverWorkerRunning = true;
-  const coversDir = getCoversDirCached();
+  const coversDir = getCoversDir();
   const db = ctx.db;
   while (coverQueue.size > 0) {
     const batch = [];
@@ -83,7 +78,7 @@ async function processCoverQueue() {
               coverRetries.delete(gid);
               downloaded = true;
               break;
-            } catch (e) { /* try next candidate */ }
+            } catch (_e) { /* try next candidate */ }
           }
           // No portrait cover yet — fetch metadata which may find a portrait capsule URL
           if (!downloaded && !game.headerUrl) {
@@ -102,10 +97,10 @@ async function processCoverQueue() {
                     game._imgStamp = Date.now();
                     coverRetries.delete(gid);
                     downloaded = true;
-                  } catch (e) { /* metadata cover also failed */ }
+                  } catch (_e) { /* metadata cover also failed */ }
                 }
               }
-            } catch (e) { /* metadata fetch failed */ }
+            } catch (_e) { /* metadata fetch failed */ }
           }
           if (!downloaded) {
             const total = [game.coverUrl, game.sgdbCoverUrl].filter(Boolean).length;

@@ -1,6 +1,5 @@
 // ─── Secure credential store using Electron's safeStorage ─────────────────────
-const { safeStorage } = require('electron');
-const { app } = require('electron');
+const { safeStorage, app } = require('electron');
 const path = require('path');
 const fs = require('fs');
 

@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { canonicalize, findExisting, makeGameEntry, updateAccountSync } = require('./utils');
-const log = require('../modules/logger');
+const log = require('../modules/core/logger');
 
 // ─── Detect ALL owned games from Ubisoft Connect's local cache ───────────────
 function detectOwned() {
