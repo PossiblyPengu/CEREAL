@@ -131,7 +131,7 @@ function createWindow() {
     const toggleDevtools = (input.control && input.shift && input.code === 'KeyI') || input.code === 'F12';
     if (!toggleDevtools) return;
     event.preventDefault();
-    toggleDevTools();
+    if (!app.isPackaged) toggleDevTools();
   });
 
   // Track window bounds changes to reposition embedded chiaki windows
@@ -327,7 +327,15 @@ app.whenReady().then(() => {
           "style-src 'self' 'unsafe-inline'",
           "img-src 'self' data: local-image: https: http:",
           "font-src 'self' data:",
-          "connect-src 'self' https://*.steampowered.com https://*.steamstatic.com https://store.steampowered.com https://api.steampowered.com https://steamcdn-a.akamaihd.net https://*.steamgriddb.com https://*.gog.com https://*.epicgames.com https://*.xbox.com https://*.xboxlive.com https://*.wikipedia.org https://*.wikidata.org https://*.wikimedia.org https://*.duckduckgo.com https://localhost ws://localhost wss://localhost",
+          [
+            "connect-src 'self'",
+            'https://*.steampowered.com https://*.steamstatic.com https://store.steampowered.com https://api.steampowered.com https://steamcdn-a.akamaihd.net',
+            'https://*.steamgriddb.com https://*.gog.com https://*.epicgames.com',
+            'https://*.xbox.com https://*.xboxlive.com',
+            'https://*.wikipedia.org https://*.wikidata.org https://*.wikimedia.org https://*.duckduckgo.com',
+            // Dev-only: Vite HMR WebSocket
+            ...(!app.isPackaged ? ['https://localhost ws://localhost wss://localhost'] : []),
+          ].join(' '),
         ].join('; '),
       },
     });
