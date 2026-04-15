@@ -29,9 +29,9 @@ function registerMediaIpcHandlers() {
     }
   });
 
-  ipcMain.handle('xcloud:start', (_event, { gameId, url }) => {
+  ipcMain.handle('xcloud:start', (_event, { gameId, url, title }) => {
     try {
-      startXcloudSession(gameId, url);
+      startXcloudSession(gameId, url, title);
       return { success: true };
     } catch (e) {
       return { success: false, error: e.message };

@@ -30,7 +30,7 @@ function updateAllXcloudBounds() {
   }
 }
 
-function startXcloudSession(gameId, url) {
+function startXcloudSession(gameId, url, title) {
   stopXcloudSession(gameId);
 
   const view = new WebContentsView({
@@ -65,6 +65,7 @@ function startXcloudSession(gameId, url) {
   });
 
   sendStreamEvent(gameId, 'state', { state: 'connecting', platform: 'xbox' });
+  ctx.sendToRenderer('tabs:opened', { id: gameId, title: title || 'Xbox Cloud Gaming', platform: 'xbox' });
   return sess;
 }
 
@@ -89,6 +90,7 @@ function stopXcloudSession(gameId) {
 
     // 3. Notify renderer
     sendStreamEvent(gameId, 'disconnected', { reason: 'stopped', platform: 'xbox' });
+    ctx.sendToRenderer('tabs:closed', { id: gameId });
 
     // 4. Async cleanup: navigate to Xbox home to signal session end, then close
     if (sess.view?.webContents && !sess.view.webContents.isDestroyed()) {

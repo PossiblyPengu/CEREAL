@@ -62,6 +62,13 @@ if ($Bump -match '^\d+\.\d+\.\d+$') {
 
 Write-Host "Bumping version: $($pkg.version) -> $newVersion"
 
+# -- Guard: abort early if tag already exists on remote -----------------------
+$remoteTag = git ls-remote origin "refs/tags/v$newVersion"
+if ($remoteTag) {
+    Write-Host "ERROR: Tag v$newVersion already exists on remote. Delete it first or choose a different version." -ForegroundColor Red
+    exit 1
+}
+
 # -- Update package.json -------------------------------------------------------
 $pkgRaw = Get-Content $pkgPath -Raw
 $pkgRaw = $pkgRaw -replace '"version":\s*"[^"]+"', "`"version`": `"$newVersion`""
@@ -112,9 +119,11 @@ git add -A
 git commit -m "chore: release v$newVersion"
 $branch = git branch --show-current
 $commitSha = git rev-parse HEAD
-git tag "v$newVersion"
+git tag -f "v$newVersion"
 git push origin HEAD
-git push origin "v$newVersion"
+if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: Failed to push branch." -ForegroundColor Red; git tag -d "v$newVersion"; exit 1 }
+git push origin "v$newVersion" --force
+if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: Failed to push tag." -ForegroundColor Red; exit 1 }
 
 Write-Host ""
 Write-Host "Pushed v$newVersion - monitoring GitHub Actions..." -ForegroundColor Cyan
