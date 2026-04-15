@@ -1,6 +1,7 @@
 param(
-    [ValidateSet('patch','minor','major')]
-    [string]$Bump = 'patch'
+    # Accepts: 'patch' | 'minor' | 'major'  OR a full version like '1.4.0'
+    # Leave empty to get an interactive prompt.
+    [string]$Bump = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -12,17 +13,53 @@ $pkgPath = "$projectDir\package.json"
 $pkg = Get-Content $pkgPath | ConvertFrom-Json
 $current = [version]$pkg.version
 
-$major = $current.Major
-$minor = $current.Minor
-$patch = $current.Build
+$maj = $current.Major
+$min = $current.Minor
+$pat = $current.Build
 
-switch ($Bump) {
-    'major' { $major++; $minor = 0; $patch = 0 }
-    'minor' { $minor++; $patch = 0 }
-    'patch' { $patch++ }
+# -- Interactive menu if no argument supplied ----------------------------------
+if (-not $Bump) {
+    Write-Host ""
+    Write-Host "  Current version: $($pkg.version)" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "  [1] patch  ->  $maj.$min.$($pat + 1)"
+    Write-Host "  [2] minor  ->  $maj.$($min + 1).0"
+    Write-Host "  [3] major  ->  $($maj + 1).0.0"
+    Write-Host "  [4] custom ->  enter manually"
+    Write-Host ""
+    $choice = Read-Host "  Choose (1-4)"
+    switch ($choice.Trim()) {
+        '1' { $Bump = 'patch' }
+        '2' { $Bump = 'minor' }
+        '3' { $Bump = 'major' }
+        '4' {
+            $Bump = (Read-Host "  Enter version (e.g. 2.0.0)").Trim()
+        }
+        default {
+            Write-Host "ERROR: Invalid choice." -ForegroundColor Red
+            exit 1
+        }
+    }
+    Write-Host ""
 }
 
-$newVersion = "$major.$minor.$patch"
+# -- Resolve new version -------------------------------------------------------
+if ($Bump -match '^\d+\.\d+\.\d+$') {
+    $newVersion = $Bump
+    $parts = $Bump -split '\.'
+    $maj = [int]$parts[0]; $min = [int]$parts[1]; $pat = [int]$parts[2]
+} elseif ($Bump -in 'patch','minor','major') {
+    switch ($Bump) {
+        'major' { $maj++; $min = 0; $pat = 0 }
+        'minor' { $min++; $pat = 0 }
+        'patch' { $pat++ }
+    }
+    $newVersion = "$maj.$min.$pat"
+} else {
+    Write-Host "ERROR: Invalid -Bump value '$Bump'. Use patch/minor/major or a version like '1.2.3'." -ForegroundColor Red
+    exit 1
+}
+
 Write-Host "Bumping version: $($pkg.version) -> $newVersion"
 
 # -- Update package.json -------------------------------------------------------
