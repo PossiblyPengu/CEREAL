@@ -9,11 +9,8 @@ import { useInitialDataLoad, useChiakiAndRefreshListeners, useTabListeners, useA
 import { TabBar } from './components/TabBar';
 import { Toast } from './components/Toast';
 import { SearchOverlay } from './components/SearchOverlay';
-import { FocusView } from './components/FocusView';
-import { AddPanel } from './components/AddPanel';
 import { DetectPanel } from './components/DetectPanel';
 import { ContinueBanner } from './components/ContinueBanner';
-import { StartupWizard } from './components/StartupWizard';
 import { StreamOverlay } from './components/StreamOverlay';
 import { MediaPlayer } from './components/MediaPlayer';
 
@@ -22,6 +19,9 @@ const ChiakiPanel    = lazy(() => import('./components/ChiakiPanel').then(m => (
 const XcloudPanel    = lazy(() => import('./components/XcloudPanel').then(m => ({ default: m.XcloudPanel })));
 const SettingsPanel  = lazy(() => import('./components/SettingsPanel').then(m => ({ default: m.SettingsPanel })));
 const ArtPicker      = lazy(() => import('./components/ArtPicker').then(m => ({ default: m.ArtPicker })));
+const FocusView      = lazy(() => import('./components/FocusView').then(m => ({ default: m.FocusView })));
+const AddPanel       = lazy(() => import('./components/AddPanel').then(m => ({ default: m.AddPanel })));
+const StartupWizard  = lazy(() => import('./components/StartupWizard').then(m => ({ default: m.StartupWizard })));
 
 // ─── Progressive Card Grid ─────────────────────────────────────────────────
 // Renders cards in chunks to avoid 1500+ DOM nodes on initial paint.
@@ -1171,9 +1171,9 @@ export default function App() {
         <ContinueBanner game={mostRecentGame} onPlay={() => doLaunch(mostRecentGame)} onDismiss={() => setContinueBannerDismissed(true)} />
       )}
 
-      <FocusView game={liveFocus} onClose={() => setFocusGame(null)} onLaunch={doLaunch} onFav={doFav} onEdit={doEditFromFocus} onDelete={doDelete}
+      {liveFocus && <Suspense fallback={null}><FocusView game={liveFocus} onClose={() => setFocusGame(null)} onLaunch={doLaunch} onFav={doFav} onEdit={doEditFromFocus} onDelete={doDelete}
         onRefreshGame={(g: Game) => { _updateGameInState(g); setFocusGame(g); flash('Metadata updated'); }}
-        gpFocusIdx={gpActive && gpArea === 'focus' ? gpIdx : -1} />
+        gpFocusIdx={gpActive && gpArea === 'focus' ? gpIdx : -1} /></Suspense>}
 
       {Object.entries(chiakiSessions).filter(([, s]) => s.state === 'gui').map(([gid]) => {
         const g = games.find(x => x.id === gid); if (!g) return null;
@@ -1202,9 +1202,9 @@ export default function App() {
       }} />
 
       <SearchOverlay show={showSearch} onClose={() => setShowSearch(false)} games={games} onSelect={g => setFocusGame(g)} onLaunch={doLaunch} />
-      <AddPanel show={showAdd} onClose={() => { setShowAdd(false); setEditGame(null); }} onSave={editGame ? (f: Partial<Game>) => doEdit(f as Game).then(r => r ?? undefined) : (f: Partial<Game>) => doAdd(f).then(r => r ?? undefined)}
+      {showAdd && <Suspense fallback={null}><AddPanel show={showAdd} onClose={() => { setShowAdd(false); setEditGame(null); }} onSave={editGame ? (f: Partial<Game>) => doEdit(f as Game).then(r => r ?? undefined) : (f: Partial<Game>) => doAdd(f).then(r => r ?? undefined)}
         onUpdated={(g: Game) => { _updateGameInState(g); setShowAdd(false); setEditGame(null); }}
-        categories={cats} editGame={editGame} flash={flash} onOpenArtPicker={openArtPicker} />
+        categories={cats} editGame={editGame} flash={flash} onOpenArtPicker={openArtPicker} /></Suspense>}
       <DetectPanel show={showDetect} onClose={() => setShowDetect(false)} onImport={doImport} />
       {showPlatforms && <Suspense fallback={null}><PlatformsPanel show={showPlatforms} onClose={() => setShowPlatforms(false)} flash={flash} setGames={setGames} onOpenChiaki={() => setShowChiaki(true)} onOpenXcloud={() => setShowXcloud(true)} /></Suspense>}
       {showChiaki && <Suspense fallback={null}><ChiakiPanel show={showChiaki} onClose={() => setShowChiaki(false)} flash={flash} games={games} setGames={setGames} chiakiSessions={chiakiSessions} /></Suspense>}
@@ -1213,7 +1213,7 @@ export default function App() {
           games={games} setGames={setGames} setCats={setCats}
           onOpenPlatforms={() => { setShowSettings(false); setTimeout(() => setShowPlatforms(true), 150); }}
           onSync={doSync} onFetchMetadata={doFetchAllMetadata} onRunWizard={() => setShowWizard(true)} onRescanAll={doRescanAll} /></Suspense>}
-      <StartupWizard show={showWizard} onClose={() => setShowWizard(false)} flash={flash} setGames={setGames} settings={settings} onSettingsChange={onSettingsChange} />
+      {showWizard && <Suspense fallback={null}><StartupWizard show={showWizard} onClose={() => setShowWizard(false)} flash={flash} setGames={setGames} settings={settings} onSettingsChange={onSettingsChange} /></Suspense>}
 
       {globalArtPicker && (
         <div className="modal-overlay">

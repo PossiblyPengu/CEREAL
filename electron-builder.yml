@@ -9,7 +9,6 @@ directories:
 files:
   - dist/**
   - dist-electron/**
-  - node_modules/**
   - package.json
 
 extraResources:

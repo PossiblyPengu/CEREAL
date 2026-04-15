@@ -2,15 +2,16 @@
 const { ipcMain } = require('electron');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const ctx = require('./context');
 const { getProvidersDir } = require('./paths');
 
-const { canonicalize: canonicalizeName } = require(path.join(getProvidersDir(), 'utils'));
 const { enqueueCoverFetch } = require('./covers');
 const { fetchGameMetadata, applyMetadataToGame } = require('./metadata');
 const log = require('./logger');
 
 function registerGameCrudIpcHandlers() {
+  const { canonicalize: canonicalizeName } = require(path.join(getProvidersDir(), 'utils'));
   ipcMain.handle('games:getAll', () => ctx.db.games);
   ipcMain.handle('games:getCategories', () => ctx.db.categories);
 
@@ -54,7 +55,7 @@ function registerGameCrudIpcHandlers() {
     }
 
     // No existing match — create new
-    game.id = Date.now().toString(36) + Math.random().toString(36).substring(2, 7);
+    game.id = Date.now().toString(36) + crypto.randomBytes(4).toString('hex');
     game.addedAt = new Date().toISOString();
     game.lastPlayed = null;
     game.playtimeMinutes = 0;
@@ -75,7 +76,7 @@ function registerGameCrudIpcHandlers() {
         // Cover URL may have just been set by metadata — download it
         try { enqueueCoverFetch(game.id); } catch(e) { log.debug('covers', 'enqueue failed', e); }
       }
-    }).catch(() => {});
+    }).catch(e => log.debug('gameCrud', 'auto-metadata failed', e.message));
 
     return game;
   });

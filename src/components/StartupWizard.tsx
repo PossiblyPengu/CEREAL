@@ -157,7 +157,10 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
     try {
       const r = await (window.api as any)?.chiakiUpdate?.();
       if (r?.ok) { flash('chiaki-ng downloaded (v' + (r.version || '?') + ')'); await refreshChiaki(); }
-      else flash(r?.error || 'Download failed');
+      else {
+        const detail = r?.output ? ('\n' + String(r.output).trim().split('\n').pop()) : '';
+        flash((r?.error || 'Download failed') + detail);
+      }
     } catch (_) { flash('Download failed'); }
     setChiakiDownloading(false);
   };

@@ -113,6 +113,7 @@
   - Handlers: `media:getInfo/control` (native SMTC addon, lazy-loaded)
 
 ### main.js Cleanup
+
 - [x] Removed unused imports: `crypto`, `clipboard`, `httpGetJson`, `canonicalizeName`, `ALLOWED_KEY_SERVICES`, `CONTROL_BAR_HEIGHT`
 - [x] Updated `ctx.flushDB` to wrap and pass `db` explicitly
 - [x] All inline handlers replaced with module imports
@@ -120,6 +121,7 @@
 ---
 
 ## Verification Checklist (V2) ✅
+
 1. [x] `node -c electron/main.js` — syntax check passed
 2. [x] `node -c electron/modules/*.js` — all 17 modules passed
 3. [x] `vite build` — client + electron + preload all built successfully
@@ -130,6 +132,7 @@
 ---
 
 ## File Size Results (E4)
+
 | File | Before (E3) | After (E4) | Reduction |
 |------|-------------|------------|-----------|
 | main.js | 1407 lines | 641 lines | **−766 (54%)** |
@@ -144,3 +147,82 @@
 | metadataIpc.js | — | 102 lines | new |
 | detectionIpc.js | — | 139 lines | new |
 | media.js | — | 76 lines | new |
+
+---
+
+## Runtime Fixes + Production Path Refactoring (E5) ✅
+
+### Runtime Error Fixes
+
+- [x] **providers path resolution** — All 4 modules (`detectionIpc.js`, `accounts.js`, `gameCrud.js`, `keys.js`) had hardcoded `../providers` relative paths that broke at runtime in the bundled `dist-electron/` layout
+- [x] **setup-chiaki.ps1 missing** — `scripts/` directory only contained `build-icons.mjs`; created `setup-chiaki.ps1` to download/install chiaki-ng from GitHub releases
+- [x] **nested zip extraction** — GitHub release for chiaki-ng ships a zip-within-zip; script updated to extract outer archive, locate inner zip, then extract to final install directory
+- [x] **asset name pattern** — Fixed regex from `windows.*\.zip$` to `win_x64.*portable\.zip$` to match actual release asset names (`chiaki-ng-win_x64-MSYS2-Release-portable.zip`)
+
+### Centralized Path Utility
+
+- [x] Created **`electron/modules/paths.js`** — single source of truth for path resolution in dev and production:
+  - `getResourcesRoot()` — returns `process.resourcesPath` when packaged, `electron/` in dev
+  - `getScriptPath(name)` — resolves `scripts/` in correct root
+  - `getProvidersDir()` — resolves `providers/` with multi-candidate fallback
+  - `getResourcePath(name)` — resolves `resources/` assets (chiaki-ng, etc.)
+  - `requireProvider(name)` — convenience wrapper for provider module loading
+- [x] All modules updated to import from `./paths` instead of duplicating resolution logic:
+  - `chiaki.js` — uses `getScriptPath()` + `getResourcePath()`
+  - `accounts.js` — uses `getProvidersDir()`
+  - `detectionIpc.js` — uses `getProvidersDir()`
+  - `gameCrud.js` — uses `getProvidersDir()`
+  - `keys.js` — uses `getProvidersDir()`
+- [x] `electron/native/smtc/powershell-bridge.js` — updated with multi-candidate `getScriptPath()` for `media-control.ps1`
+- [x] `vite.config.ts` — updated `copyMediaInfoExe()` to also copy `powershell-bridge.js` to `dist-electron/native/smtc/`
+
+---
+
+## Verification Checklist (V3) ✅
+
+1. [x] `node -c electron/modules/*.js` — all 20 modules passed (includes new `paths.js`)
+2. [x] `setup-chiaki.ps1` — manually tested: downloads v1.10.0, extracts nested zip, finds `chiaki.exe`
+3. [x] App launches without module resolution errors
+4. [ ] Manual smoke test: chiaki Download button, media controls, provider detection
+
+---
+
+## File Size Results (E5)
+
+| File | After (E4) | After (E5) | Delta |
+|------|-----------|-----------|-------|
+| main.js | 641 lines | 640 lines | −1 |
+| chiaki.js | 1048 lines | 1051 lines | +3 (paths import + null guard) |
+| accounts.js | 593 lines | 593 lines | unchanged |
+| detectionIpc.js | 139 lines | 175 lines | +36 (refactored path block) |
+| gameCrud.js | 150 lines | 171 lines | +21 (refactored path block) |
+| keys.js | 91 lines | 138 lines | +47 (refactored path block) |
+| powershell-bridge.js | 30 lines | 49 lines | +19 (multi-candidate resolver) |
+| **New (E5)** | — | — | — |
+| paths.js | — | 71 lines | new |
+| scripts/setup-chiaki.ps1 | — | 115 lines | new |
+
+---
+
+## Pending Backlog (from IMPROVEMENTS_REPORT.md)
+
+Items not yet addressed, ordered by value/effort ratio:
+
+### Quick Wins
+
+| # | Item | Status |
+|---|------|--------|
+| 3 | Provider interface contract — `providers/README.md` or `types.d.ts` | pending |
+| 6 | Silent catch blocks — replace with `logDebug` calls | pending |
+| 9 | `metadataSearch.js` dead exports — remove unused `searchDuckDuckGo`, `searchWikidata`, `searchWikipedia` | pending |
+| 10 | Cover cleanup migration gate — run once via `db.migrationVersion` | pending |
+| 12 | ESLint JS coverage — add `electron/**/*.js` block to `eslint.config.js` | pending |
+
+### Strategic
+
+| # | Item | Status |
+|---|------|--------|
+| 7 | App.tsx monolith (48 useState, 1528 lines) — extract custom hooks | pending |
+| 13 | Vitest test infrastructure — pure function coverage | pending |
+| 15 | `providers/http.js` → `net.fetch` migration | pending |
+| 16 | CSS modules / split `src/index.css` by component | pending |

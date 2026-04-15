@@ -6,6 +6,9 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# GitHub requires TLS 1.2; Windows PowerShell defaults to TLS 1.0 on older systems
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
 $repo = 'streetpea/chiaki-ng'
 
 # InstallDir is passed by the app (userData/chiaki-ng). Fall back to a local path for manual use.
@@ -29,9 +32,19 @@ $headers = @{ 'User-Agent' = 'cereal-launcher' }
 $releaseUrl = "https://api.github.com/repos/$repo/releases/latest"
 
 try {
-    $release = Invoke-RestMethod -Uri $releaseUrl -Headers $headers
+    $response = Invoke-WebRequest -Uri $releaseUrl -Headers $headers -UseBasicParsing
+    if ($response.StatusCode -eq 403 -or $response.StatusCode -eq 429) {
+        Write-Error "GitHub API rate limit exceeded. Try again in a few minutes."
+        exit 1
+    }
+    $release = $response.Content | ConvertFrom-Json
 } catch {
-    Write-Error "Failed to fetch release info: $_"
+    $msg = if ($_.Exception.Response.StatusCode.value__ -eq 403 -or $_.Exception.Response.StatusCode.value__ -eq 429) {
+        'GitHub API rate limit exceeded. Try again in a few minutes.'
+    } else {
+        "Failed to fetch release info: $_"
+    }
+    Write-Error $msg
     exit 1
 }
 
@@ -67,8 +80,14 @@ Write-Output 'Extracting...'
 if (Test-Path $installDir) { Remove-Item $installDir -Recurse -Force }
 New-Item -ItemType Directory -Path $installDir -Force | Out-Null
 
-Expand-Archive -Path $tmpZip -DestinationPath $installDir -Force
-Remove-Item $tmpZip -Force
+try {
+    Expand-Archive -Path $tmpZip -DestinationPath $installDir -Force
+} catch {
+    Write-Error "Failed to extract archive: $_"
+    Remove-Item $tmpZip -Force -ErrorAction SilentlyContinue
+    exit 1
+}
+Remove-Item $tmpZip -Force -ErrorAction SilentlyContinue
 
 # Flatten one level if everything extracted into a single subdirectory
 $entries = Get-ChildItem -Path $installDir

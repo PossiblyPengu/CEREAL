@@ -6,12 +6,26 @@ const fs = require('fs');
 
 const credStorePath = () => path.join(app.getPath('userData'), 'credentials.json');
 
+let _credCache = null;
+
 function loadCredStore() {
-  try { return JSON.parse(fs.readFileSync(credStorePath(), 'utf-8')); } catch { return {}; }
+  if (_credCache) return _credCache;
+  const target = credStorePath();
+  for (const filePath of [target, target + '.bak']) {
+    try {
+      if (!fs.existsSync(filePath)) continue;
+      _credCache = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+      return _credCache;
+    } catch { /* try backup */ }
+  }
+  _credCache = {};
+  return _credCache;
 }
 
 function saveCredStore(store) {
+  _credCache = store;
   const target = credStorePath();
+  try { if (fs.existsSync(target)) fs.copyFileSync(target, target + '.bak'); } catch (_e) { /* best-effort backup */ }
   const tmp = target + '.tmp';
   fs.writeFileSync(tmp, JSON.stringify(store, null, 2), 'utf-8');
   fs.renameSync(tmp, target);

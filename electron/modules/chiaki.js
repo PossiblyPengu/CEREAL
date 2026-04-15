@@ -626,8 +626,7 @@ function autoSetupChiakiIfMissing() {
 
 // ─── IPC Handler Registration ─────────────────────────────────────────────────
 function registerChiakiIpcHandlers() {
-  const db = () => ctx.db;
-  const saveDB = () => ctx.saveDB(ctx.db);
+  const saveDB = () => ctx.saveDB?.(ctx.db);
 
   ipcMain.handle('chiaki:setStreamBounds', (event, { gameId, x, y, width, height }) => {
     const session = chiakiSessions.get(gameId);
@@ -712,19 +711,19 @@ function registerChiakiIpcHandlers() {
   });
 
   ipcMain.handle('chiaki:getConfig', () => {
-    return db().chiakiConfig || { executablePath: '', consoles: [] };
+    return ctx.db.chiakiConfig || { executablePath: '', consoles: [] };
   });
 
   ipcMain.handle('chiaki:saveConfig', (event, config) => {
     // Drop any legacy cerealMode field before persisting
     const { cerealMode: _dropped, ...clean } = config || {};
-    db().chiakiConfig = clean;
+    ctx.db.chiakiConfig = clean;
     saveDB();
     return clean;
   });
 
   ipcMain.handle('games:setChiakiStream', (event, gameId, streamConfig) => {
-    const game = db().games.find(g => g.id === gameId);
+    const game = ctx.db.games.find(g => g.id === gameId);
     if (game) {
       game.chiakiNickname = streamConfig.nickname || '';
       game.chiakiHost = streamConfig.host || '';
@@ -752,20 +751,20 @@ function registerChiakiIpcHandlers() {
       chiakiFullscreen: opts.fullscreen !== false,
       chiakiDisplayMode: opts.displayMode || '',
     };
-    const chiakiConfig = db().chiakiConfig || {};
+    const chiakiConfig = ctx.db.chiakiConfig || {};
     const args = buildChiakiArgs(gameData, chiakiConfig);
     const session = startChiakiSession(sessionKey, chiakiExe, args);
     return { success: true, sessionKey, state: session.state };
   });
 
   ipcMain.handle('chiaki:startStream', (event, gameId) => {
-    const game = db().games.find(g => g.id === gameId);
+    const game = ctx.db.games.find(g => g.id === gameId);
     if (!game) return { success: false, error: 'Game not found' };
 
     const chiakiExe = resolveChiakiExe(game.executablePath);
     if (!chiakiExe) return { success: false, error: 'chiaki-ng not found' };
 
-    const chiakiConfig = db().chiakiConfig || {};
+    const chiakiConfig = ctx.db.chiakiConfig || {};
     const args = buildChiakiArgs(game, chiakiConfig);
     const session = startChiakiSession(gameId, chiakiExe, args);
 
@@ -821,7 +820,7 @@ function registerChiakiIpcHandlers() {
           finish({ success: false, error: output || 'Registration failed (exit ' + code + ')' });
         }
       });
-      setTimeout(() => { try { proc.kill(); } catch(e) {} finish({ success: false, error: 'Registration timed out (30s)' }); }, 30000);
+      setTimeout(() => { try { proc.kill(); } catch (_e) { /* best-effort kill */ } finish({ success: false, error: 'Registration timed out (30s)' }); }, 30000);
     });
   });
 
@@ -979,7 +978,7 @@ function registerChiakiIpcHandlers() {
           // CLI failed, fall through to UDP
           sendUdpWake();
         });
-        setTimeout(() => { try { proc.kill(); } catch(e) {} finish({ success: false, error: 'Wake CLI timed out (10s)', method: 'chiaki-cli' }); }, 10000);
+        setTimeout(() => { try { proc.kill(); } catch (_e) { /* best-effort kill */ } finish({ success: false, error: 'Wake CLI timed out (10s)', method: 'chiaki-cli' }); }, 10000);
         return;
       }
 

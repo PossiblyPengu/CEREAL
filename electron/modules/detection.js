@@ -8,9 +8,9 @@ const fs = require('fs');
 // ─── Steam Root Resolution ───────────────────────────────────────────────────
 function findSteamRoot() {
   const steamPaths = [
-    'C:\\Program Files (x86)\\Steam',
-    'C:\\Program Files\\Steam',
-    path.join(process.env.HOME || process.env.USERPROFILE || '', 'Steam')
+    path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Steam'),
+    path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Steam'),
+    path.join(process.env.HOME || process.env.USERPROFILE || '', 'Steam'),
   ];
   for (const p of steamPaths) {
     if (fs.existsSync(p)) return p;
@@ -63,13 +63,13 @@ function scanSteamInstalled() {
             installPath: gamePath,
             executablePath: '', // User may need to set this
             coverUrl: `https://shared.steamstatic.com/store_item_assets/steam/apps/${appid[1]}/library_600x900_2x.jpg`,
-            heroUrl: `https://shared.steamstatic.com/store_item_assets/steam/apps/${appid[1]}/library_hero.jpg`,
+            headerUrl: `https://shared.steamstatic.com/store_item_assets/steam/apps/${appid[1]}/library_hero.jpg`,
             categories: [],
             source: 'auto-detected',
             installed: true,
           });
         }
-      } catch (e) { /* skip bad manifest */ }
+      } catch (_e) { /* skip bad manifest */ }
     }
   }
 
@@ -103,9 +103,9 @@ function scanEpicInstalled() {
             installed: true,
           });
         }
-      } catch (e) { /* skip bad manifest */ }
+      } catch (_e) { /* skip bad manifest */ }
     }
-  } catch (e) { /* Epic not installed */ }
+  } catch (_e) { /* Epic not installed */ }
   return games;
 }
 
@@ -139,12 +139,12 @@ function scanGogInstalled() {
                   installed: true,
                 });
               }
-            } catch (e) { /* skip */ }
+            } catch (_e) { /* skip */ }
           }
         }
       }
     }
-  } catch (e) { /* GOG not installed */ }
+  } catch (_e) { /* GOG not installed */ }
   return games;
 }
 

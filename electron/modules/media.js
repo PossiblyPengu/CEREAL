@@ -1,6 +1,7 @@
 // ─── Native SMTC media info + xCloud IPC handlers ────────────────────────────
 const { ipcMain } = require('electron');
 const { startXcloudSession, stopXcloudSession, getActiveXcloudSessions } = require('./xcloud');
+const log = require('./logger');
 
 // Native SMTC addon - lazy loaded
 let smtcNative = null;
@@ -8,9 +9,9 @@ function getSmtcNative() {
   if (!smtcNative) {
     try {
       smtcNative = require('../native/smtc');
-      console.log('[media] native addon loaded');
+      log.info('media', 'native addon loaded');
     } catch (e) {
-      console.log('[media] failed to load native addon:', e.message);
+      log.warn('media', 'failed to load native addon:', e.message);
     }
   }
   return smtcNative;
@@ -51,10 +52,10 @@ function registerMediaIpcHandlers() {
 
     try {
       const info = await smtc.getMediaInfo();
-      console.log('[media] native result:', info);
+      log.debug('media', 'native result:', info);
 
       if (info.error) {
-        console.log('[media] error:', info.error);
+        log.warn('media', 'error:', info.error);
         return {};
       }
 
@@ -68,7 +69,7 @@ function registerMediaIpcHandlers() {
         duration: Math.floor(info.duration || 0)
       };
     } catch (e) {
-      console.log('[media] exception:', e.message);
+      log.warn('media', 'exception:', e.message);
       return {};
     }
   });
@@ -81,7 +82,7 @@ function registerMediaIpcHandlers() {
       await smtc.sendMediaKey(action);
       return true;
     } catch (e) {
-      console.log('[media] control error:', e.message);
+      log.warn('media', 'control error:', e.message);
       return false;
     }
   });

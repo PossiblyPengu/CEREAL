@@ -60,8 +60,8 @@ function registerDetectionIpcHandlers() {
         }
       }
 
-      // 3. Try to list registered consoles
-      if (result.executablePath) {
+      // 3. Try to list registered consoles (only if the path resolves to a known chiaki binary)
+      if (result.executablePath && /^chiaki(-ng)?\.exe$/i.test(path.basename(result.executablePath))) {
         try {
           const listOutput = require('child_process').execFileSync(result.executablePath, ['list'], {
             timeout: 5000,
@@ -113,9 +113,9 @@ function registerDetectionIpcHandlers() {
         // Try reading localconfig.vdf for playtime data
         const userdataDir = path.join(steamRoot, 'userdata');
         if (fs.existsSync(userdataDir)) {
-          const userDirs = fs.readdirSync(userdataDir).filter(d => {
-            return fs.statSync(path.join(userdataDir, d)).isDirectory() && /^\d+$/.test(d);
-          });
+          const userDirs = fs.readdirSync(userdataDir, { withFileTypes: true })
+            .filter(d => d.isDirectory() && /^\d+$/.test(d.name))
+            .map(d => d.name);
           for (const userId of userDirs) {
             const localConfigPath = path.join(userdataDir, userId, 'config', 'localconfig.vdf');
             if (!fs.existsSync(localConfigPath)) continue;

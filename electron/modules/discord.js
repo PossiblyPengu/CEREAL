@@ -14,22 +14,22 @@ function connectDiscord() {
     discordRpc = new DiscordRPC.Client({ transport: 'ipc' });
     discordRpc.on('ready', () => {
       discordReady = true;
-      console.log('[Discord] RPC ready');
+      log.info('discord', 'RPC ready');
     });
     discordRpc.login({ clientId: DISCORD_CLIENT_ID }).catch(err => {
-      console.log('[Discord] Could not connect:', err.message);
+      log.warn('discord', 'Could not connect:', err.message);
       discordRpc = null;
     });
-  } catch (e) {
-    console.log('[Discord] Init error:', e.message);
+  } catch (_e) {
+    log.warn('discord', 'Init error:', _e.message);
     discordRpc = null;
   }
 }
 
 function disconnectDiscord() {
   if (discordRpc) {
-    try { discordRpc.clearActivity(); } catch(e) {}
-    try { discordRpc.destroy(); } catch(e) {}
+    try { discordRpc.clearActivity(); } catch (_e) { /* best-effort */ }
+    try { discordRpc.destroy(); } catch (_e) { /* best-effort */ }
     discordRpc = null;
     discordReady = false;
     discordCurrentGame = null;
@@ -55,13 +55,13 @@ function setDiscordPresence(gameName, platform, startTimestamp) {
       smallImageText: PLATFORM_LABELS[platform] || 'Game',
       instance: false,
     });
-  } catch (e) { console.log('[Discord] Presence error:', e.message); }
+  } catch (_e) { log.warn('discord', 'Presence error:', _e.message); }
 }
 
 function clearDiscordPresence() {
   discordCurrentGame = null;
   if (!discordRpc || !discordReady) return;
-  try { discordRpc.clearActivity(); } catch(e) {}
+  try { discordRpc.clearActivity(); } catch (_e) { /* best-effort */ }
 }
 
 function isDiscordEnabled() {

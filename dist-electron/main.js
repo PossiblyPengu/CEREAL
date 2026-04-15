@@ -4,22 +4,31 @@ var __commonJSMin = (cb, mod) => () => (mod || cb((mod = { exports: {} }).export
 //#region electron/modules/credentials.js
 var require_credentials = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	var { safeStorage } = require("electron");
-	var { app: app$5 } = require("electron");
-	var path$12 = require("path");
-	var fs$11 = require("fs");
-	var credStorePath = () => path$12.join(app$5.getPath("userData"), "credentials.json");
+	var { app: app$6 } = require("electron");
+	var path$13 = require("path");
+	var fs$10 = require("fs");
+	var credStorePath = () => path$13.join(app$6.getPath("userData"), "credentials.json");
+	var _credCache = null;
 	function loadCredStore() {
-		try {
-			return JSON.parse(fs$11.readFileSync(credStorePath(), "utf-8"));
-		} catch {
-			return {};
-		}
+		if (_credCache) return _credCache;
+		const target = credStorePath();
+		for (const filePath of [target, target + ".bak"]) try {
+			if (!fs$10.existsSync(filePath)) continue;
+			_credCache = JSON.parse(fs$10.readFileSync(filePath, "utf-8"));
+			return _credCache;
+		} catch {}
+		_credCache = {};
+		return _credCache;
 	}
 	function saveCredStore(store) {
+		_credCache = store;
 		const target = credStorePath();
+		try {
+			if (fs$10.existsSync(target)) fs$10.copyFileSync(target, target + ".bak");
+		} catch (_e) {}
 		const tmp = target + ".tmp";
-		fs$11.writeFileSync(tmp, JSON.stringify(store, null, 2), "utf-8");
-		fs$11.renameSync(tmp, target);
+		fs$10.writeFileSync(tmp, JSON.stringify(store, null, 2), "utf-8");
+		fs$10.renameSync(tmp, target);
 	}
 	module.exports = { safeStore: {
 		setPassword(service, account, secret) {
@@ -48,7 +57,7 @@ var require_credentials = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 //#endregion
 //#region electron/modules/constants.js
 var require_constants = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	var path$11 = require("path");
+	var path$12 = require("path");
 	module.exports = {
 		CONTROL_BAR_HEIGHT: 40,
 		ALLOWED_KEY_SERVICES: [
@@ -66,9 +75,9 @@ var require_constants = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 			"cereal-account-psn"
 		],
 		CHIAKI_SYSTEM_PATHS: [
-			path$11.join(process.env.ProgramFiles || "", "chiaki-ng", "chiaki.exe"),
-			path$11.join(process.env["ProgramFiles(x86)"] || "", "chiaki-ng", "chiaki.exe"),
-			path$11.join(process.env.LOCALAPPDATA || "", "chiaki-ng", "chiaki.exe")
+			path$12.join(process.env.ProgramFiles || "", "chiaki-ng", "chiaki.exe"),
+			path$12.join(process.env["ProgramFiles(x86)"] || "", "chiaki-ng", "chiaki.exe"),
+			path$12.join(process.env.LOCALAPPDATA || "", "chiaki-ng", "chiaki.exe")
 		],
 		ACCOUNT_SECRET_FIELDS: [
 			"accessToken",
@@ -120,15 +129,15 @@ var require_context = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 //#endregion
 //#region electron/modules/detection.js
 var require_detection = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	var path$10 = require("path");
-	var fs$10 = require("fs");
+	var path$11 = require("path");
+	var fs$9 = require("fs");
 	function findSteamRoot() {
 		const steamPaths = [
-			"C:\\Program Files (x86)\\Steam",
-			"C:\\Program Files\\Steam",
-			path$10.join(process.env.HOME || process.env.USERPROFILE || "", "Steam")
+			path$11.join(process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)", "Steam"),
+			path$11.join(process.env.ProgramFiles || "C:\\Program Files", "Steam"),
+			path$11.join(process.env.HOME || process.env.USERPROFILE || "", "Steam")
 		];
-		for (const p of steamPaths) if (fs$10.existsSync(p)) return p;
+		for (const p of steamPaths) if (fs$9.existsSync(p)) return p;
 		return null;
 	}
 	function scanSteamInstalled() {
@@ -138,26 +147,26 @@ var require_detection = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 			games: [],
 			error: "Steam not found"
 		};
-		const libraryFolders = [path$10.join(steamRoot, "steamapps")];
-		const vdfPath = path$10.join(steamRoot, "steamapps", "libraryfolders.vdf");
-		if (fs$10.existsSync(vdfPath)) {
-			const pathMatches = fs$10.readFileSync(vdfPath, "utf-8").match(/"path"\s+"([^"]+)"/g);
+		const libraryFolders = [path$11.join(steamRoot, "steamapps")];
+		const vdfPath = path$11.join(steamRoot, "steamapps", "libraryfolders.vdf");
+		if (fs$9.existsSync(vdfPath)) {
+			const pathMatches = fs$9.readFileSync(vdfPath, "utf-8").match(/"path"\s+"([^"]+)"/g);
 			if (pathMatches) pathMatches.forEach((m) => {
 				const p = m.match(/"path"\s+"([^"]+)"/)[1].replace(/\\\\/g, "\\");
-				const appsDir = path$10.join(p, "steamapps");
-				if (fs$10.existsSync(appsDir) && !libraryFolders.includes(appsDir)) libraryFolders.push(appsDir);
+				const appsDir = path$11.join(p, "steamapps");
+				if (fs$9.existsSync(appsDir) && !libraryFolders.includes(appsDir)) libraryFolders.push(appsDir);
 			});
 		}
 		for (const libFolder of libraryFolders) {
-			if (!fs$10.existsSync(libFolder)) continue;
-			const files = fs$10.readdirSync(libFolder).filter((f) => f.endsWith(".acf"));
+			if (!fs$9.existsSync(libFolder)) continue;
+			const files = fs$9.readdirSync(libFolder).filter((f) => f.endsWith(".acf"));
 			for (const file of files) try {
-				const content = fs$10.readFileSync(path$10.join(libFolder, file), "utf-8");
+				const content = fs$9.readFileSync(path$11.join(libFolder, file), "utf-8");
 				const appid = content.match(/"appid"\s+"(\d+)"/);
 				const name = content.match(/"name"\s+"([^"]+)"/);
 				const installdir = content.match(/"installdir"\s+"([^"]+)"/);
 				if (appid && name && installdir) {
-					const gamePath = path$10.join(libFolder, "common", installdir[1]);
+					const gamePath = path$11.join(libFolder, "common", installdir[1]);
 					games.push({
 						name: name[1],
 						platform: "steam",
@@ -165,98 +174,98 @@ var require_detection = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 						installPath: gamePath,
 						executablePath: "",
 						coverUrl: `https://shared.steamstatic.com/store_item_assets/steam/apps/${appid[1]}/library_600x900_2x.jpg`,
-						heroUrl: `https://shared.steamstatic.com/store_item_assets/steam/apps/${appid[1]}/library_hero.jpg`,
+						headerUrl: `https://shared.steamstatic.com/store_item_assets/steam/apps/${appid[1]}/library_hero.jpg`,
 						categories: [],
 						source: "auto-detected",
 						installed: true
 					});
 				}
-			} catch (e) {}
+			} catch (_e) {}
 		}
 		return { games };
 	}
 	function scanEpicInstalled() {
 		const games = [];
 		try {
-			const manifestDir = path$10.join(process.env.PROGRAMDATA || "C:\\ProgramData", "Epic", "EpicGamesLauncher", "Data", "Manifests");
-			if (!fs$10.existsSync(manifestDir)) return games;
-			const files = fs$10.readdirSync(manifestDir).filter((f) => f.endsWith(".item"));
+			const manifestDir = path$11.join(process.env.PROGRAMDATA || "C:\\ProgramData", "Epic", "EpicGamesLauncher", "Data", "Manifests");
+			if (!fs$9.existsSync(manifestDir)) return games;
+			const files = fs$9.readdirSync(manifestDir).filter((f) => f.endsWith(".item"));
 			for (const file of files) try {
-				const content = JSON.parse(fs$10.readFileSync(path$10.join(manifestDir, file), "utf-8"));
+				const content = JSON.parse(fs$9.readFileSync(path$11.join(manifestDir, file), "utf-8"));
 				if (content.DisplayName && content.InstallLocation) games.push({
 					name: content.DisplayName,
 					platform: "epic",
 					platformId: content.CatalogNamespace || content.AppName,
 					installPath: content.InstallLocation,
-					executablePath: content.LaunchExecutable ? path$10.join(content.InstallLocation, content.LaunchExecutable) : "",
+					executablePath: content.LaunchExecutable ? path$11.join(content.InstallLocation, content.LaunchExecutable) : "",
 					coverUrl: "",
 					categories: [],
 					source: "auto-detected",
 					installed: true
 				});
-			} catch (e) {}
-		} catch (e) {}
+			} catch (_e) {}
+		} catch (_e) {}
 		return games;
 	}
 	function scanGogInstalled() {
 		const games = [];
 		try {
-			const dirsToScan = ["C:\\GOG Games", path$10.join(process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)", "GOG Galaxy", "Games")].filter((d) => {
+			const dirsToScan = ["C:\\GOG Games", path$11.join(process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)", "GOG Galaxy", "Games")].filter((d) => {
 				try {
-					return fs$10.existsSync(d);
+					return fs$9.existsSync(d);
 				} catch {
 					return false;
 				}
 			});
 			for (const dir of dirsToScan) {
-				const entries = fs$10.readdirSync(dir, { withFileTypes: true });
+				const entries = fs$9.readdirSync(dir, { withFileTypes: true });
 				for (const entry of entries) if (entry.isDirectory()) {
-					const gameDir = path$10.join(dir, entry.name);
-					const infoFiles = fs$10.readdirSync(gameDir).filter((f) => f.startsWith("goggame-") && f.endsWith(".info"));
+					const gameDir = path$11.join(dir, entry.name);
+					const infoFiles = fs$9.readdirSync(gameDir).filter((f) => f.startsWith("goggame-") && f.endsWith(".info"));
 					for (const infoFile of infoFiles) try {
-						const info = JSON.parse(fs$10.readFileSync(path$10.join(gameDir, infoFile), "utf-8"));
+						const info = JSON.parse(fs$9.readFileSync(path$11.join(gameDir, infoFile), "utf-8"));
 						if (info.name) games.push({
 							name: info.name,
 							platform: "gog",
 							platformId: info.gameId || "",
 							installPath: gameDir,
-							executablePath: info.playTasks?.[0]?.path ? path$10.join(gameDir, info.playTasks[0].path) : "",
+							executablePath: info.playTasks?.[0]?.path ? path$11.join(gameDir, info.playTasks[0].path) : "",
 							coverUrl: "",
 							categories: [],
 							source: "auto-detected",
 							installed: true
 						});
-					} catch (e) {}
+					} catch (_e) {}
 				}
 			}
-		} catch (e) {}
+		} catch (_e) {}
 		return games;
 	}
 	function scanXboxInstalled() {
 		const games = [];
 		const xboxGamesDir = "C:\\XboxGames";
-		if (fs$10.existsSync(xboxGamesDir)) {
-			const entries = fs$10.readdirSync(xboxGamesDir, { withFileTypes: true });
+		if (fs$9.existsSync(xboxGamesDir)) {
+			const entries = fs$9.readdirSync(xboxGamesDir, { withFileTypes: true });
 			for (const entry of entries) if (entry.isDirectory() && entry.name !== "Content") games.push({
 				name: entry.name.replace(/([A-Z])/g, " $1").trim(),
 				platform: "xbox",
 				platformId: "",
-				installPath: path$10.join(xboxGamesDir, entry.name),
+				installPath: path$11.join(xboxGamesDir, entry.name),
 				executablePath: "",
 				coverUrl: "",
 				categories: [],
 				source: "auto-detected"
 			});
 		}
-		const xboxAppPaths = [path$10.join(process.env.LOCALAPPDATA || "", "Microsoft", "WindowsApps", "XboxApp.exe"), path$10.join(process.env.ProgramFiles || "", "WindowsApps", "Microsoft.GamingApp_*")];
+		const xboxAppPaths = [path$11.join(process.env.LOCALAPPDATA || "", "Microsoft", "WindowsApps", "XboxApp.exe"), path$11.join(process.env.ProgramFiles || "", "WindowsApps", "Microsoft.GamingApp_*")];
 		let xboxAppFound = false;
 		for (const p of xboxAppPaths) if (p.includes("*")) {
-			const dir = path$10.dirname(p);
-			const prefix = path$10.basename(p).replace("*", "");
-			if (fs$10.existsSync(dir)) {
-				if (fs$10.readdirSync(dir).filter((f) => f.startsWith(prefix)).length > 0) xboxAppFound = true;
+			const dir = path$11.dirname(p);
+			const prefix = path$11.basename(p).replace("*", "");
+			if (fs$9.existsSync(dir)) {
+				if (fs$9.readdirSync(dir).filter((f) => f.startsWith(prefix)).length > 0) xboxAppFound = true;
 			}
-		} else if (fs$10.existsSync(p)) xboxAppFound = true;
+		} else if (fs$9.existsSync(p)) xboxAppFound = true;
 		return {
 			games,
 			xboxAppFound,
@@ -272,25 +281,67 @@ var require_detection = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	};
 }));
 //#endregion
+//#region electron/modules/paths.js
+var require_paths = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	var path$10 = require("path");
+	var fs$8 = require("fs");
+	var { app: app$5 } = require("electron");
+	/**
+	* Get the root directory where scripts/, providers/, and resources/ are located.
+	* In dev: electron/ folder
+	* In production: resources/ folder (next to the app executable)
+	*/
+	function getResourcesRoot() {
+		if (app$5?.isPackaged) return process.resourcesPath;
+		return path$10.join(__dirname, "..");
+	}
+	/**
+	* Get the path to a script in the scripts/ directory
+	*/
+	function getScriptPath(scriptName) {
+		return path$10.join(getResourcesRoot(), "scripts", scriptName);
+	}
+	/**
+	* Get the path to the providers/ directory
+	*/
+	function getProvidersDir() {
+		const candidates = [path$10.join(__dirname, "..", "providers"), path$10.join(process.cwd(), "electron", "providers")];
+		if (app$5?.isPackaged) candidates.unshift(path$10.join(process.resourcesPath, "providers"));
+		for (const candidate of candidates) if (fs$8.existsSync(path$10.join(candidate, "index.js"))) return candidate;
+		throw new Error("Cannot find providers directory. Tried: " + candidates.join(", "));
+	}
+	/**
+	* Get the path to a file in the resources/ directory (for bundled resources like chiaki-ng)
+	*/
+	function getResourcePath(resourceName) {
+		return path$10.join(getResourcesRoot(), "resources", resourceName);
+	}
+	/**
+	* Require a module from the providers/ directory
+	*/
+	function requireProvider(moduleName) {
+		return require(path$10.join(getProvidersDir(), moduleName));
+	}
+	module.exports = {
+		getResourcesRoot,
+		getScriptPath,
+		getProvidersDir,
+		getResourcePath,
+		requireProvider
+	};
+}));
+//#endregion
 //#region electron/modules/accounts.js
 var require_accounts = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	var { BrowserWindow: BrowserWindow$1, session: session$2, ipcMain: ipcMain$9 } = require("electron");
-	var crypto$1 = require("crypto");
+	var crypto$2 = require("crypto");
 	var path$9 = require("path");
-	var fs$9 = require("fs");
+	require("fs");
 	var ctx = require_context();
 	var { ACCOUNT_SECRET_FIELDS } = require_constants();
 	var { scanEpicInstalled, scanGogInstalled } = require_detection();
 	require_logger();
-	function getProvidersDir() {
-		const candidates = [
-			path$9.join(__dirname, "..", "providers"),
-			path$9.join(__dirname, "providers"),
-			path$9.join(process.cwd(), "electron", "providers")
-		];
-		for (const candidate of candidates) if (fs$9.existsSync(path$9.join(candidate, "index.js"))) return candidate;
-		throw new Error("Cannot find providers directory. Tried: " + candidates.join(", "));
-	}
+	var { getProvidersDir } = require_paths();
 	var providers = null;
 	var auth = null;
 	function getProviders() {
@@ -386,7 +437,7 @@ var require_accounts = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	function generateOAuthState() {
 		const now = Date.now();
 		for (const [s, entry] of pendingOAuthStates) if (now - entry.timestamp >= AUTH_TIMEOUT_MS) pendingOAuthStates.delete(s);
-		const state = crypto$1.randomBytes(32).toString("hex");
+		const state = crypto$2.randomBytes(32).toString("hex");
 		pendingOAuthStates.set(state, { timestamp: now });
 		return state;
 	}
@@ -919,7 +970,7 @@ var require_accounts = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 //#region electron/modules/discord.js
 var require_discord = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	var ctx = require_context();
-	require_logger();
+	var log = require_logger();
 	var DISCORD_CLIENT_ID = "1338877643523145789";
 	var discordRpc = null;
 	var discordReady = false;
@@ -930,14 +981,14 @@ var require_discord = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 			discordRpc = new (require("discord-rpc")).Client({ transport: "ipc" });
 			discordRpc.on("ready", () => {
 				discordReady = true;
-				console.log("[Discord] RPC ready");
+				log.info("discord", "RPC ready");
 			});
 			discordRpc.login({ clientId: DISCORD_CLIENT_ID }).catch((err) => {
-				console.log("[Discord] Could not connect:", err.message);
+				log.warn("discord", "Could not connect:", err.message);
 				discordRpc = null;
 			});
-		} catch (e) {
-			console.log("[Discord] Init error:", e.message);
+		} catch (_e) {
+			log.warn("discord", "Init error:", _e.message);
 			discordRpc = null;
 		}
 	}
@@ -945,10 +996,10 @@ var require_discord = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		if (discordRpc) {
 			try {
 				discordRpc.clearActivity();
-			} catch (e) {}
+			} catch (_e) {}
 			try {
 				discordRpc.destroy();
-			} catch (e) {}
+			} catch (_e) {}
 			discordRpc = null;
 			discordReady = false;
 			discordCurrentGame = null;
@@ -981,8 +1032,8 @@ var require_discord = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 				smallImageText: PLATFORM_LABELS[platform] || "Game",
 				instance: false
 			});
-		} catch (e) {
-			console.log("[Discord] Presence error:", e.message);
+		} catch (_e) {
+			log.warn("discord", "Presence error:", _e.message);
 		}
 	}
 	function clearDiscordPresence() {
@@ -990,7 +1041,7 @@ var require_discord = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		if (!discordRpc || !discordReady) return;
 		try {
 			discordRpc.clearActivity();
-		} catch (e) {}
+		} catch (_e) {}
 	}
 	function isDiscordEnabled() {
 		return !!(ctx.db && ctx.db.settings && ctx.db.settings.discordPresence);
@@ -1015,7 +1066,6 @@ var require_discord = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 var require_metadata = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	var { net: net$4 } = require("electron");
 	var ctx = require_context();
-	require_logger();
 	var METADATA_CACHE = /* @__PURE__ */ new Map();
 	var METADATA_CACHE_TTL = 10080 * 60 * 1e3;
 	function getMetadataSettings() {
@@ -1023,7 +1073,7 @@ var require_metadata = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		let sgdbKey = s.steamGridDbKey || "";
 		if (!sgdbKey) try {
 			sgdbKey = ctx.safeStore.getPassword("cereal-steamgriddb", "default") || "";
-		} catch (e) {}
+		} catch (_e) {}
 		return {
 			source: s.metadataSource || "steam",
 			steamGridDbKey: sgdbKey
@@ -1046,18 +1096,16 @@ var require_metadata = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 			if (info.type && typeof info.type === "string" && info.type.toLowerCase() !== "game") isSoftware = true;
 			if (!isSoftware && info.categories && Array.isArray(info.categories)) try {
 				if (info.categories.some((c) => (c.description || "").toLowerCase().includes("software") || (c.description || "").toLowerCase().includes("utility") || (c.description || "").toLowerCase().includes("application"))) isSoftware = true;
-			} catch (e) {}
+			} catch (_e) {}
 			if (!isSoftware && info.genres && Array.isArray(info.genres)) try {
 				if (info.genres.some((g) => (g.description || "").toLowerCase().includes("software"))) isSoftware = true;
-			} catch (e) {}
+			} catch (_e) {}
 			let coverUrl = "";
 			const capsuleUrls = [`https://shared.steamstatic.com/store_item_assets/steam/apps/${appId}/library_600x900_2x.jpg`, `https://shared.steamstatic.com/store_item_assets/steam/apps/${appId}/library_600x900.jpg`];
-			for (const url of capsuleUrls) try {
-				if ((await net$4.fetch(url, { method: "HEAD" })).ok) {
-					coverUrl = url;
-					break;
-				}
-			} catch (e) {}
+			try {
+				const first = (await Promise.allSettled(capsuleUrls.map((url) => net$4.fetch(url, { method: "HEAD" }).then((r) => r.ok ? url : Promise.reject())))).find((r) => r.status === "fulfilled");
+				if (first) coverUrl = first.value;
+			} catch (_e) {}
 			return {
 				description: (info.short_description || "").slice(0, 500),
 				developer: (info.developers || [])[0] || "",
@@ -1191,7 +1239,7 @@ var require_metadata = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 				else if (art.coverUrl) meta.sgdbCoverUrl = art.coverUrl;
 				if (art.headerUrl) meta.headerUrl = art.headerUrl;
 			}
-		} catch (e) {}
+		} catch (_e) {}
 		if (meta) METADATA_CACHE.set(cacheKey, {
 			data: meta,
 			timestamp: Date.now()
@@ -1269,7 +1317,7 @@ var require_metadata = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 					changed = true;
 				}
 			}
-		} catch (e) {}
+		} catch (_e) {}
 		if (meta._source === "steam" && meta.isSoftware) {
 			if (!game.software) {
 				game.software = true;
@@ -1305,15 +1353,17 @@ var require_metadata = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 var require_covers = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	var { app: app$4, net: net$3 } = require("electron");
 	var path$8 = require("path");
-	var fs$8 = require("fs");
+	var fs$7 = require("fs");
 	var ctx = require_context();
 	var { fetchGameMetadata, applyMetadataToGame } = require_metadata();
-	require_logger();
+	var log = require_logger();
 	function getCoversDir() {
 		const dir = path$8.join(app$4.getPath("userData"), "covers");
 		try {
-			if (!fs$8.existsSync(dir)) fs$8.mkdirSync(dir, { recursive: true });
-		} catch (e) {}
+			if (!fs$7.existsSync(dir)) fs$7.mkdirSync(dir, { recursive: true });
+		} catch (e) {
+			log.warn("covers", "Failed to create covers directory:", e.message);
+		}
 		return dir;
 	}
 	async function downloadToFile(url, destPath) {
@@ -1322,7 +1372,7 @@ var require_covers = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 			if (!resp.ok) throw new Error("HTTP " + resp.status);
 			const buf = Buffer.from(await resp.arrayBuffer());
 			if (buf.length < 1024) throw new Error("File too small (" + buf.length + " bytes)");
-			fs$8.writeFileSync(destPath, buf);
+			fs$7.writeFileSync(destPath, buf);
 			return true;
 		} catch (e) {
 			cleanupFile(destPath);
@@ -1331,8 +1381,15 @@ var require_covers = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	}
 	function cleanupFile(p) {
 		try {
-			if (fs$8.existsSync(p)) fs$8.unlinkSync(p);
-		} catch (e) {}
+			if (fs$7.existsSync(p)) fs$7.unlinkSync(p);
+		} catch (_e) {}
+	}
+	function isValidLocalFile(p) {
+		try {
+			return !!p && fs$7.existsSync(p) && fs$7.statSync(p).size >= 1024;
+		} catch (_e) {
+			return false;
+		}
 	}
 	var coverQueue = /* @__PURE__ */ new Set();
 	var coverRetries = /* @__PURE__ */ new Map();
@@ -1365,13 +1422,7 @@ var require_covers = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 				try {
 					const game = db.games.find((g) => g.id === gid);
 					if (!game) return;
-					if (!(game.localCoverPath && fs$8.existsSync(game.localCoverPath) && (() => {
-						try {
-							return fs$8.statSync(game.localCoverPath).size >= 1024;
-						} catch (e) {
-							return false;
-						}
-					})())) {
+					if (!isValidLocalFile(game.localCoverPath)) {
 						if (game.localCoverPath) {
 							cleanupFile(game.localCoverPath);
 							game.localCoverPath = null;
@@ -1406,17 +1457,11 @@ var require_covers = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 							}
 						} catch (e) {}
 						if (!downloaded) {
-							const total = [game.coverUrl].filter(Boolean).length;
+							const total = [game.coverUrl, game.sgdbCoverUrl].filter(Boolean).length;
 							if (total > 0) throw new Error("All cover URLs failed (" + total + " candidates)");
 						}
 					}
-					if (!(game.localHeaderPath && fs$8.existsSync(game.localHeaderPath) && (() => {
-						try {
-							return fs$8.statSync(game.localHeaderPath).size >= 1024;
-						} catch (e) {
-							return false;
-						}
-					})())) {
+					if (!isValidLocalFile(game.localHeaderPath)) {
 						if (game.localHeaderPath) {
 							cleanupFile(game.localHeaderPath);
 							game.localHeaderPath = null;
@@ -1432,7 +1477,7 @@ var require_covers = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 						}
 					}
 				} catch (e) {
-					console.log("[CoverFetcher] download failed for", gid, e && e.message);
+					log.warn("covers", "download failed for", gid, e && e.message);
 					const retries = (coverRetries.get(gid) || 0) + 1;
 					if (retries <= MAX_COVER_RETRIES) {
 						coverRetries.set(gid, retries);
@@ -1466,7 +1511,7 @@ var require_covers = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 //#region electron/modules/chiaki.js
 var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	var path$7 = require("path");
-	var fs$7 = require("fs");
+	var fs$6 = require("fs");
 	var readline = require("readline");
 	var { spawn: spawn$2 } = require("child_process");
 	var dgram = require("dgram");
@@ -1476,11 +1521,12 @@ var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	var { CONTROL_BAR_HEIGHT, CHIAKI_SYSTEM_PATHS } = require_constants();
 	var { connectDiscord, setDiscordPresence, clearDiscordPresence, isDiscordEnabled } = require_discord();
 	require_logger();
+	var { getScriptPath, getResourcePath } = require_paths();
 	function getChiakiDir() {
 		const userData = path$7.join(app$3.getPath("userData"), "chiaki-ng");
-		if (fs$7.existsSync(userData)) return userData;
-		const dev = path$7.join(__dirname, "..", "resources", "chiaki-ng");
-		if (fs$7.existsSync(dev)) return dev;
+		if (fs$6.existsSync(userData)) return userData;
+		const dev = getResourcePath("chiaki-ng");
+		if (fs$6.existsSync(dev)) return dev;
 		return null;
 	}
 	function getBundledChiakiExe() {
@@ -1489,13 +1535,13 @@ var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		const candidates = ["chiaki.exe", "chiaki-ng.exe"];
 		for (const name of candidates) {
 			const p = path$7.join(dir, name);
-			if (fs$7.existsSync(p)) return p;
+			if (fs$6.existsSync(p)) return p;
 		}
 		try {
-			const entries = fs$7.readdirSync(dir, { withFileTypes: true });
+			const entries = fs$6.readdirSync(dir, { withFileTypes: true });
 			for (const entry of entries) if (entry.isDirectory()) for (const name of candidates) {
 				const p = path$7.join(dir, entry.name, name);
-				if (fs$7.existsSync(p)) return p;
+				if (fs$6.existsSync(p)) return p;
 			}
 		} catch (e) {}
 		return null;
@@ -1505,7 +1551,7 @@ var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		if (!dir) return null;
 		const vf = path$7.join(dir, ".version");
 		try {
-			return fs$7.readFileSync(vf, "utf-8").trim();
+			return fs$6.readFileSync(vf, "utf-8").trim();
 		} catch (e) {
 			return null;
 		}
@@ -1519,7 +1565,7 @@ var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 			path$7.join(process.env.ProgramFiles || "", "chiaki-ng", "chiaki-ng.exe"),
 			path$7.join(process.env.LOCALAPPDATA || "", "chiaki-ng", "chiaki-ng.exe"),
 			fallbackPath
-		].filter(Boolean).find((p) => p && fs$7.existsSync(p)) || null;
+		].filter(Boolean).find((p) => p && fs$6.existsSync(p)) || null;
 	}
 	function buildChiakiArgs(game, config) {
 		const nickname = game.chiakiNickname || game.chiakiProfile || "";
@@ -1723,12 +1769,17 @@ var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		if (!ctx.mainWindow || !session.process) return;
 		const hwnd = ctx.mainWindow.getNativeWindowHandle().readBigUInt64LE(0).toString();
 		const b = getStreamBounds();
+		const psScript = getScriptPath("win32-stream.ps1");
+		if (!fs$6.existsSync(psScript)) {
+			console.warn("[chiaki] win32-stream.ps1 not found, skipping embed");
+			return;
+		}
 		const ps = spawn$2("powershell.exe", [
 			"-NoProfile",
 			"-ExecutionPolicy",
 			"Bypass",
 			"-File",
-			path$7.join(__dirname, "..", "scripts", "win32-stream.ps1"),
+			psScript,
 			"-ChiakiPid",
 			String(session.process.pid),
 			"-ParentHwnd",
@@ -1935,11 +1986,11 @@ var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	}
 	function autoSetupChiakiIfMissing() {
 		if (getBundledChiakiExe()) return;
-		if (CHIAKI_SYSTEM_PATHS.some((p) => fs$7.existsSync(p))) return;
+		if (CHIAKI_SYSTEM_PATHS.some((p) => fs$6.existsSync(p))) return;
 		console.log("[chiaki] Not found — starting automatic setup...");
 		ctx.sendToRenderer("chiaki:event", { type: "setup_started" });
-		const scriptPath = path$7.join(__dirname, "..", "scripts", "setup-chiaki.ps1");
-		if (!fs$7.existsSync(scriptPath)) {
+		const scriptPath = getScriptPath("setup-chiaki.ps1");
+		if (!fs$6.existsSync(scriptPath)) {
 			console.warn("[chiaki] setup-chiaki.ps1 not found, skipping auto-setup");
 			return;
 		}
@@ -1952,7 +2003,7 @@ var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 			"-InstallDir",
 			path$7.join(app$3.getPath("userData"), "chiaki-ng")
 		], {
-			cwd: path$7.join(__dirname, ".."),
+			cwd: path$7.dirname(scriptPath),
 			stdio: "pipe"
 		});
 		let output = "";
@@ -1998,8 +2049,7 @@ var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		});
 	}
 	function registerChiakiIpcHandlers() {
-		const db = () => ctx.db;
-		const saveDB = () => ctx.saveDB(ctx.db);
+		const saveDB = () => ctx.saveDB?.(ctx.db);
 		ipcMain$8.handle("chiaki:setStreamBounds", (event, { gameId, x, y, width, height }) => {
 			const session = chiakiSessions.get(gameId);
 			if (session?.embedProcess && !session.embedProcess.killed) try {
@@ -2016,7 +2066,7 @@ var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 				version: bundledVersion,
 				directory: getChiakiDir()
 			};
-			for (const p of CHIAKI_SYSTEM_PATHS) if (fs$7.existsSync(p)) return {
+			for (const p of CHIAKI_SYSTEM_PATHS) if (fs$6.existsSync(p)) return {
 				status: "system",
 				executablePath: p,
 				version: null
@@ -2047,8 +2097,8 @@ var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		});
 		ipcMain$8.handle("chiaki:update", async () => {
 			try {
-				const scriptPath = app$3.isPackaged ? path$7.join(process.resourcesPath, "scripts", "setup-chiaki.ps1") : path$7.join(__dirname, "..", "scripts", "setup-chiaki.ps1");
-				if (!fs$7.existsSync(scriptPath)) return { error: "setup-chiaki.ps1 not found at: " + scriptPath };
+				const scriptPath = getScriptPath("setup-chiaki.ps1");
+				if (!fs$6.existsSync(scriptPath)) return { error: "setup-chiaki.ps1 not found at: " + scriptPath };
 				const chiakiInstallDir = path$7.join(app$3.getPath("userData"), "chiaki-ng");
 				const SETUP_TIMEOUT = 300 * 1e3;
 				return new Promise((resolve) => {
@@ -2061,7 +2111,7 @@ var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 						"-InstallDir",
 						chiakiInstallDir
 					], {
-						cwd: path$7.join(__dirname, ".."),
+						cwd: path$7.dirname(scriptPath),
 						stdio: "pipe"
 					});
 					let output = "";
@@ -2098,19 +2148,19 @@ var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 			}
 		});
 		ipcMain$8.handle("chiaki:getConfig", () => {
-			return db().chiakiConfig || {
+			return ctx.db.chiakiConfig || {
 				executablePath: "",
 				consoles: []
 			};
 		});
 		ipcMain$8.handle("chiaki:saveConfig", (event, config) => {
 			const { cerealMode: _dropped, ...clean } = config || {};
-			db().chiakiConfig = clean;
+			ctx.db.chiakiConfig = clean;
 			saveDB();
 			return clean;
 		});
 		ipcMain$8.handle("games:setChiakiStream", (event, gameId, streamConfig) => {
-			const game = db().games.find((g) => g.id === gameId);
+			const game = ctx.db.games.find((g) => g.id === gameId);
 			if (game) {
 				game.chiakiNickname = streamConfig.nickname || "";
 				game.chiakiHost = streamConfig.host || "";
@@ -2141,11 +2191,11 @@ var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 					chiakiMorning: opts.morning || "",
 					chiakiFullscreen: opts.fullscreen !== false,
 					chiakiDisplayMode: opts.displayMode || ""
-				}, db().chiakiConfig || {})).state
+				}, ctx.db.chiakiConfig || {})).state
 			};
 		});
 		ipcMain$8.handle("chiaki:startStream", (event, gameId) => {
-			const game = db().games.find((g) => g.id === gameId);
+			const game = ctx.db.games.find((g) => g.id === gameId);
 			if (!game) return {
 				success: false,
 				error: "Game not found"
@@ -2155,7 +2205,7 @@ var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 				success: false,
 				error: "chiaki-ng not found"
 			};
-			const session = startChiakiSession(gameId, chiakiExe, buildChiakiArgs(game, db().chiakiConfig || {}));
+			const session = startChiakiSession(gameId, chiakiExe, buildChiakiArgs(game, ctx.db.chiakiConfig || {}));
 			game.lastPlayed = (/* @__PURE__ */ new Date()).toISOString();
 			saveDB();
 			return {
@@ -2239,7 +2289,7 @@ var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 				setTimeout(() => {
 					try {
 						proc.kill();
-					} catch (e) {}
+					} catch (_e) {}
 					finish({
 						success: false,
 						error: "Registration timed out (30s)"
@@ -2408,7 +2458,7 @@ var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 					setTimeout(() => {
 						try {
 							proc.kill();
-						} catch (e) {}
+						} catch (_e) {}
 						finish({
 							success: false,
 							error: "Wake CLI timed out (10s)",
@@ -2634,23 +2684,16 @@ var require_xcloud = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 //#region electron/modules/gameCrud.js
 var require_gameCrud = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	var { ipcMain: ipcMain$7 } = require("electron");
-	var fs$6 = require("fs");
+	var fs$5 = require("fs");
 	var path$6 = require("path");
+	var crypto$1 = require("crypto");
 	var ctx = require_context();
-	function getProvidersDir() {
-		const candidates = [
-			path$6.join(__dirname, "..", "providers"),
-			path$6.join(__dirname, "providers"),
-			path$6.join(process.cwd(), "electron", "providers")
-		];
-		for (const candidate of candidates) if (fs$6.existsSync(path$6.join(candidate, "index.js"))) return candidate;
-		throw new Error("Cannot find providers directory. Tried: " + candidates.join(", "));
-	}
-	var { canonicalize: canonicalizeName } = require(path$6.join(getProvidersDir(), "utils"));
+	var { getProvidersDir } = require_paths();
 	var { enqueueCoverFetch } = require_covers();
 	var { fetchGameMetadata, applyMetadataToGame } = require_metadata();
 	var log = require_logger();
 	function registerGameCrudIpcHandlers() {
+		const { canonicalize: canonicalizeName } = require(path$6.join(getProvidersDir(), "utils"));
 		ipcMain$7.handle("games:getAll", () => ctx.db.games);
 		ipcMain$7.handle("games:getCategories", () => ctx.db.categories);
 		ipcMain$7.handle("games:add", (_event, game) => {
@@ -2695,7 +2738,7 @@ var require_gameCrud = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 				}
 				return merged;
 			}
-			game.id = Date.now().toString(36) + Math.random().toString(36).substring(2, 7);
+			game.id = Date.now().toString(36) + crypto$1.randomBytes(4).toString("hex");
 			game.addedAt = (/* @__PURE__ */ new Date()).toISOString();
 			game.lastPlayed = null;
 			game.playtimeMinutes = 0;
@@ -2718,7 +2761,7 @@ var require_gameCrud = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 						log.debug("covers", "enqueue failed", e);
 					}
 				}
-			}).catch(() => {});
+			}).catch((e) => log.debug("gameCrud", "auto-metadata failed", e.message));
 			return game;
 		});
 		ipcMain$7.handle("games:update", (_event, updatedGame) => {
@@ -2737,7 +2780,7 @@ var require_gameCrud = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 					const headerChanged = typeof updatedGame.headerUrl === "string" && updatedGame.headerUrl !== prev.headerUrl;
 					if (coverChanged) {
 						if (prev.localCoverPath) try {
-							fs$6.unlinkSync(prev.localCoverPath);
+							fs$5.unlinkSync(prev.localCoverPath);
 						} catch (_e) {
 							log.debug("covers", "unlink cover failed");
 						}
@@ -2746,7 +2789,7 @@ var require_gameCrud = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 					}
 					if (headerChanged) {
 						if (prev.localHeaderPath) try {
-							fs$6.unlinkSync(prev.localHeaderPath);
+							fs$5.unlinkSync(prev.localHeaderPath);
 						} catch (_e) {
 							log.debug("covers", "unlink header failed");
 						}
@@ -2822,15 +2865,15 @@ var require_gameCrud = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 var require_database = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	var { app: app$2 } = require("electron");
 	var path$5 = require("path");
-	var fs$5 = require("fs");
+	var fs$4 = require("fs");
 	var DB_PATH = path$5.join(app$2 ? app$2.getPath("userData") : ".", "games.json");
 	function writeDBSync(data) {
 		try {
-			if (fs$5.existsSync(DB_PATH)) fs$5.copyFileSync(DB_PATH, DB_PATH + ".bak");
+			if (fs$4.existsSync(DB_PATH)) fs$4.copyFileSync(DB_PATH, DB_PATH + ".bak");
 		} catch (_e) {}
 		const tmp = DB_PATH + ".tmp";
-		fs$5.writeFileSync(tmp, JSON.stringify(data, null, 2));
-		fs$5.renameSync(tmp, DB_PATH);
+		fs$4.writeFileSync(tmp, JSON.stringify(data, null, 2));
+		fs$4.renameSync(tmp, DB_PATH);
 	}
 	var _saveDBTimer = null;
 	function saveDB(data) {
@@ -2857,8 +2900,8 @@ var require_database = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	}
 	function loadDB() {
 		for (const filePath of [DB_PATH, DB_PATH + ".bak"]) try {
-			if (!fs$5.existsSync(filePath)) continue;
-			const data = JSON.parse(fs$5.readFileSync(filePath, "utf-8"));
+			if (!fs$4.existsSync(filePath)) continue;
+			const data = JSON.parse(fs$4.readFileSync(filePath, "utf-8"));
 			if (filePath !== DB_PATH) console.warn("[DB] Loaded from backup — primary was corrupt");
 			if (data.games) {
 				const before = data.games.length;
@@ -2902,18 +2945,9 @@ var require_keys = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	var { ipcMain: ipcMain$6, dialog: dialog$2, shell: shell$2, clipboard } = require("electron");
 	var crypto = require("crypto");
 	var path$4 = require("path");
-	var fs$4 = require("fs");
 	var ctx = require_context();
 	var { ALLOWED_KEY_SERVICES } = require_constants();
-	function getProvidersDir() {
-		const candidates = [
-			path$4.join(__dirname, "..", "providers"),
-			path$4.join(__dirname, "providers"),
-			path$4.join(process.cwd(), "electron", "providers")
-		];
-		for (const candidate of candidates) if (fs$4.existsSync(path$4.join(candidate, "index.js"))) return candidate;
-		throw new Error("Cannot find providers directory. Tried: " + candidates.join(", "));
-	}
+	var { getProvidersDir } = require_paths();
 	var providers = null;
 	function getProviders() {
 		if (!providers) providers = require(getProvidersDir());
@@ -3105,9 +3139,8 @@ var require_keys = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 //#region electron/modules/metadataSearch.js
 var require_metadataSearch = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	var { net: net$1, ipcMain: ipcMain$5 } = require("electron");
-	require("crypto");
 	var { getMetadataSettings, httpGet } = require_metadata();
-	require_logger();
+	var log = require_logger();
 	async function searchSteam(gameName) {
 		const results = [];
 		const search = await httpGet(`https://store.steampowered.com/api/storesearch/?term=${encodeURIComponent(gameName)}&l=english&cc=US`);
@@ -3142,7 +3175,7 @@ var require_metadataSearch = /* @__PURE__ */ __commonJSMin(((exports, module) =>
 						label: name + " - Screenshot"
 					});
 				}
-			} catch (e) {}
+			} catch (_e) {}
 		}
 		return results;
 	}
@@ -3158,7 +3191,7 @@ var require_metadataSearch = /* @__PURE__ */ __commonJSMin(((exports, module) =>
 		const searchData = await sgdbFetch(`https://www.steamgriddb.com/api/v2/search/autocomplete/${q}`);
 		if (!searchData?.success || !searchData?.data?.length) return results;
 		const gameId = searchData.data[0].id;
-		const gamLabel = searchData.data[0].name || gameName;
+		const gameLabel = searchData.data[0].name || gameName;
 		const [portraitGrids, landscapeGrids, heroes, logos] = await Promise.allSettled([
 			sgdbFetch(`https://www.steamgriddb.com/api/v2/grids/game/${gameId}?dimensions=600x900&limit=8`),
 			sgdbFetch(`https://www.steamgriddb.com/api/v2/grids/game/${gameId}?dimensions=460x215,920x430&limit=4`),
@@ -3170,7 +3203,7 @@ var require_metadataSearch = /* @__PURE__ */ __commonJSMin(((exports, module) =>
 				url: g.url,
 				type: "cover",
 				source: "SteamGridDB",
-				label: gamLabel + " - Cover"
+				label: gameLabel + " - Cover"
 			});
 		}
 		if (landscapeGrids.status === "fulfilled" && landscapeGrids.value?.data) {
@@ -3178,7 +3211,7 @@ var require_metadataSearch = /* @__PURE__ */ __commonJSMin(((exports, module) =>
 				url: g.url,
 				type: "header",
 				source: "SteamGridDB",
-				label: gamLabel + " - Header"
+				label: gameLabel + " - Header"
 			});
 		}
 		if (heroes.status === "fulfilled" && heroes.value?.data) {
@@ -3186,7 +3219,7 @@ var require_metadataSearch = /* @__PURE__ */ __commonJSMin(((exports, module) =>
 				url: h.url,
 				type: "header",
 				source: "SteamGridDB",
-				label: gamLabel + " - Hero"
+				label: gameLabel + " - Hero"
 			});
 		}
 		if (logos.status === "fulfilled" && logos.value?.data) {
@@ -3194,17 +3227,19 @@ var require_metadataSearch = /* @__PURE__ */ __commonJSMin(((exports, module) =>
 				url: l.url,
 				type: "logo",
 				source: "SteamGridDB",
-				label: gamLabel + " - Logo"
+				label: gameLabel + " - Logo"
 			});
 		}
 		return results;
 	}
-	async function handleSearchArt(event, gameName, platform) {
+	async function handleSearchArt(event, gameName, _platform) {
 		if (!gameName) return { images: [] };
 		const ms = getMetadataSettings();
 		const [sgdbResult, steamResult] = await Promise.allSettled([searchSteamGridDB(gameName, ms.steamGridDbKey), searchSteam(gameName)]);
-		const sgdb = sgdbResult.status === "fulfilled" ? sgdbResult.value : (console.log("[ArtSearch] SteamGridDB failed:", sgdbResult.reason?.message), []);
-		const steam = steamResult.status === "fulfilled" ? steamResult.value : (console.log("[ArtSearch] Steam failed:", steamResult.reason?.message), []);
+		const sgdb = sgdbResult.status === "fulfilled" ? sgdbResult.value : [];
+		if (sgdbResult.status !== "fulfilled") log.debug("metadataSearch", "SteamGridDB failed:", sgdbResult.reason?.message);
+		const steam = steamResult.status === "fulfilled" ? steamResult.value : [];
+		if (steamResult.status !== "fulfilled") log.debug("metadataSearch", "Steam failed:", steamResult.reason?.message);
 		const images = [];
 		const seen = /* @__PURE__ */ new Set();
 		for (const img of sgdb) if (img.url && !seen.has(img.url)) {
@@ -3566,18 +3601,9 @@ var require_detectionIpc = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	var { CHIAKI_SYSTEM_PATHS } = require_constants();
 	var { findSteamRoot, scanSteamInstalled, scanEpicInstalled, scanGogInstalled, scanXboxInstalled } = require_detection();
 	var { getBundledChiakiExe, getBundledChiakiVersion } = require_chiaki();
+	var { getProvidersDir } = require_paths();
 	function registerDetectionIpcHandlers$1() {
-		let providersDir;
-		const candidates = [
-			path$2.join(__dirname, "..", "providers"),
-			path$2.join(__dirname, "providers"),
-			path$2.join(process.cwd(), "electron", "providers")
-		];
-		for (const candidate of candidates) if (fs$2.existsSync(path$2.join(candidate, "index.js"))) {
-			providersDir = candidate;
-			break;
-		}
-		if (!providersDir) throw new Error("Cannot find providers directory. Tried: " + candidates.join(", "));
+		const providersDir = getProvidersDir();
 		const providers = require(providersDir);
 		ipcMain$3.handle("detect:steam", async () => {
 			try {
@@ -3628,7 +3654,7 @@ var require_detectionIpc = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 						break;
 					}
 				}
-				if (result.executablePath) try {
+				if (result.executablePath && /^chiaki(-ng)?\.exe$/i.test(path$2.basename(result.executablePath))) try {
 					result.consoles = require("child_process").execFileSync(result.executablePath, ["list"], {
 						timeout: 5e3,
 						env: {
@@ -3691,9 +3717,7 @@ var require_detectionIpc = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 				if (steamRoot) {
 					const userdataDir = path$2.join(steamRoot, "userdata");
 					if (fs$2.existsSync(userdataDir)) {
-						const userDirs = fs$2.readdirSync(userdataDir).filter((d) => {
-							return fs$2.statSync(path$2.join(userdataDir, d)).isDirectory() && /^\d+$/.test(d);
-						});
+						const userDirs = fs$2.readdirSync(userdataDir, { withFileTypes: true }).filter((d) => d.isDirectory() && /^\d+$/.test(d.name)).map((d) => d.name);
 						for (const userId of userDirs) {
 							const localConfigPath = path$2.join(userdataDir, userId, "config", "localconfig.vdf");
 							if (!fs$2.existsSync(localConfigPath)) continue;
@@ -3786,7 +3810,7 @@ var require_settings = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 			else disconnectDiscord();
 			if ("launchOnStartup" in newSettings) try {
 				app$1.setLoginItemSettings({ openAtLogin: !!newSettings.launchOnStartup });
-			} catch (e) {}
+			} catch (_e) {}
 			if ("closeToTray" in newSettings) if (newSettings.closeToTray) createTray();
 			else destroyTray();
 			return ctx.db.settings;
@@ -3836,9 +3860,9 @@ var require_settings = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 				const imported = JSON.parse(raw);
 				let addedCount = 0;
 				if (imported.games && Array.isArray(imported.games)) {
-					const existingIds = new Set(ctx.db.games.map((g) => g.name + "|" + g.platform));
+					const existingIds = new Set(ctx.db.games.map((g) => (g.name || "") + "|" + (g.platform || "")));
 					for (const g of imported.games) {
-						const key = g.name + "|" + g.platform;
+						const key = (g.name || "") + "|" + (g.platform || "");
 						if (!existingIds.has(key)) {
 							g.id = Date.now().toString(36) + Math.random().toString(36).substring(2, 7);
 							ctx.db.games.push(g);
@@ -3930,13 +3954,14 @@ var require_smtc = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 var require_media = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	var { ipcMain: ipcMain$1 } = require("electron");
 	var { startXcloudSession, stopXcloudSession, getActiveXcloudSessions } = require_xcloud();
+	var log = require_logger();
 	var smtcNative = null;
 	function getSmtcNative() {
 		if (!smtcNative) try {
 			smtcNative = require_smtc();
-			console.log("[media] native addon loaded");
+			log.info("media", "native addon loaded");
 		} catch (e) {
-			console.log("[media] failed to load native addon:", e.message);
+			log.warn("media", "failed to load native addon:", e.message);
 		}
 		return smtcNative;
 	}
@@ -3977,9 +4002,9 @@ var require_media = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 			if (!smtc) return {};
 			try {
 				const info = await smtc.getMediaInfo();
-				console.log("[media] native result:", info);
+				log.debug("media", "native result:", info);
 				if (info.error) {
-					console.log("[media] error:", info.error);
+					log.warn("media", "error:", info.error);
 					return {};
 				}
 				return {
@@ -3992,7 +4017,7 @@ var require_media = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 					duration: Math.floor(info.duration || 0)
 				};
 			} catch (e) {
-				console.log("[media] exception:", e.message);
+				log.warn("media", "exception:", e.message);
 				return {};
 			}
 		});
@@ -4003,7 +4028,7 @@ var require_media = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 				await smtc.sendMediaKey(action);
 				return true;
 			} catch (e) {
-				console.log("[media] control error:", e.message);
+				log.warn("media", "control error:", e.message);
 				return false;
 			}
 		});
@@ -4019,7 +4044,7 @@ app.commandLine.appendSwitch("enable-gpu-rasterization");
 app.commandLine.appendSwitch("enable-zero-copy");
 app.commandLine.appendSwitch("ignore-gpu-blocklist");
 app.commandLine.appendSwitch("enable-hardware-overlays", "single-fullscreen,single-on-top,underlay");
-app.commandLine.appendSwitch("enable-features", "VaapiVideoDecodeLinuxGL,VaapiVideoEncoder,CanvasOopRasterization,UseSkiaRenderer");
+app.commandLine.appendSwitch("enable-features", "CanvasOopRasterization,UseSkiaRenderer");
 protocol.registerSchemesAsPrivileged([{
 	scheme: "local-image",
 	privileges: {
@@ -4032,7 +4057,6 @@ protocol.registerSchemesAsPrivileged([{
 var { safeStore } = require_credentials();
 var { spawn } = require("child_process");
 var os = require("os");
-var { autoUpdater } = require("electron-updater");
 var { ACCOUNT_SECRET_FIELDS } = require_constants();
 var log = require_logger();
 var { detachAccountSecrets, registerAccountIpcHandlers } = require_accounts();
@@ -4193,7 +4217,7 @@ app.whenReady().then(() => {
 		if (process.platform === "win32" && filePath.startsWith("/")) filePath = filePath.slice(1);
 		const coversDir = getCoversDir();
 		const resolved = path.resolve(filePath);
-		if (!resolved.startsWith(coversDir)) return new Response("Forbidden", { status: 403 });
+		if (!resolved.startsWith(coversDir + path.sep) && resolved !== coversDir) return new Response("Forbidden", { status: 403 });
 		return net.fetch("file:///" + resolved.replace(/\\/g, "/"));
 	});
 	db = loadDB();
@@ -4307,24 +4331,25 @@ app.whenReady().then(() => {
 	if (db.settings && db.settings.startMinimized) mainWindow.hide();
 	if (isDiscordEnabled()) setTimeout(connectDiscord, 8e3);
 	setTimeout(autoSetupChiakiIfMissing, 6e3);
-	autoUpdater.autoDownload = true;
-	autoUpdater.autoInstallOnAppQuit = true;
 	setTimeout(() => {
+		const { autoUpdater } = require("electron-updater");
+		autoUpdater.autoDownload = true;
+		autoUpdater.autoInstallOnAppQuit = true;
+		for (const evt of [
+			"checking-for-update",
+			"update-available",
+			"update-not-available",
+			"download-progress",
+			"update-downloaded",
+			"error"
+		]) autoUpdater.on(evt, (data) => {
+			sendToRenderer("update:event", {
+				type: evt,
+				data: evt === "error" ? data && data.message || String(data) : data
+			});
+		});
 		autoUpdater.checkForUpdates().catch(() => {});
 	}, 5e3);
-	for (const evt of [
-		"checking-for-update",
-		"update-available",
-		"update-not-available",
-		"download-progress",
-		"update-downloaded",
-		"error"
-	]) autoUpdater.on(evt, (data) => {
-		sendToRenderer("update:event", {
-			type: evt,
-			data: evt === "error" ? data && data.message || String(data) : data
-		});
-	});
 });
 app.on("window-all-closed", () => {
 	disconnectDiscord();
@@ -4602,6 +4627,15 @@ ipcMain.handle("dialog:pickImage", async () => {
 	});
 	if (!result.canceled && result.filePaths.length > 0) {
 		const src = result.filePaths[0];
+		try {
+			const fd = fs.openSync(src, "r");
+			const magic = Buffer.alloc(4);
+			fs.readSync(fd, magic, 0, 4, 0);
+			fs.closeSync(fd);
+			if (!(magic[0] === 255 && magic[1] === 216 && magic[2] === 255 || magic[0] === 137 && magic[1] === 80 && magic[2] === 78 && magic[3] === 71 || magic[0] === 71 && magic[1] === 73 && magic[2] === 70 || magic[0] === 82 && magic[1] === 73 && magic[2] === 70 && magic[3] === 70 || magic[0] === 66 && magic[1] === 77)) return null;
+		} catch (_e) {
+			return null;
+		}
 		const ext = path.extname(src);
 		const destName = `cover_${Date.now()}${ext}`;
 		const destDir = path.join(app.getPath("userData"), "covers");
@@ -4621,9 +4655,11 @@ registerSettingsIpcHandlers({
 	DB_PATH
 });
 ipcMain.handle("update:check", () => {
+	const { autoUpdater } = require("electron-updater");
 	return autoUpdater.checkForUpdates().catch((err) => ({ error: err.message }));
 });
 ipcMain.handle("update:install", () => {
+	const { autoUpdater } = require("electron-updater");
 	autoUpdater.quitAndInstall();
 });
 registerAccountIpcHandlers();

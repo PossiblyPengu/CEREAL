@@ -9,7 +9,7 @@ const log = require('./logger');
 // --- Cover cache directory ---
 function getCoversDir() {
   const dir = path.join(app.getPath('userData'), 'covers');
-  try { if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true }); } catch (e) {}
+  try { if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true }); } catch (e) { log.warn('covers', 'Failed to create covers directory:', e.message); }
   return dir;
 }
 
@@ -27,7 +27,11 @@ async function downloadToFile(url, destPath) {
   }
 }
 
-function cleanupFile(p) { try { if (fs.existsSync(p)) fs.unlinkSync(p); } catch (e) {} }
+function cleanupFile(p) { try { if (fs.existsSync(p)) fs.unlinkSync(p); } catch (_e) { /* best-effort cleanup */ } }
+
+function isValidLocalFile(p) {
+  try { return !!p && fs.existsSync(p) && fs.statSync(p).size >= 1024; } catch (_e) { return false; }
+}
 
 // Background fetch queue (simple FIFO)
 const coverQueue = new Set();
@@ -63,7 +67,7 @@ async function processCoverQueue() {
         if (!game) return;
         // Download cover — only portrait coverUrl is used. Wide headerUrl/screenshots are
         // kept in their own slots and never downloaded as the cover image.
-        const hasValidCover = game.localCoverPath && fs.existsSync(game.localCoverPath) && (() => { try { return fs.statSync(game.localCoverPath).size >= 1024; } catch(e) { return false; } })();
+        const hasValidCover = isValidLocalFile(game.localCoverPath);
         if (!hasValidCover) {
           if (game.localCoverPath) { cleanupFile(game.localCoverPath); game.localCoverPath = null; }
           let candidates = [game.coverUrl, game.sgdbCoverUrl].filter(Boolean);
@@ -104,12 +108,12 @@ async function processCoverQueue() {
             } catch (e) { /* metadata fetch failed */ }
           }
           if (!downloaded) {
-            const total = [game.coverUrl].filter(Boolean).length;
+            const total = [game.coverUrl, game.sgdbCoverUrl].filter(Boolean).length;
             if (total > 0) throw new Error('All cover URLs failed (' + total + ' candidates)');
           }
         }
         // Download header
-        const hasValidHeader = game.localHeaderPath && fs.existsSync(game.localHeaderPath) && (() => { try { return fs.statSync(game.localHeaderPath).size >= 1024; } catch(e) { return false; } })();
+        const hasValidHeader = isValidLocalFile(game.localHeaderPath);
         if (!hasValidHeader) {
           if (game.localHeaderPath) { cleanupFile(game.localHeaderPath); game.localHeaderPath = null; }
           const headerUrl = game.headerUrl;
@@ -123,7 +127,7 @@ async function processCoverQueue() {
           }
         }
       } catch (e) {
-        console.log('[CoverFetcher] download failed for', gid, e && e.message);
+        log.warn('covers', 'download failed for', gid, e && e.message);
         const retries = (coverRetries.get(gid) || 0) + 1;
         if (retries <= MAX_COVER_RETRIES) {
           coverRetries.set(gid, retries);

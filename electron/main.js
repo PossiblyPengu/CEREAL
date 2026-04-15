@@ -8,7 +8,7 @@ app.commandLine.appendSwitch('enable-gpu-rasterization');
 app.commandLine.appendSwitch('enable-zero-copy');
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
 app.commandLine.appendSwitch('enable-hardware-overlays', 'single-fullscreen,single-on-top,underlay');
-app.commandLine.appendSwitch('enable-features', 'VaapiVideoDecodeLinuxGL,VaapiVideoEncoder,CanvasOopRasterization,UseSkiaRenderer');
+app.commandLine.appendSwitch('enable-features', 'CanvasOopRasterization,UseSkiaRenderer');
 
 // ─── Custom protocol for serving local images to the renderer ─────────────────
 // Registered before app.ready so Chromium treats it as a standard scheme.
@@ -19,7 +19,6 @@ protocol.registerSchemesAsPrivileged([
 const { safeStore } = require('./modules/credentials');
 const { spawn } = require('child_process');
 const os = require('os');
-const { autoUpdater } = require('electron-updater');
 
 // ─── Constants (extracted to modules/constants.js) ────────────────────────────
 const { ACCOUNT_SECRET_FIELDS } = require('./modules/constants');
@@ -216,7 +215,7 @@ app.whenReady().then(() => {
     // Security: only allow files from the covers directory
     const coversDir = getCoversDir();
     const resolved = path.resolve(filePath);
-    if (!resolved.startsWith(coversDir)) {
+    if (!resolved.startsWith(coversDir + path.sep) && resolved !== coversDir) {
       return new Response('Forbidden', { status: 403 });
     }
     return net.fetch('file:///' + resolved.replace(/\\/g, '/'));
@@ -351,20 +350,19 @@ app.whenReady().then(() => {
   // Auto-download chiaki-ng if missing (first run)
   setTimeout(autoSetupChiakiIfMissing, 6000);
 
-  // Auto-update: check after a short delay
-  autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;
+  // Auto-update: check after a short delay (lazy-load to avoid startup overhead)
   setTimeout(() => {
+    const { autoUpdater } = require('electron-updater');
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true;
+    const updateEvents = ['checking-for-update', 'update-available', 'update-not-available', 'download-progress', 'update-downloaded', 'error'];
+    for (const evt of updateEvents) {
+      autoUpdater.on(evt, (data) => {
+        sendToRenderer('update:event', { type: evt, data: evt === 'error' ? (data && data.message || String(data)) : data });
+      });
+    }
     autoUpdater.checkForUpdates().catch(() => {});
   }, 5000);
-
-  // Forward update events to renderer
-  const updateEvents = ['checking-for-update', 'update-available', 'update-not-available', 'download-progress', 'update-downloaded', 'error'];
-  for (const evt of updateEvents) {
-    autoUpdater.on(evt, (data) => {
-      sendToRenderer('update:event', { type: evt, data: evt === 'error' ? (data && data.message || String(data)) : data });
-    });
-  }
 });
 
 app.on('window-all-closed', () => {
@@ -600,6 +598,21 @@ ipcMain.handle('dialog:pickImage', async () => {
   if (!result.canceled && result.filePaths.length > 0) {
     // Copy image to app data
     const src = result.filePaths[0];
+    // Validate magic bytes to ensure the selected file is actually an image
+    try {
+      const fd = fs.openSync(src, 'r');
+      const magic = Buffer.alloc(4);
+      fs.readSync(fd, magic, 0, 4, 0);
+      fs.closeSync(fd);
+      const isImage = (
+        (magic[0] === 0xFF && magic[1] === 0xD8 && magic[2] === 0xFF) ||                               // JPEG
+        (magic[0] === 0x89 && magic[1] === 0x50 && magic[2] === 0x4E && magic[3] === 0x47) ||         // PNG
+        (magic[0] === 0x47 && magic[1] === 0x49 && magic[2] === 0x46) ||                              // GIF
+        (magic[0] === 0x52 && magic[1] === 0x49 && magic[2] === 0x46 && magic[3] === 0x46) ||         // WebP/RIFF
+        (magic[0] === 0x42 && magic[1] === 0x4D)                                                      // BMP
+      );
+      if (!isImage) return null;
+    } catch (_e) { return null; }
     const ext = path.extname(src);
     const destName = `cover_${Date.now()}${ext}`;
     const destDir = path.join(app.getPath('userData'), 'covers');
@@ -621,9 +634,11 @@ registerSettingsIpcHandlers({ createTray, destroyTray, DB_PATH });
 
 // ─── Auto-Update ──────────────────────────────────────────────────────────────
 ipcMain.handle('update:check', () => {
+  const { autoUpdater } = require('electron-updater');
   return autoUpdater.checkForUpdates().catch((err) => ({ error: err.message }));
 });
 ipcMain.handle('update:install', () => {
+  const { autoUpdater } = require('electron-updater');
   autoUpdater.quitAndInstall();
 });
 

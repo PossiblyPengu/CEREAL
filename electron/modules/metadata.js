@@ -6,7 +6,6 @@
 
 const { net } = require('electron');
 const ctx = require('./context');
-const log = require('./logger');
 
 const METADATA_CACHE = new Map();
 const METADATA_CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -16,7 +15,7 @@ function getMetadataSettings() {
   // SteamGridDB key: prefer safeStorage, fall back to legacy settings field
   let sgdbKey = s.steamGridDbKey || '';
   if (!sgdbKey) {
-    try { sgdbKey = ctx.safeStore.getPassword('cereal-steamgriddb', 'default') || ''; } catch (e) {}
+    try { sgdbKey = ctx.safeStore.getPassword('cereal-steamgriddb', 'default') || ''; } catch (_e) { /* safeStorage unavailable */ }
   }
   return {
     source: s.metadataSource || 'steam',
@@ -47,10 +46,10 @@ async function fetchSteamMetadata(appId) {
     if (!isSoftware && info.categories && Array.isArray(info.categories)) {
       try {
         if (info.categories.some(c => (c.description || '').toLowerCase().includes('software') || (c.description || '').toLowerCase().includes('utility') || (c.description || '').toLowerCase().includes('application'))) isSoftware = true;
-      } catch (e) { /* ignore */ }
+      } catch (_e) { /* ignore */ }
     }
     if (!isSoftware && info.genres && Array.isArray(info.genres)) {
-      try { if (info.genres.some(g => (g.description || '').toLowerCase().includes('software'))) isSoftware = true; } catch(e){}
+      try { if (info.genres.some(g => (g.description || '').toLowerCase().includes('software'))) isSoftware = true; } catch (_e) { /* ignore */ }
     }
 
     // Validate library capsule exists (many software/tools/DLC don't have one)
@@ -60,12 +59,15 @@ async function fetchSteamMetadata(appId) {
       `https://shared.steamstatic.com/store_item_assets/steam/apps/${appId}/library_600x900_2x.jpg`,
       `https://shared.steamstatic.com/store_item_assets/steam/apps/${appId}/library_600x900.jpg`,
     ];
-    for (const url of capsuleUrls) {
-      try {
-        const probe = await net.fetch(url, { method: 'HEAD' });
-        if (probe.ok) { coverUrl = url; break; }
-      } catch (e) {}
-    }
+    try {
+      const probes = await Promise.allSettled(
+        capsuleUrls.map(url =>
+          net.fetch(url, { method: 'HEAD' }).then(r => r.ok ? url : Promise.reject())
+        )
+      );
+      const first = probes.find(r => r.status === 'fulfilled');
+      if (first) coverUrl = first.value;
+    } catch (_e) { /* no portrait capsule found */ }
     // coverUrl intentionally left empty if no portrait capsule exists —
     // wide banners/screenshots are kept in headerUrl/screenshots only
 
@@ -253,7 +255,7 @@ async function fetchGameMetadata(game) {
         else if (art.coverUrl) meta.sgdbCoverUrl = art.coverUrl;
         if (art.headerUrl) meta.headerUrl = art.headerUrl;
       }
-    } catch (e) {}
+    } catch (_e) { /* SGDB art fetch failed, continue without it */ }
   }
 
   if (meta) {
@@ -307,7 +309,7 @@ function applyMetadataToGame(game, meta) {
         changed = true;
       }
     }
-  } catch (e) {}
+  } catch (_e) { /* category merge failed, skip */ }
 
   // If metadata indicates this Steam entry is non-game software, mark it
   if (meta._source === 'steam' && meta.isSoftware) {
