@@ -50,6 +50,7 @@ contextBridge.exposeInMainWorld("api", {
 	xcloudStop: (gameId) => ipcRenderer.invoke("xcloud:stop", gameId),
 	xcloudGetSessions: () => ipcRenderer.invoke("xcloud:getSessions"),
 	onChiakiEvent: (cb) => ipcOn("chiaki:event", cb),
+	onChiakiInstallProgress: (cb) => ipcOn("chiaki:installProgress", cb),
 	onGamesRefresh: (cb) => ipcOn("games:refresh", cb),
 	pickExecutable: () => ipcRenderer.invoke("dialog:pickExecutable"),
 	pickImage: () => ipcRenderer.invoke("dialog:pickImage"),

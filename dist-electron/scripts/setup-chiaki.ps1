@@ -5,6 +5,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$ProgressPreference   = 'SilentlyContinue'  # prevents extreme slowdown in Invoke-WebRequest
 
 # GitHub requires TLS 1.2; Windows PowerShell defaults to TLS 1.0 on older systems
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -65,38 +66,154 @@ if (-not $asset) {
     exit 1
 }
 
-Write-Output "Downloading $($asset.name) ($([math]::Round($asset.size / 1MB, 1)) MB)..."
+$totalMB = [math]::Round($asset.size / 1MB, 1)
+Write-Output "Downloading $($asset.name) ($totalMB MB)..."
 
-$tmpZip = Join-Path $env:TEMP 'chiaki-ng-setup.zip'
-if (Test-Path $tmpZip) { Remove-Item $tmpZip -Force -ErrorAction SilentlyContinue }
+# Use explicit system temp path
+$systemTemp = [System.IO.Path]::GetTempPath()
+$tmpZip = Join-Path $systemTemp "chiaki-ng-setup-$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()).zip"
+Write-Output "Download target: $tmpZip"
+Write-Output "System temp: $systemTemp"
+
+$dlUrl = $asset.browser_download_url
+Write-Output "Download URL: $dlUrl"
+
+# Try BITS transfer first (more reliable for large files), fall back to Invoke-WebRequest
 try {
-    Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $tmpZip -Headers $headers
+    Write-Output 'Starting download with BITS...'
+    Start-BitsTransfer -Source $dlUrl -Destination $tmpZip -DisplayName 'chiaki-ng' -Description "Downloading $totalMB MB..." -ErrorAction Stop
+    Write-Output 'BITS download completed.'
 } catch {
-    Write-Host "ERROR: Download failed: $_"
+    Write-Output "BITS failed ($_), trying Invoke-WebRequest..."
+    try {
+        Invoke-WebRequest -Uri $dlUrl -OutFile $tmpZip -UseBasicParsing -ProgressAction SilentlyContinue
+        Write-Output 'IWR download completed.'
+    } catch {
+        Write-Host "ERROR: Download failed: $_"
+        exit 1
+    }
+}
+
+Write-Output "Download completed. Checking for file at: $tmpZip"
+Write-Output "File exists: $(Test-Path $tmpZip)"
+if (Test-Path $tmpZip) {
+    Write-Output "File size: $((Get-Item $tmpZip).Length) bytes"
+}
+if (-not (Test-Path $tmpZip) -or (Get-Item $tmpZip).Length -lt 1MB) {
+    Write-Host 'ERROR: Downloaded file is missing or too small.'
     exit 1
 }
 
 Write-Output 'Extracting...'
+Write-Output "Zip file: $tmpZip (exists: $(Test-Path $tmpZip), size: $((Get-Item $tmpZip).Length) bytes)"
+Write-Output "Install dir: $installDir"
 
 if (Test-Path $installDir) { Remove-Item $installDir -Recurse -Force }
 New-Item -ItemType Directory -Path $installDir -Force | Out-Null
+Write-Output "Install dir created: $(Test-Path $installDir)"
 
+$extractedOk = $false
+$extractionError = $null
 try {
-    Expand-Archive -Path $tmpZip -DestinationPath $installDir -Force
+    # Use .NET for faster extraction with per-file progress
+    Write-Output 'Using .NET extraction...'
+    Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction Stop
+    $zip = [System.IO.Compression.ZipFile]::OpenRead($tmpZip)
+    $entries = $zip.Entries | Where-Object { -not $_.FullName.EndsWith('/') }
+    $total = $entries.Count
+    Write-Output "Found $total files to extract..."
+    $current = 0
+    foreach ($entry in $entries) {
+        $current++
+        $dest = Join-Path $installDir $entry.FullName
+        $dir = Split-Path -Parent $dest
+        if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+        [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $dest, $true)
+        if ($current % 10 -eq 0 -or $current -eq $total) {
+            Write-Output "Extracting file $current / $total..."
+        }
+    }
+    $zip.Dispose()
+    $extractedOk = $true
+    Write-Output ".NET extraction completed."
 } catch {
-    Write-Host "ERROR: Failed to extract archive: $_"
+    $extractionError = $_
+    Write-Output ".NET extraction failed: $extractionError"
+}
+
+if (-not $extractedOk) {
+    try {
+        Write-Output 'Extracting with Expand-Archive...'
+        Expand-Archive -Path $tmpZip -DestinationPath $installDir -Force
+        $extractedOk = $true
+        Write-Output 'Expand-Archive completed.'
+    } catch {
+        Write-Host "ERROR: Failed to extract archive: $_"
+        Remove-Item $tmpZip -Force -ErrorAction SilentlyContinue
+        exit 1
+    }
+}
+
+if (-not $extractedOk) {
+    Write-Host "ERROR: Both extraction methods failed. Last error: $extractionError"
     Remove-Item $tmpZip -Force -ErrorAction SilentlyContinue
     exit 1
 }
 Remove-Item $tmpZip -Force -ErrorAction SilentlyContinue
 
-# Flatten one level if everything extracted into a single subdirectory
-$entries = Get-ChildItem -Path $installDir
-if ($entries.Count -eq 1 -and $entries[0].PSIsContainer) {
-    $sub = $entries[0].FullName
-    Get-ChildItem -Path $sub | Move-Item -Destination $installDir
-    Remove-Item $sub -Recurse -Force
+# Count what we actually extracted
+$fileCount = (Get-ChildItem -Path $installDir -Recurse -File).Count
+$dirCount = (Get-ChildItem -Path $installDir -Recurse -Directory).Count
+Write-Output "Extraction complete: $fileCount files, $dirCount directories"
+
+# Debug: List what we actually have
+Write-Output "Install dir contents after extraction:"
+Get-ChildItem -Path $installDir -Recurse | ForEach-Object { Write-Output "  $($_.FullName)" }
+
+# Find chiaki.exe anywhere in the extraction and surface all files to top level
+Write-Output 'Surfacing files to top level...'
+$exeFile = Get-ChildItem -Path $installDir -Recurse -Filter 'chiaki.exe' | Select-Object -First 1
+if (-not $exeFile) {
+    $exeFile = Get-ChildItem -Path $installDir -Recurse -Filter 'chiaki-ng.exe' | Select-Object -First 1
 }
+if (-not $exeFile) {
+    Write-Host 'ERROR: chiaki.exe not found anywhere in extraction. Contents:'
+    Get-ChildItem -Path $installDir -Recurse | ForEach-Object { Write-Host "  $($_.FullName)" }
+    exit 1
+}
+
+# Move all files from the directory containing chiaki.exe to the top level
+$sourceDir = $exeFile.DirectoryName
+if ($sourceDir -ne $installDir) {
+    Write-Output "Moving files from $sourceDir to top level..."
+    Get-ChildItem -Path $sourceDir -Recurse | ForEach-Object {
+        if (-not $_.PSIsContainer) {
+            $relative = $_.FullName.Substring($sourceDir.Length + 1)
+            $dest = Join-Path $installDir $relative
+            $destDir = Split-Path -Parent $dest
+            if (-not (Test-Path $destDir)) { New-Item -ItemType Directory -Path $destDir -Force | Out-Null }
+            if ($_.FullName -ne $dest) { Move-Item -Path $_.FullName -Destination $dest -Force }
+        }
+    }
+    # Remove now-empty subdirectories
+    Get-ChildItem -Path $installDir -Directory | ForEach-Object {
+        if ($_.FullName -ne $sourceDir -and $_.FullName -ne $installDir) {
+            Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+    if ($sourceDir -ne $installDir) {
+        Remove-Item $sourceDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+# Verify at top level
+$exeFound = if (Test-Path (Join-Path $installDir 'chiaki.exe')) { 'chiaki.exe' } elseif (Test-Path (Join-Path $installDir 'chiaki-ng.exe')) { 'chiaki-ng.exe' } else { $null }
+if (-not $exeFound) {
+    Write-Host 'ERROR: chiaki.exe still not at top level after surfacing. Contents:'
+    Get-ChildItem -Path $installDir -Recurse | ForEach-Object { Write-Host "  $($_.FullName)" }
+    exit 1
+}
+Write-Output "Found executable: $exeFound"
 
 # Write version marker
 Set-Content -Path $versionFile -Value $release.tag_name -Encoding UTF8

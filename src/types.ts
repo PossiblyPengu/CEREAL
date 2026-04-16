@@ -221,6 +221,7 @@ export interface ElectronAPI {
 
   // Stream events (PS + Xbox)
   onChiakiEvent?(cb: (evt: ChiakiSession) => void): () => void;
+  onChiakiInstallProgress?(cb: (data: { phase: string; message: string; percent: number }) => void): () => void;
 
   // Game list refresh
   onGamesRefresh?(cb: (games: Game[]) => void): () => void;

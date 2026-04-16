@@ -1565,19 +1565,26 @@ var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	}
 	function getBundledChiakiExe() {
 		const dir = getChiakiDir();
+		log.info("chiaki", "[getBundledChiakiExe] dir: " + dir);
 		if (!dir) return null;
 		const candidates = ["chiaki.exe", "chiaki-ng.exe"];
 		for (const name of candidates) {
 			const p = path$7.join(dir, name);
-			if (fs$6.existsSync(p)) return p;
+			const exists = fs$6.existsSync(p);
+			log.info("chiaki", "[getBundledChiakiExe] checking: " + p + " exists: " + exists);
+			if (exists) return p;
 		}
 		try {
 			const entries = fs$6.readdirSync(dir, { withFileTypes: true });
+			log.info("chiaki", "[getBundledChiakiExe] subdirectories: " + entries.filter((e) => e.isDirectory()).map((e) => e.name).join(", "));
 			for (const entry of entries) if (entry.isDirectory()) for (const name of candidates) {
 				const p = path$7.join(dir, entry.name, name);
-				if (fs$6.existsSync(p)) return p;
+				const exists = fs$6.existsSync(p);
+				log.info("chiaki", "[getBundledChiakiExe] checking subdir: " + p + " exists: " + exists);
+				if (exists) return p;
 			}
 		} catch (_e) {}
+		log.info("chiaki", "[getBundledChiakiExe] no exe found");
 		return null;
 	}
 	function getBundledChiakiVersion() {
@@ -1769,7 +1776,10 @@ var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 				String(session.process.pid),
 				"/t",
 				"/f"
-			], { stdio: "ignore" });
+			], {
+				stdio: "ignore",
+				windowsHide: true
+			}).on("error", () => {});
 			else session.process.kill("SIGTERM");
 			setTimeout(() => {
 				try {
@@ -2090,8 +2100,16 @@ var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 			return { success: true };
 		});
 		ipcMain$8.handle("chiaki:status", () => {
+			const dir = getChiakiDir();
 			const bundledExe = getBundledChiakiExe();
 			const bundledVersion = getBundledChiakiVersion();
+			log.info("chiaki", "[chiaki:status] dir: " + dir + " exe: " + bundledExe + " version: " + bundledVersion);
+			if (dir) try {
+				const entries = fs$6.readdirSync(dir);
+				log.info("chiaki", "[chiaki:status] entries in dir: " + entries.join(", "));
+			} catch (e) {
+				log.info("chiaki", "[chiaki:status] error reading dir: " + e.message);
+			}
 			if (bundledExe) return {
 				status: "bundled",
 				executablePath: bundledExe,
@@ -2160,15 +2178,52 @@ var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 						} catch (_e) {}
 						finish({ error: "Setup timed out after 5 minutes" });
 					}, SETUP_TIMEOUT);
-					child.stdout.on("data", (d) => output += d.toString());
+					child.stdout.on("data", (d) => {
+						const text = d.toString();
+						output += text;
+						for (const raw of text.split("\n")) {
+							const line = raw.trim();
+							if (!line) continue;
+							let phase = "working", percent = 15;
+							if (line.startsWith("Fetching")) {
+								phase = "fetching";
+								percent = 10;
+							} else if (line.startsWith("Downloading")) {
+								phase = "downloading";
+								const m = line.match(/(\d+\.?\d*)\s*\/\s*(\d+\.?\d*)\s*MB/);
+								percent = m ? Math.round(30 + parseFloat(m[1]) / parseFloat(m[2]) * 48) : 30;
+							} else if (line.startsWith("Using .NET extraction") || line.startsWith("Found ") || line.startsWith("Extracting file")) {
+								phase = "extracting";
+								const m = line.match(/(\d+)\s*\/\s*(\d+)/);
+								percent = m ? Math.round(80 + parseInt(m[1]) / parseInt(m[2]) * 19) : 85;
+							} else if (line.startsWith("Flattening")) {
+								phase = "extracting";
+								percent = 98;
+							} else if (line.startsWith("Found executable") || line.startsWith("chiaki-ng ")) {
+								phase = "done";
+								percent = 100;
+							}
+							ctx.sendToRenderer("chiaki:installProgress", {
+								phase,
+								message: line,
+								percent
+							});
+						}
+					});
 					child.stderr.on("data", (d) => output += d.toString());
 					child.on("close", (code) => {
-						if (code === 0) finish({
-							ok: true,
-							version: getBundledChiakiVersion(),
-							output
-						});
-						else finish({
+						log.info("chiaki", "[chiaki:update] child closed with code: " + code);
+						if (code === 0) {
+							const newVersion = getBundledChiakiVersion();
+							const newExe = getBundledChiakiExe();
+							const newDir = getChiakiDir();
+							log.info("chiaki", "[chiaki:update] success - dir: " + newDir + " exe: " + newExe + " version: " + newVersion);
+							finish({
+								ok: true,
+								version: newVersion,
+								output
+							});
+						} else finish({
 							error: `Setup exited with code ${code}`,
 							output
 						});
@@ -2603,7 +2658,7 @@ var require_xcloud = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	function updateAllXcloudBounds() {
 		for (const sess of xcloudSessions.values()) updateXcloudBounds(sess);
 	}
-	function startXcloudSession(gameId, url) {
+	function startXcloudSession(gameId, url, title) {
 		stopXcloudSession(gameId);
 		const view = new WebContentsView({ webPreferences: {
 			session: session$1.fromPartition("persist:xcloud"),
@@ -2640,6 +2695,11 @@ var require_xcloud = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 			state: "connecting",
 			platform: "xbox"
 		});
+		ctx.sendToRenderer("tabs:opened", {
+			id: gameId,
+			title: title || "Xbox Cloud Gaming",
+			platform: "xbox"
+		});
 		return sess;
 	}
 	function stopXcloudSession(gameId) {
@@ -2656,6 +2716,7 @@ var require_xcloud = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 				reason: "stopped",
 				platform: "xbox"
 			});
+			ctx.sendToRenderer("tabs:closed", { id: gameId });
 			if (sess.view?.webContents && !sess.view.webContents.isDestroyed()) try {
 				sess.view.webContents.loadURL("https://www.xbox.com/play");
 			} catch (_e) {}
@@ -3947,9 +4008,9 @@ var require_media = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 				};
 			}
 		});
-		ipcMain$1.handle("xcloud:start", (_event, { gameId, url }) => {
+		ipcMain$1.handle("xcloud:start", (_event, { gameId, url, title }) => {
 			try {
-				startXcloudSession(gameId, url);
+				startXcloudSession(gameId, url, title);
 				return { success: true };
 			} catch (e) {
 				return {

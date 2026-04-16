@@ -30,6 +30,7 @@ function getChiakiDir() {
 
 function getBundledChiakiExe() {
   const dir = getChiakiDir();
+  log.info('chiaki', '[getBundledChiakiExe] dir: ' + dir);
   if (!dir) return null;
 
   const candidates = ['chiaki.exe', 'chiaki-ng.exe'];
@@ -37,22 +38,28 @@ function getBundledChiakiExe() {
   // Top level
   for (const name of candidates) {
     const p = path.join(dir, name);
-    if (fs.existsSync(p)) return p;
+    const exists = fs.existsSync(p);
+    log.info('chiaki', '[getBundledChiakiExe] checking: ' + p + ' exists: ' + exists);
+    if (exists) return p;
   }
 
   // One subdirectory deep (zip may extract into a folder)
   try {
     const entries = fs.readdirSync(dir, { withFileTypes: true });
+    log.info('chiaki', '[getBundledChiakiExe] subdirectories: ' + entries.filter(e => e.isDirectory()).map(e => e.name).join(', '));
     for (const entry of entries) {
       if (entry.isDirectory()) {
         for (const name of candidates) {
           const p = path.join(dir, entry.name, name);
-          if (fs.existsSync(p)) return p;
+          const exists = fs.existsSync(p);
+          log.info('chiaki', '[getBundledChiakiExe] checking subdir: ' + p + ' exists: ' + exists);
+          if (exists) return p;
         }
       }
     }
   } catch (_e) { /* ignore */ }
 
+  log.info('chiaki', '[getBundledChiakiExe] no exe found');
   return null;
 }
 
@@ -290,7 +297,9 @@ function stopChiakiSession(gameId) {
     try {
       if (process.platform === 'win32') {
         // SIGTERM doesn't work for Qt GUI apps on Windows; use taskkill
-        spawn('taskkill', ['/pid', String(session.process.pid), '/t', '/f'], { stdio: 'ignore' });
+        // windowsHide prevents taskkill from writing "process not found" directly to the parent console
+        const tk = spawn('taskkill', ['/pid', String(session.process.pid), '/t', '/f'], { stdio: 'ignore', windowsHide: true });
+        tk.on('error', () => { /* process already gone or taskkill unavailable */ });
       } else {
         session.process.kill('SIGTERM');
       }
@@ -637,8 +646,16 @@ function registerChiakiIpcHandlers() {
   });
 
   ipcMain.handle('chiaki:status', () => {
+    const dir = getChiakiDir();
     const bundledExe = getBundledChiakiExe();
     const bundledVersion = getBundledChiakiVersion();
+    log.info('chiaki', '[chiaki:status] dir: ' + dir + ' exe: ' + bundledExe + ' version: ' + bundledVersion);
+    if (dir) {
+      try {
+        const entries = fs.readdirSync(dir);
+        log.info('chiaki', '[chiaki:status] entries in dir: ' + entries.join(', '));
+      } catch (e) { log.info('chiaki', '[chiaki:status] error reading dir: ' + e.message); }
+    }
 
     if (bundledExe) {
       return {
@@ -691,11 +708,37 @@ function registerChiakiIpcHandlers() {
           try { child.kill(); } catch (_e) { /* best-effort */ }
           finish({ error: 'Setup timed out after 5 minutes' });
         }, SETUP_TIMEOUT);
-        child.stdout.on('data', d => output += d.toString());
+        child.stdout.on('data', d => {
+          const text = d.toString();
+          output += text;
+          for (const raw of text.split('\n')) {
+            const line = raw.trim();
+            if (!line) continue;
+            let phase = 'working', percent = 15;
+            if (line.startsWith('Fetching'))    { phase = 'fetching';    percent = 10; }
+            else if (line.startsWith('Downloading')) {
+              phase = 'downloading';
+              const m = line.match(/(\d+\.?\d*)\s*\/\s*(\d+\.?\d*)\s*MB/);
+              percent = m ? Math.round(30 + (parseFloat(m[1]) / parseFloat(m[2])) * 48) : 30;
+            }
+            else if (line.startsWith('Using .NET extraction') || line.startsWith('Found ') || line.startsWith('Extracting file')) {
+              phase = 'extracting';
+              const m = line.match(/(\d+)\s*\/\s*(\d+)/);
+              percent = m ? Math.round(80 + (parseInt(m[1]) / parseInt(m[2])) * 19) : 85;
+            }
+            else if (line.startsWith('Flattening')) { phase = 'extracting'; percent = 98; }
+            else if (line.startsWith('Found executable') || line.startsWith('chiaki-ng ')) { phase = 'done'; percent = 100; }
+            ctx.sendToRenderer('chiaki:installProgress', { phase, message: line, percent });
+          }
+        });
         child.stderr.on('data', d => output += d.toString());
         child.on('close', (code) => {
+          log.info('chiaki', '[chiaki:update] child closed with code: ' + code);
           if (code === 0) {
             const newVersion = getBundledChiakiVersion();
+            const newExe = getBundledChiakiExe();
+            const newDir = getChiakiDir();
+            log.info('chiaki', '[chiaki:update] success - dir: ' + newDir + ' exe: ' + newExe + ' version: ' + newVersion);
             finish({ ok: true, version: newVersion, output });
           } else {
             finish({ error: `Setup exited with code ${code}`, output });

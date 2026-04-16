@@ -12,23 +12,40 @@ interface StartupWizardProps {
   onSettingsChange: (s: Partial<Settings>) => void;
 }
 
+interface AccountInfo { connected?: boolean; displayName?: string; profileImageUrl?: string; }
+type ChiakiStatusInfo = { status?: string; version?: string };
+interface WizardDiscoveredConsole { name?: string; host: string; }
+interface SystemSpecs { ramGb?: number; cpuCount?: number; cpuModel?: string; gpuName?: string; }
+interface ImportResult { error?: string; imported?: Game[] | number; }
+
+const PHASE_LABELS: Record<string, string> = {
+  starting:    'Starting…',
+  fetching:    'Fetching release info…',
+  downloading: 'Downloading…',
+  extracting:  'Extracting…',
+  done:        'Done',
+  working:     'Working…',
+};
+
 export function StartupWizard({ show, onClose, flash, setGames, settings, onSettingsChange }: StartupWizardProps) {
   const TOTAL_STEPS = 7;
   const [step, setStep] = useState(1);
-  const [accounts, setAccounts] = useState<Record<string, any>>({});
+  const [accounts, setAccounts] = useState<Record<string, AccountInfo>>({});
   const [importStatus, setImportStatus] = useState<Record<string, string>>({});
   const [importErrors, setImportErrors] = useState<Record<string, string>>({});
   const [importCounts, setImportCounts] = useState<Record<string, number>>({});
-  const [chiakiStatus, setChiakiStatus] = useState<any>(null);
+  const [chiakiStatus, setChiakiStatus] = useState<ChiakiStatusInfo | null>(null);
   const [chiakiDownloading, setChiakiDownloading] = useState(false);
-  const [consoles, setConsoles] = useState<any[]>([]);
+  const [installProgress, setInstallProgress] = useState<{ phase: string; message: string; percent: number } | null>(null);
+
+  const [consoles, setConsoles] = useState<WizardDiscoveredConsole[]>([]);
   const [discovering, setDiscovering] = useState(false);
   const [registerHost, setRegisterHost] = useState('');
   const [registerPsnId, setRegisterPsnId] = useState('');
   const [registerPin, setRegisterPin] = useState('');
   const [registering, setRegistering] = useState(false);
   const [manualHost, setManualHost] = useState('');
-  const [specs, setSpecs] = useState<any>(null);
+  const [specs, setSpecs] = useState<SystemSpecs | null>(null);
   const [steamApiKey, setSteamApiKey] = useState('');
   const [steamApiKeySaving, setSteamApiKeySaving] = useState(false);
 
@@ -46,43 +63,64 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
   const [wAutoSync, setWAutoSync] = useState(!!settings.autoSyncPlaytime);
 
   const refreshAccounts = async () => {
-    if ((window.api as any)?.getAccounts) {
-      const a = await (window.api as any).getAccounts();
-      setAccounts(a || {});
-    }
+    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+    const a = await window.api?.getAccounts?.() as Record<string, AccountInfo> | undefined;
+    setAccounts(a || {});
   };
 
   const refreshChiaki = async () => {
-    if ((window.api as any)?.getChiakiStatus) {
-      const s = await (window.api as any).getChiakiStatus();
-      setChiakiStatus(s);
-    }
+    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+    const s = await window.api?.getChiakiStatus?.() as ChiakiStatusInfo | undefined;
+    setChiakiStatus(s ?? null);
   };
 
   useEffect(() => {
-    if (show) {
-      refreshAccounts();
-      refreshChiaki();
-      setStep(1);
-      setManualHost('');
-      setWTheme(settings.theme || 'midnight');
-      setWAccent(settings.accentColor || '');
-      setWView(settings.defaultView || 'orbit');
-      setWDensity(settings.starDensity || 'normal');
-      setWScale(settings.uiScale || '1');
-      setWAnimations(settings.showAnimations !== false);
-      setWNavPos(settings.toolbarPosition || 'top');
-      setWMinimize(!!settings.minimizeOnLaunch);
-      setWCloseTray(!!settings.closeToTray);
-      setWDiscord(!!settings.discordPresence);
-      setWAutoSync(!!settings.autoSyncPlaytime);
-      (window.api as any)?.getSystemSpecs?.().then((s: any) => setSpecs(s)).catch(() => {});
-    }
-  }, [show]);
+    if (!show) return;
+    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+    void window.api?.getAccounts?.().then(a => setAccounts((a as Record<string, AccountInfo>) || {})).catch(() => {});
+    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+    void window.api?.getChiakiStatus?.().then(s => setChiakiStatus((s as ChiakiStatusInfo) ?? null)).catch(() => {});
+    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+    void window.api?.getSystemSpecs?.().then(s => setSpecs((s as SystemSpecs) ?? null)).catch(() => {});
+    setStep(1);
+    setManualHost('');
+    setWTheme(settings.theme || 'midnight');
+    setWAccent(settings.accentColor || '');
+    setWView(settings.defaultView || 'orbit');
+    setWDensity(settings.starDensity || 'normal');
+    setWScale(settings.uiScale || '1');
+    setWAnimations(settings.showAnimations !== false);
+    setWNavPos(settings.toolbarPosition || 'top');
+    setWMinimize(!!settings.minimizeOnLaunch);
+    setWCloseTray(!!settings.closeToTray);
+    setWDiscord(!!settings.discordPresence);
+    setWAutoSync(!!settings.autoSyncPlaytime);
+  }, [show]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const discoverConsoles = async () => {
+    setDiscovering(true);
+    try {
+      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+      const r = await window.api?.chiakiDiscoverConsoles?.() as { consoles?: WizardDiscoveredConsole[] } | undefined;
+      const found = r?.consoles || [];
+      if (found.length) setConsoles(found);
+      else flash('No consoles found on network');
+    } catch { flash('Discovery failed'); }
+    setDiscovering(false);
+  };
 
   useEffect(() => {
     if (step === 6 && chiakiStatus && chiakiStatus.status !== 'missing' && consoles.length === 0 && !discovering) {
-      discoverConsoles();
+      setDiscovering(true);
+      void window.api?.chiakiDiscoverConsoles?.()
+        .then(r => {
+          // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+          const found = (r as { consoles?: WizardDiscoveredConsole[] })?.consoles || [];
+          if (found.length) setConsoles(found);
+          else flash('No consoles found on network');
+        })
+        .catch(() => flash('Discovery failed'))
+        .finally(() => setDiscovering(false));
     }
   }, [step, chiakiStatus]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -103,32 +141,33 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
       ...extra,
     };
     onSettingsChange(patch);
-    if ((window.api as any)?.saveSettings) await (window.api as any).saveSettings(patch);
+    if (window.api?.saveSettings) await window.api.saveSettings(patch);
   };
 
   const doImport = async (which: string, apiKey?: string) => {
     setImportStatus(p => ({ ...p, [which]: 'importing' }));
     try {
-      if (apiKey && (window.api as any)?.saveApiKey) {
+      if (apiKey && window.api?.saveApiKey) {
         setSteamApiKeySaving(true);
-        await (window.api as any).saveApiKey(which, apiKey);
+        await window.api.saveApiKey(which, apiKey);
         setSteamApiKeySaving(false);
       }
-      const result = await (window.api as any).platformImport?.(which);
+      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+      const result = await window.api?.platformImport?.(which) as ImportResult | undefined;
       if (result?.error) {
+        const err = result.error;
         setImportStatus(p => ({ ...p, [which]: 'error' }));
-        setImportErrors(p => ({ ...p, [which]: result.error }));
-        flash(result.error);
+        setImportErrors(p => ({ ...p, [which]: err }));
+        flash(err);
         return;
       }
-      const count = Array.isArray(result?.imported) ? result.imported.length : (typeof result?.imported === 'number' ? result.imported : 0);
+      const imported = result?.imported;
+      const count = Array.isArray(imported) ? imported.length : (typeof imported === 'number' ? imported : 0);
       setImportCounts(p => ({ ...p, [which]: count }));
       setImportStatus(p => ({ ...p, [which]: 'done' }));
       flash(count > 0 ? count + ' games imported from ' + which : which + ' library up to date');
-      if ((window.api as any)?.getGames) {
-        const g = await (window.api as any).getGames();
-        if (typeof setGames === 'function') setGames(g || []);
-      }
+      const g = await window.api?.getGames?.();
+      if (typeof setGames === 'function') setGames(g || []);
     } catch (e) {
       console.error('Import error', e);
       setImportStatus(p => ({ ...p, [which]: 'error' }));
@@ -138,13 +177,15 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
   const doAuth = async (which: string) => {
     try {
       if (!window.api) return;
-      const authResult = await (window.api as any).platformAuth?.(which);
+      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+      const authResult = await window.api?.platformAuth?.(which) as { error?: string } | undefined;
       if (authResult?.error) {
         if (authResult.error !== 'cancelled') flash(which + ' sign-in failed: ' + authResult.error);
         return;
       }
       await refreshAccounts();
-      const fresh = await (window.api as any).getAccounts?.();
+      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+      const fresh = await window.api?.getAccounts?.() as Record<string, AccountInfo> | undefined;
       if (fresh && fresh[which] && fresh[which].connected) {
         flash(which + ' connected — importing library...');
         await doImport(which);
@@ -154,37 +195,32 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
 
   const downloadChiaki = async () => {
     setChiakiDownloading(true);
+    setInstallProgress({ phase: 'starting', message: 'Starting setup…', percent: 5 });
+    const unsubProgress = window.api?.onChiakiInstallProgress?.((data) => setInstallProgress(data));
     try {
-      const r = await (window.api as any)?.chiakiUpdate?.();
+      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+      const r = await window.api?.chiakiUpdate?.() as { ok?: boolean; version?: string; error?: string; output?: string } | undefined;
       if (r?.ok) { flash('chiaki-ng downloaded (v' + (r.version || '?') + ')'); await refreshChiaki(); }
       else {
         const lines = r?.output ? String(r.output).split('\n') : [];
         const errLine = lines.find(l => l.trimStart().startsWith('ERROR:')) || lines.filter(l => l.trim()).pop() || '';
         flash((r?.error || 'Download failed') + (errLine ? ': ' + errLine.replace(/^ERROR:\s*/i, '').trim() : ''));
       }
-    } catch (_) { flash('Download failed'); }
+    } catch { flash('Download failed'); }
+    unsubProgress?.();
     setChiakiDownloading(false);
+    setInstallProgress(null);
   };
 
-  const discoverConsoles = async () => {
-    setDiscovering(true);
-    try {
-      const r = await (window.api as any)?.chiakiDiscoverConsoles?.();
-      const found = r?.consoles || [];
-      if (found.length) setConsoles(found);
-      else flash('No consoles found on network');
-    } catch (_) { flash('Discovery failed'); }
-    setDiscovering(false);
-  };
 
   const registerConsole = async (host: string) => {
     if (!registerPsnId || !registerPin) { flash('PSN Account ID and PIN required'); return; }
     setRegistering(true);
     try {
-      const r = await (window.api as any)?.chiakiRegisterConsole?.({ host, psnAccountId: registerPsnId, pin: registerPin });
+      const r = await window.api?.chiakiRegisterConsole?.({ host, psnAccountId: registerPsnId, pin: registerPin });
       if (r?.success) { flash('Console registered'); setRegisterPsnId(''); setRegisterPin(''); }
       else flash(r?.error || 'Registration failed');
-    } catch (_) { flash('Registration failed'); }
+    } catch { flash('Registration failed'); }
     setRegistering(false);
   };
 
@@ -297,7 +333,7 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
 
   // ── Step 3: Performance & Layout ───────────────────────────────────────────
   const renderPerformance = () => {
-    const getRecommendation = (sp: any) => {
+    const getRecommendation = (sp: SystemSpecs) => {
       const ramGb = sp.ramGb || 0;
       const cpuCount = sp.cpuCount || 0;
       const starDensity = (ramGb >= 24 && cpuCount >= 8) ? 'high' : (ramGb <= 8 || cpuCount <= 4) ? 'low' : 'normal';
@@ -331,7 +367,7 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
           <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, fontSize: 11, color: 'var(--text-4)', background: 'var(--glass)', border: '1px solid var(--glass-border)', lineHeight: 1.5 }}>
             💡 Recommended: <strong style={{ color: 'var(--text-3)' }}>{rec.starDensity}</strong> stars, <strong style={{ color: 'var(--text-3)' }}>{{  '0.9': '90%', '1': '100%', '1.1': '110%', '1.25': '125%' }[rec.uiScale]}</strong> scale
             <button className="btn-flat" style={{ marginLeft: 8, padding: '2px 8px', fontSize: 10, verticalAlign: 'middle' }}
-              onClick={() => { setWDensity(rec.starDensity as any); setWScale(rec.uiScale); applyUiScale(rec.uiScale); }}>Apply</button>
+              onClick={() => { setWDensity(rec.starDensity); setWScale(rec.uiScale); applyUiScale(rec.uiScale); }}>Apply</button>
           </div>
         )}
 
@@ -422,7 +458,7 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
         </div>
         {showApiKeyFallback && (
           <div style={{ borderTop: '1px solid var(--glass-border)', paddingTop: 8 }}>
-            <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 6 }}>Profile private? Enter a <a href="https://steamcommunity.com/dev/apikey" style={{ color: 'var(--accent)', textDecoration: 'none', cursor: 'pointer' }} onClick={e => { e.preventDefault(); (window.api as any)?.openExternal?.('https://steamcommunity.com/dev/apikey'); }}>Steam Web API Key</a> to import anyway:</div>
+            <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 6 }}>Profile private? Enter a <a href="https://steamcommunity.com/dev/apikey" style={{ color: 'var(--accent)', textDecoration: 'none', cursor: 'pointer' }} onClick={e => { e.preventDefault(); window.api?.openExternal?.('https://steamcommunity.com/dev/apikey'); }}>Steam Web API Key</a> to import anyway:</div>
             <div style={{ display: 'flex', gap: 6 }}>
               <input
                 type="password"
@@ -462,18 +498,14 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
             <div className="acct-status" style={{ fontSize: 11 }}>API key for game cover art lookup</div>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
-            <button className="btn-flat" onClick={() => { if ((window.api as any)?.steamGridDbLogin) (window.api as any).steamGridDbLogin(); }}>Get Key</button>
+            <button className="btn-flat" onClick={() => void window.api?.steamGridDbLogin?.()}>Get Key</button>
             <button className="btn-flat" onClick={async () => {
               try {
-                if (!(window.api as any)?.readClipboard) return flash('Clipboard not available');
-                const txt = await (window.api as any).readClipboard();
+                const txt = await window.api?.readClipboard?.();
                 if (!txt || txt.trim().length < 10) { flash('No API key on clipboard'); return; }
-                if ((window.api as any)?.saveApiKey) {
-                  const r = await (window.api as any).saveApiKey('steamgriddb', txt.trim());
-                  if (r?.ok) flash('SteamGridDB API key saved');
-                  else flash('Could not save key');
-                }
-              } catch (_) { flash('Could not paste API key'); }
+                await window.api?.saveApiKey?.('steamgriddb', txt.trim());
+                flash('SteamGridDB API key saved');
+              } catch { flash('Could not paste API key'); }
             }}>Paste Key</button>
           </div>
         </div>
@@ -556,14 +588,37 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
           <div style={{ flex: 1 }}>
             <div className="acct-title">chiaki-ng</div>
             <div className="acct-status">
-              {chiakiDownloading ? <span style={{ color: 'var(--accent)' }}>Downloading...</span>
+              {chiakiDownloading
+                ? <span style={{ color: 'var(--accent)' }}>{PHASE_LABELS[installProgress?.phase ?? 'starting'] ?? 'Working…'}</span>
                 : chiakiReady ? <span className="acct-connected-badge">✓ Installed{chiakiStatus.version ? ' (v' + chiakiStatus.version + ')' : ''}</span>
                 : 'Not installed'}
             </div>
+            {chiakiDownloading && installProgress && (
+              <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 260 }}>
+                {installProgress.message}
+              </div>
+            )}
           </div>
           {!chiakiReady && !chiakiDownloading && <button className="btn-accent" onClick={downloadChiaki}>Download</button>}
-          {chiakiDownloading && <div style={{ color: 'var(--text-3)', fontSize: 11 }}>This may take a minute...</div>}
         </div>
+        {chiakiDownloading && (
+          <div style={{ marginTop: 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--text-3)', marginBottom: 4 }}>
+              <span>{installProgress?.percent ?? 5}%</span>
+              <span>This may take a minute…</span>
+            </div>
+            <div style={{ height: 4, borderRadius: 2, background: 'var(--glass2)', overflow: 'hidden' }}>
+              <div style={{
+                height: '100%',
+                borderRadius: 2,
+                background: installProgress?.phase === 'downloading' ? 'linear-gradient(90deg, var(--accent), #a78bfa)' : 'var(--accent)',
+                width: `${installProgress?.percent ?? 5}%`,
+                transition: 'width 0.5s ease',
+                animation: installProgress?.phase === 'downloading' ? 'progress-pulse 1.5s ease-in-out infinite' : 'none',
+              }} />
+            </div>
+          </div>
+        )}
       </div>
 
       {chiakiReady && (

@@ -31,6 +31,13 @@ interface ChiakiStatus {
   installed?: boolean;
 }
 
+interface RegResult { success: boolean; error?: string; registKey?: string; morning?: string; }
+interface StreamResult { success?: boolean; error?: string; }
+interface SessionWithStats extends ChiakiSession {
+  quality?: { bitrate?: number; fpsActual?: number; latencyMs?: number; packetLoss?: number };
+  streamInfo?: { resolution?: string; fps?: number };
+}
+
 interface DiscoveredConsole {
   name?: string;
   host: string;
@@ -40,7 +47,7 @@ interface DiscoveredConsole {
   runningTitle?: string;
 }
 
-export function ChiakiPanel({ show, onClose, flash, games: _games, setGames: _setGames, chiakiSessions }: ChiakiPanelProps) {
+export function ChiakiPanel({ show, onClose, flash, chiakiSessions }: ChiakiPanelProps) {
   const [chiakiStatus, setChiakiStatus] = useState<ChiakiStatus | null>(null);
   const [chiakiConfig, setChiakiConfig] = useState<ChiakiConfig>({ executablePath: '', consoles: [] });
   const [newConsole, setNewConsole] = useState<ChiakiConsole>({ nickname: '', host: '', profile: '' });
@@ -50,24 +57,65 @@ export function ChiakiPanel({ show, onClose, flash, games: _games, setGames: _se
   const [discovered, setDiscovered] = useState<DiscoveredConsole[]>([]);
   const [registering, setRegistering] = useState<string | null>(null);
   const [regForm, setRegForm] = useState({ host: '', psnAccountId: '', pin: '' });
-  const [regResult, setRegResult] = useState<any>(null);
+  const [regResult, setRegResult] = useState<RegResult | null>(null);
+  const [downloading, setDownloading] = useState(false);
+  const [installProgress, setInstallProgress] = useState<{ phase: string; message: string; percent: number } | null>(null);
+
+  const PHASE_LABELS: Record<string, string> = {
+    starting:    'Starting…',
+    fetching:    'Fetching release info…',
+    downloading: 'Downloading…',
+    extracting:  'Extracting…',
+    done:        'Done',
+    working:     'Working…',
+  };
 
   useEffect(() => {
     if (!show) return;
     (async () => {
       if (window.api) {
-        const st = await (window.api as any).getChiakiStatus?.();
-        const cfg = await (window.api as any).getChiakiConfig?.();
-        setChiakiStatus(st);
-        setChiakiConfig(cfg || { executablePath: '', consoles: [] });
+        const st = await window.api?.getChiakiStatus?.() as ChiakiStatus | undefined;
+        setChiakiStatus(st ?? null);
+        const cfg = await window.api?.getChiakiConfig?.() as ChiakiConfig | undefined;
+        setChiakiConfig(cfg ?? { executablePath: '', consoles: [] });
       }
     })();
   }, [show]);
 
+  const downloadChiaki = async () => {
+    setDownloading(true);
+    setInstallProgress({ phase: 'starting', message: 'Starting setup…', percent: 5 });
+    const unsub = window.api?.onChiakiInstallProgress?.((d) => setInstallProgress(d));
+    try {
+      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+      const r = await window.api?.chiakiUpdate?.() as { ok?: boolean; version?: string; error?: string; output?: string } | undefined;
+      // eslint-disable-next-line no-console
+      console.log('[downloadChiaki] result:', r);
+      flash('[DEBUG] Install result: ok=' + r?.ok + ' version=' + (r?.version || 'null') + ' error=' + (r?.error || 'null'));
+      if (r?.ok) {
+        flash('chiaki-ng installed (v' + (r.version || '?') + ')');
+        // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+        const st = await window.api?.getChiakiStatus?.() as ChiakiStatus | undefined;
+        // eslint-disable-next-line no-console
+        console.log('[downloadChiaki] status after install:', st);
+        setChiakiStatus(st ?? null);
+      } else {
+        // eslint-disable-next-line no-console
+        console.log('[downloadChiaki] failed, output:', r?.output);
+        const lines: string[] = r?.output ? String(r.output).split('\n') : [];
+        const errLine = lines.find((l: string) => l.trimStart().startsWith('ERROR:')) || lines.filter((l: string) => l.trim()).pop() || '';
+        flash((r?.error || 'Download failed') + (errLine ? ': ' + errLine.replace(/^ERROR:\s*/i, '').trim() : ''));
+      }
+    } catch (e) { flash('Download failed'); console.error('[downloadChiaki] error:', e); }
+    unsub?.();
+    setDownloading(false);
+    setInstallProgress(null);
+  };
+
   const addConsole = async () => {
     if (!newConsole.nickname?.trim() || !newConsole.host?.trim()) return;
     const updated: ChiakiConfig = { ...chiakiConfig, consoles: [...(chiakiConfig.consoles || []), newConsole] };
-    if (window.api) await (window.api as any).saveChiakiConfig?.(updated);
+    await window.api?.saveChiakiConfig?.(updated);
     setChiakiConfig(updated);
     setNewConsole({ nickname: '', host: '', profile: '' });
     setShowAddConsole(false);
@@ -76,7 +124,7 @@ export function ChiakiPanel({ show, onClose, flash, games: _games, setGames: _se
 
   const removeConsole = async (idx: number) => {
     const updated: ChiakiConfig = { ...chiakiConfig, consoles: chiakiConfig.consoles.filter((_, i) => i !== idx) };
-    if (window.api) await (window.api as any).saveChiakiConfig?.(updated);
+    await window.api?.saveChiakiConfig?.(updated);
     setChiakiConfig(updated);
     flash('Console removed');
   };
@@ -85,7 +133,7 @@ export function ChiakiPanel({ show, onClose, flash, games: _games, setGames: _se
     setDiscovering(true);
     setDiscovered([]);
     if (window.api) {
-      const r = await (window.api as any).chiakiDiscoverConsoles?.();
+      const r = await window.api?.chiakiDiscoverConsoles?.() as { consoles?: DiscoveredConsole[] } | undefined;
       setDiscovered(r?.consoles || []);
     }
     setDiscovering(false);
@@ -95,8 +143,8 @@ export function ChiakiPanel({ show, onClose, flash, games: _games, setGames: _se
     if (!regForm.host || !regForm.pin) return;
     setRegistering('working');
     if (window.api) {
-      const r = await (window.api as any).chiakiRegisterConsole?.(regForm);
-      setRegResult(r);
+      const r = await window.api?.chiakiRegisterConsole?.(regForm) as RegResult | undefined;
+      setRegResult(r ?? null);
       setRegistering(r?.success ? 'success' : 'failed');
       if (r?.success) {
         const existingConsoles = chiakiConfig.consoles || [];
@@ -107,7 +155,7 @@ export function ChiakiPanel({ show, onClose, flash, games: _games, setGames: _se
             )
           : [...existingConsoles, { nickname: regForm.host, host: regForm.host, profile: '', registKey: r.registKey || '', morning: r.morning || '' }];
         const upd: ChiakiConfig = { ...chiakiConfig, consoles: updatedConsoles };
-        await (window.api as any).saveChiakiConfig?.(upd);
+        await window.api?.saveChiakiConfig?.(upd);
         setChiakiConfig(upd);
         flash('Console registered!');
       }
@@ -121,13 +169,13 @@ export function ChiakiPanel({ show, onClose, flash, games: _games, setGames: _se
   };
 
   const stopStream = async (sessionKey: string) => {
-    if (window.api) await (window.api as any).chiakiStopStream?.(sessionKey);
+    await window.api?.chiakiStopStream?.(sessionKey);
     flash('Stream stopped');
   };
 
   const openChiakiGui = async () => {
     if (window.api) {
-      const r = await (window.api as any).chiakiOpenGui?.();
+      const r = await window.api?.chiakiOpenGui?.() as StreamResult | undefined;
       flash(r?.success ? 'chiaki-ng GUI opened' : 'Error: ' + r?.error);
     }
   };
@@ -144,19 +192,20 @@ export function ChiakiPanel({ show, onClose, flash, games: _games, setGames: _se
 
   const connectConsole = async (c: ChiakiConsole) => {
     if (!window.api) return;
-    const r = await (window.api as any).chiakiStartStreamDirect?.({
+    const r = await window.api?.chiakiStartStreamDirect?.({
       host: c.host, nickname: c.nickname || '', profile: c.profile || '',
       registKey: c.registKey || '', morning: c.morning || '',
-    });
+    }) as unknown as StreamResult | undefined;
     flash(r?.success ? 'Connecting to ' + (c.nickname || c.host) + '...' : 'Error: ' + r?.error);
   };
 
   const renderConsoleCard = (c: ChiakiConsole, i: number) => {
     const hasKeys = !!c.registKey && !!c.morning;
     const { sessionKey, session: connSess, isLive } = getSessionForConsole(c);
-    const isStreaming = (connSess as any)?.state === 'streaming';
-    const quality = (connSess as any)?.quality;
-    const streamInfo = (connSess as any)?.streamInfo;
+    const typedSess = connSess as SessionWithStats | undefined;
+    const isStreaming = typedSess?.state === 'streaming';
+    const quality = typedSess?.quality;
+    const streamInfo = typedSess?.streamInfo;
 
     return (
       <div key={i} className="conn-card">
@@ -209,7 +258,7 @@ export function ChiakiPanel({ show, onClose, flash, games: _games, setGames: _se
               {hasKeys ? (
                 <button className="btn-sm" title="Wake console from rest mode" onClick={async () => {
                   flash('Sending wake signal...');
-                  const r = await (window.api as any)?.chiakiWakeConsole?.({ host: c.host, credentials: { registKey: c.registKey } });
+                  const r = await window.api?.chiakiWakeConsole?.({ host: c.host, credentials: { registKey: c.registKey } }) as StreamResult | undefined;
                   flash(r?.success ? 'Wake signal sent to ' + c.nickname : 'Wake failed: ' + (r?.error || 'unknown'));
                 }} disabled={chiakiMissing}>Wake</button>
               ) : (
@@ -271,8 +320,43 @@ export function ChiakiPanel({ show, onClose, flash, games: _games, setGames: _se
       </div>
 
       {chiakiMissing && (
-        <div className="chiaki-missing-hint">
-          chiaki-ng is required for Remote Play. Run <strong>scripts/setup-chiaki.ps1</strong> to download it automatically.
+        <div className="acct-card" style={{ margin: '8px 0 12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ flex: 1 }}>
+              <div className="acct-title">chiaki-ng</div>
+              <div className="acct-status">
+                {downloading
+                  ? <span style={{ color: 'var(--accent)' }}>{PHASE_LABELS[installProgress?.phase ?? 'starting'] ?? 'Working…'}</span>
+                  : 'Not installed — required for Remote Play'}
+              </div>
+              {downloading && installProgress && (
+                <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 280 }}>
+                  {installProgress.message}
+                </div>
+              )}
+            </div>
+            {!downloading && (
+              <button className="btn-accent" onClick={downloadChiaki}>Download</button>
+            )}
+          </div>
+          {downloading && (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--text-3)', marginBottom: 4 }}>
+                <span>{installProgress?.percent ?? 5}%</span>
+                <span>This may take a minute…</span>
+              </div>
+              <div style={{ height: 4, borderRadius: 2, background: 'var(--glass2)', overflow: 'hidden' }}>
+                <div style={{
+                  height: '100%',
+                  borderRadius: 2,
+                  background: installProgress?.phase === 'downloading' ? 'linear-gradient(90deg, var(--accent), #a78bfa)' : 'var(--accent)',
+                  width: `${installProgress?.percent ?? 5}%`,
+                  transition: 'width 0.5s ease',
+                  animation: installProgress?.phase === 'downloading' ? 'progress-pulse 1.5s ease-in-out infinite' : 'none',
+                }} />
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -362,7 +446,7 @@ export function ChiakiPanel({ show, onClose, flash, games: _games, setGames: _se
             <div className="reg-step">
               <div className="reg-step-num">3</div>
               <div className="reg-step-text">Get your PSN Account ID — visit{' '}
-                <a href="#" onClick={e => { e.preventDefault(); (window.api as any)?.openExternal?.('https://psn.flipscreen.games/'); }} style={{ color: 'var(--accent)', textDecoration: 'underline' }}>
+                <a href="#" onClick={e => { e.preventDefault(); window.api?.openExternal?.('https://psn.flipscreen.games/'); }} style={{ color: 'var(--accent)', textDecoration: 'underline' }}>
                   psn.flipscreen.games
                 </a>{' '}and sign in. Copy the Base64 Account ID.
               </div>

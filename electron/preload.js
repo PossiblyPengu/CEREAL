@@ -64,6 +64,7 @@ contextBridge.exposeInMainWorld('api', {
 
   // Unified stream events (PS + Xbox)
   onChiakiEvent:  (cb) => ipcOn('chiaki:event',  cb),
+  onChiakiInstallProgress: (cb) => ipcOn('chiaki:installProgress', cb),
 
   // Game list refresh (e.g. auto-created PS games from title detection)
   onGamesRefresh: (cb) => ipcOn('games:refresh', cb),
