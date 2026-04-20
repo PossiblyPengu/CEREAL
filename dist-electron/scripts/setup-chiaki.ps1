@@ -119,9 +119,12 @@ try {
     Write-Output 'Using .NET extraction...'
     Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction Stop
     $zip = [System.IO.Compression.ZipFile]::OpenRead($tmpZip)
+    Write-Output "Zip opened. Entry count: $($zip.Entries.Count)"
+    Write-Output "All entries:"
+    $zip.Entries | ForEach-Object { Write-Output "  - $($_.FullName) (compressed: $($_.CompressedLength), raw: $($_.Length))" }
     $entries = $zip.Entries | Where-Object { -not $_.FullName.EndsWith('/') }
     $total = $entries.Count
-    Write-Output "Found $total files to extract..."
+    Write-Output "Found $total file entries (non-directory)..."
     $current = 0
     foreach ($entry in $entries) {
         $current++

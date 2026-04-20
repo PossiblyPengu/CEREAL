@@ -12,9 +12,9 @@ interface StartupWizardProps {
   onSettingsChange: (s: Partial<Settings>) => void;
 }
 
-interface AccountInfo { connected?: boolean; displayName?: string; profileImageUrl?: string; }
+interface AccountInfo { connected?: boolean; displayName?: string; gamertag?: string; profileImageUrl?: string; avatarUrl?: string; }
 type ChiakiStatusInfo = { status?: string; version?: string };
-interface WizardDiscoveredConsole { name?: string; host: string; }
+interface WizardDiscoveredConsole { name?: string; host: string; type?: string; }
 interface SystemSpecs { ramGb?: number; cpuCount?: number; cpuModel?: string; gpuName?: string; }
 interface ImportResult { error?: string; imported?: Game[] | number; }
 
@@ -333,12 +333,12 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
 
   // ── Step 3: Performance & Layout ───────────────────────────────────────────
   const renderPerformance = () => {
-    const getRecommendation = (sp: SystemSpecs) => {
+    const getRecommendation = (sp: SystemSpecs): { starDensity: 'low' | 'normal' | 'high'; uiScale: '0.9' | '1' | '1.1' | '1.25' } => {
       const ramGb = sp.ramGb || 0;
       const cpuCount = sp.cpuCount || 0;
-      const starDensity = (ramGb >= 24 && cpuCount >= 8) ? 'high' : (ramGb <= 8 || cpuCount <= 4) ? 'low' : 'normal';
+      const starDensity: 'low' | 'normal' | 'high' = (ramGb >= 24 && cpuCount >= 8) ? 'high' : (ramGb <= 8 || cpuCount <= 4) ? 'low' : 'normal';
       const sw = window.screen?.width || 1920;
-      const uiScale = sw >= 2560 ? '1.25' : sw >= 1920 ? '1.1' : sw < 1280 ? '0.9' : '1';
+      const uiScale: '0.9' | '1' | '1.1' | '1.25' = sw >= 2560 ? '1.25' : sw >= 1920 ? '1.1' : sw < 1280 ? '0.9' : '1';
       return { starDensity, uiScale };
     };
     const rec = specs ? getRecommendation(specs) : null;
