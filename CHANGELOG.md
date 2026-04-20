@@ -1,4 +1,9 @@
-﻿## v0.2.0 - 2026-04-15
+﻿## v0.2.1 - 2026-04-20
+
+### New
+- add detailed logging and progress tracking for Chiaki installation, improve extraction reliability
+
+## v0.2.0 - 2026-04-15
 
 - Maintenance release
 
