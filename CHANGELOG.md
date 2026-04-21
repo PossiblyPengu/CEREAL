@@ -1,4 +1,9 @@
-﻿## v0.2.9 - 2026-04-21
+﻿## v0.2.10 - 2026-04-21
+
+### New
+- add chiaki uninstall functionality and enhance tab management in IPC
+
+## v0.2.9 - 2026-04-21
 
 ### Changes
 - Refactor code structure for improved readability and maintainability

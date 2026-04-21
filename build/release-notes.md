@@ -1,2 +1,2 @@
-﻿### Changes
-- Refactor code structure for improved readability and maintainability
+﻿### New
+- add chiaki uninstall functionality and enhance tab management in IPC
