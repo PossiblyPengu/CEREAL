@@ -1,4 +1,9 @@
-﻿## v0.2.0 - 2026-04-15
+﻿## v0.2.9 - 2026-04-21
+
+### Changes
+- Refactor code structure for improved readability and maintainability
+
+## v0.2.0 - 2026-04-15
 
 - Maintenance release
 

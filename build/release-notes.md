@@ -1,1 +1,2 @@
-﻿- Maintenance release
+﻿### Changes
+- Refactor code structure for improved readability and maintainability
