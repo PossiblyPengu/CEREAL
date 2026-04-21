@@ -2603,7 +2603,7 @@ var require_xcloud = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	function updateAllXcloudBounds() {
 		for (const sess of xcloudSessions.values()) updateXcloudBounds(sess);
 	}
-	function startXcloudSession(gameId, url) {
+	function startXcloudSession(gameId, url, title) {
 		stopXcloudSession(gameId);
 		const view = new WebContentsView({ webPreferences: {
 			session: session$1.fromPartition("persist:xcloud"),
@@ -2640,6 +2640,11 @@ var require_xcloud = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 			state: "connecting",
 			platform: "xbox"
 		});
+		ctx.sendToRenderer("tabs:opened", {
+			id: gameId,
+			title: title || "Xbox Cloud Gaming",
+			platform: "xbox"
+		});
 		return sess;
 	}
 	function stopXcloudSession(gameId) {
@@ -2656,6 +2661,7 @@ var require_xcloud = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 				reason: "stopped",
 				platform: "xbox"
 			});
+			ctx.sendToRenderer("tabs:closed", { id: gameId });
 			if (sess.view?.webContents && !sess.view.webContents.isDestroyed()) try {
 				sess.view.webContents.loadURL("https://www.xbox.com/play");
 			} catch (_e) {}
@@ -3947,9 +3953,9 @@ var require_media = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 				};
 			}
 		});
-		ipcMain$1.handle("xcloud:start", (_event, { gameId, url }) => {
+		ipcMain$1.handle("xcloud:start", (_event, { gameId, url, title }) => {
 			try {
-				startXcloudSession(gameId, url);
+				startXcloudSession(gameId, url, title);
 				return { success: true };
 			} catch (e) {
 				return {

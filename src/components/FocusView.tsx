@@ -23,11 +23,21 @@ export function FocusView({ game: gameProp, onClose, onLaunch, onFav, onEdit, on
   const closeRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
+    // synchronize local renderedGame for open/close animation
+    // schedule state updates asynchronously to avoid synchronous setState in effect
     if (gameProp) {
-      setRenderedGame(gameProp); setClosing(false);
-      requestAnimationFrame(() => closeRef.current?.focus());
-    } else if (renderedGame) setClosing(true);
-  }, [gameProp]);
+      // schedule on next animation frame to avoid cascading renders
+      requestAnimationFrame(() => {
+        setRenderedGame(gameProp);
+        setClosing(false);
+        // focus after the state update is committed (another frame)
+        requestAnimationFrame(() => closeRef.current?.focus());
+      });
+    } else if (renderedGame) {
+      // schedule closing asynchronously
+      requestAnimationFrame(() => setClosing(true));
+    }
+  }, [gameProp, renderedGame]);
 
   // Focus trap inside dialog
   useEffect(() => {
@@ -75,18 +85,33 @@ export function FocusView({ game: gameProp, onClose, onLaunch, onFav, onEdit, on
   const bgImg = resolveGameImage(game, 'headerUrl') || resolveGameImage(game, 'coverUrl');
 
   const doRefresh = async () => {
-    if (!window.api?.applyMetadata) return;
+    const api = (window.api as unknown as { applyMetadata?: (id: string, force?: boolean) => Promise<{ success?: boolean; game?: Game }>; });
+    if (!api?.applyMetadata) return;
     setRefreshing(true);
     try {
-      const r = await (window.api as any).applyMetadata(game.id, true);
+      const r = await api.applyMetadata(game.id, true);
       if (r?.success && r.game && onRefreshGame) onRefreshGame(r.game);
-    } catch (_) {}
+    } catch (e) { void e; }
     setRefreshing(false);
   };
-
-  const g = game as any;
+  const g = game as unknown as {
+    metacritic?: number;
+    developer?: string;
+    publisher?: string;
+    releaseDate?: string;
+    description?: string;
+    notes?: string;
+    screenshots?: string[];
+    favorite?: boolean;
+    id: string;
+    name: string;
+    playtimeMinutes?: number;
+    lastPlayed?: string | number;
+    platform?: string;
+  };
   const mcColor: string = g.metacritic != null && g.metacritic > 0 ? (g.metacritic >= 75 ? '#6dc849' : g.metacritic >= 50 ? '#fdca52' : '#fc4b37') : '#888888';
   const coverSrc = resolveGameImage(game, 'coverUrl');
+  const screenshots = g.screenshots ?? [];
 
   return (
     <div className={'focus-overlay' + (closing ? ' closing' : '')} role="dialog" aria-modal="true" aria-label={game.name} onClick={onClose} onAnimationEnd={() => { if (closing) setRenderedGame(null); }}>
@@ -124,7 +149,7 @@ export function FocusView({ game: gameProp, onClose, onLaunch, onFav, onEdit, on
           {game.categories && game.categories.length > 0 && <div className="focus-cats">{game.categories.map(c => <span key={c} className="focus-cat">{c}</span>)}</div>}
           {g.description && <div className="focus-desc">{g.description}</div>}
           {g.notes && <div style={{ marginTop: 8 }}><div className="focus-notes-label">Notes</div><div className="focus-notes">{g.notes}</div></div>}
-          {g.screenshots?.length > 0 && <div className="focus-screenshots">{g.screenshots.slice(0, 6).map((s: string, i: number) => <img key={i} src={s} alt="" onClick={e => { e.stopPropagation(); setZoomSrc(s); }} />)}</div>}
+          {screenshots.length > 0 && <div className="focus-screenshots">{screenshots.slice(0, 6).map((s, i) => <img key={i} src={s} alt="" onClick={e => { e.stopPropagation(); setZoomSrc(s); }} />)}</div>}
           <div className="focus-actions">
             <button className={'btn-play' + (gpFocusIdx === 0 ? ' gp-focus' : '')} onClick={() => onLaunch(game)}><span style={{ display: 'flex', width: 14, height: 14 }}>{I.play}</span> Play</button>
             <button className={'btn-ghost' + (gpFocusIdx === 1 ? ' gp-focus' : '')} onClick={() => onFav(game.id)}><span style={{ display: 'flex', width: 14, height: 14 }}>{game.favorite ? I.starFill : I.star}</span>{game.favorite ? 'Unfav' : 'Fav'}</button>

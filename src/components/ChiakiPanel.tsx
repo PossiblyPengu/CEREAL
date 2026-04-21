@@ -40,7 +40,27 @@ interface DiscoveredConsole {
   runningTitle?: string;
 }
 
-export function ChiakiPanel({ show, onClose, flash, games: _games, setGames: _setGames, chiakiSessions }: ChiakiPanelProps) {
+interface ChiakiRegisterResult {
+  success?: boolean;
+  registKey?: string;
+  morning?: string;
+  error?: string;
+}
+
+type ChiakiQuality = {
+  bitrate?: number;
+  fpsActual?: number;
+  latencyMs?: number;
+  packetLoss?: number;
+  fps?: number;
+};
+
+type ChiakiStreamInfo = {
+  resolution?: string;
+  fps?: number;
+};
+
+export function ChiakiPanel({ show, onClose, flash, chiakiSessions }: ChiakiPanelProps) {
   const [chiakiStatus, setChiakiStatus] = useState<ChiakiStatus | null>(null);
   const [chiakiConfig, setChiakiConfig] = useState<ChiakiConfig>({ executablePath: '', consoles: [] });
   const [newConsole, setNewConsole] = useState<ChiakiConsole>({ nickname: '', host: '', profile: '' });
@@ -50,14 +70,14 @@ export function ChiakiPanel({ show, onClose, flash, games: _games, setGames: _se
   const [discovered, setDiscovered] = useState<DiscoveredConsole[]>([]);
   const [registering, setRegistering] = useState<string | null>(null);
   const [regForm, setRegForm] = useState({ host: '', psnAccountId: '', pin: '' });
-  const [regResult, setRegResult] = useState<any>(null);
+  const [regResult, setRegResult] = useState<ChiakiRegisterResult | null>(null);
 
   useEffect(() => {
     if (!show) return;
     (async () => {
       if (window.api) {
-        const st = await (window.api as any).getChiakiStatus?.();
-        const cfg = await (window.api as any).getChiakiConfig?.();
+        const st = await window.api.getChiakiStatus?.() as ChiakiStatus | null;
+        const cfg = await window.api.getChiakiConfig?.() as ChiakiConfig | null;
         setChiakiStatus(st);
         setChiakiConfig(cfg || { executablePath: '', consoles: [] });
       }
@@ -67,7 +87,7 @@ export function ChiakiPanel({ show, onClose, flash, games: _games, setGames: _se
   const addConsole = async () => {
     if (!newConsole.nickname?.trim() || !newConsole.host?.trim()) return;
     const updated: ChiakiConfig = { ...chiakiConfig, consoles: [...(chiakiConfig.consoles || []), newConsole] };
-    if (window.api) await (window.api as any).saveChiakiConfig?.(updated);
+    if (window.api) await window.api.saveChiakiConfig?.(updated);
     setChiakiConfig(updated);
     setNewConsole({ nickname: '', host: '', profile: '' });
     setShowAddConsole(false);
@@ -76,7 +96,7 @@ export function ChiakiPanel({ show, onClose, flash, games: _games, setGames: _se
 
   const removeConsole = async (idx: number) => {
     const updated: ChiakiConfig = { ...chiakiConfig, consoles: chiakiConfig.consoles.filter((_, i) => i !== idx) };
-    if (window.api) await (window.api as any).saveChiakiConfig?.(updated);
+    if (window.api) await window.api.saveChiakiConfig?.(updated);
     setChiakiConfig(updated);
     flash('Console removed');
   };
@@ -85,7 +105,7 @@ export function ChiakiPanel({ show, onClose, flash, games: _games, setGames: _se
     setDiscovering(true);
     setDiscovered([]);
     if (window.api) {
-      const r = await (window.api as any).chiakiDiscoverConsoles?.();
+      const r = await window.api.chiakiDiscoverConsoles?.() as { consoles?: DiscoveredConsole[] } | undefined;
       setDiscovered(r?.consoles || []);
     }
     setDiscovering(false);
@@ -95,7 +115,7 @@ export function ChiakiPanel({ show, onClose, flash, games: _games, setGames: _se
     if (!regForm.host || !regForm.pin) return;
     setRegistering('working');
     if (window.api) {
-      const r = await (window.api as any).chiakiRegisterConsole?.(regForm);
+      const r = await window.api.chiakiRegisterConsole?.(regForm) as ChiakiRegisterResult | null;
       setRegResult(r);
       setRegistering(r?.success ? 'success' : 'failed');
       if (r?.success) {
@@ -107,7 +127,7 @@ export function ChiakiPanel({ show, onClose, flash, games: _games, setGames: _se
             )
           : [...existingConsoles, { nickname: regForm.host, host: regForm.host, profile: '', registKey: r.registKey || '', morning: r.morning || '' }];
         const upd: ChiakiConfig = { ...chiakiConfig, consoles: updatedConsoles };
-        await (window.api as any).saveChiakiConfig?.(upd);
+        await window.api.saveChiakiConfig?.(upd);
         setChiakiConfig(upd);
         flash('Console registered!');
       }
@@ -121,13 +141,13 @@ export function ChiakiPanel({ show, onClose, flash, games: _games, setGames: _se
   };
 
   const stopStream = async (sessionKey: string) => {
-    if (window.api) await (window.api as any).chiakiStopStream?.(sessionKey);
+    if (window.api) await window.api.chiakiStopStream?.(sessionKey);
     flash('Stream stopped');
   };
 
   const openChiakiGui = async () => {
     if (window.api) {
-      const r = await (window.api as any).chiakiOpenGui?.();
+      const r = await window.api.chiakiOpenGui?.() as { success?: boolean; error?: string } | undefined;
       flash(r?.success ? 'chiaki-ng GUI opened' : 'Error: ' + r?.error);
     }
   };
@@ -144,19 +164,20 @@ export function ChiakiPanel({ show, onClose, flash, games: _games, setGames: _se
 
   const connectConsole = async (c: ChiakiConsole) => {
     if (!window.api) return;
-    const r = await (window.api as any).chiakiStartStreamDirect?.({
+    const r = await window.api.chiakiStartStreamDirect?.({
       host: c.host, nickname: c.nickname || '', profile: c.profile || '',
       registKey: c.registKey || '', morning: c.morning || '',
-    });
+    }) as { success?: boolean; error?: string } | undefined;
     flash(r?.success ? 'Connecting to ' + (c.nickname || c.host) + '...' : 'Error: ' + r?.error);
   };
 
   const renderConsoleCard = (c: ChiakiConsole, i: number) => {
     const hasKeys = !!c.registKey && !!c.morning;
     const { sessionKey, session: connSess, isLive } = getSessionForConsole(c);
-    const isStreaming = (connSess as any)?.state === 'streaming';
-    const quality = (connSess as any)?.quality;
-    const streamInfo = (connSess as any)?.streamInfo;
+    const cs = connSess as unknown as { state?: string; quality?: ChiakiQuality; streamInfo?: ChiakiStreamInfo } | undefined;
+    const isStreaming = cs?.state === 'streaming';
+    const quality = cs?.quality;
+    const streamInfo = cs?.streamInfo;
 
     return (
       <div key={i} className="conn-card">
@@ -207,9 +228,9 @@ export function ChiakiPanel({ show, onClose, flash, games: _games, setGames: _se
             <>
               <button className="btn-sm primary" onClick={() => connectConsole(c)} disabled={chiakiMissing}>Connect</button>
               {hasKeys ? (
-                <button className="btn-sm" title="Wake console from rest mode" onClick={async () => {
+                  <button className="btn-sm" title="Wake console from rest mode" onClick={async () => {
                   flash('Sending wake signal...');
-                  const r = await (window.api as any)?.chiakiWakeConsole?.({ host: c.host, credentials: { registKey: c.registKey } });
+                  const r = await window.api?.chiakiWakeConsole?.({ host: c.host, credentials: { registKey: c.registKey } }) as { success?: boolean; error?: string } | undefined;
                   flash(r?.success ? 'Wake signal sent to ' + c.nickname : 'Wake failed: ' + (r?.error || 'unknown'));
                 }} disabled={chiakiMissing}>Wake</button>
               ) : (
@@ -362,7 +383,7 @@ export function ChiakiPanel({ show, onClose, flash, games: _games, setGames: _se
             <div className="reg-step">
               <div className="reg-step-num">3</div>
               <div className="reg-step-text">Get your PSN Account ID — visit{' '}
-                <a href="#" onClick={e => { e.preventDefault(); (window.api as any)?.openExternal?.('https://psn.flipscreen.games/'); }} style={{ color: 'var(--accent)', textDecoration: 'underline' }}>
+                <a href="#" onClick={e => { e.preventDefault(); window.api?.openExternal?.('https://psn.flipscreen.games/'); }} style={{ color: 'var(--accent)', textDecoration: 'underline' }}>
                   psn.flipscreen.games
                 </a>{' '}and sign in. Copy the Base64 Account ID.
               </div>

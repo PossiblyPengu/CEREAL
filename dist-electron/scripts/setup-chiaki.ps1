@@ -67,11 +67,11 @@ if (-not $asset) {
 
 Write-Output "Downloading $($asset.name) ($([math]::Round($asset.size / 1MB, 1)) MB)..."
 
-$tmpZip = Join-Path $env:TEMP 'chiaki-ng-setup.zip'
-if (Test-Path $tmpZip) { Remove-Item $tmpZip -Force -ErrorAction SilentlyContinue }
+$tmpZip = Join-Path $env:TEMP "chiaki-ng-setup-$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()).zip"
 try {
     Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $tmpZip -Headers $headers
 } catch {
+    Remove-Item $tmpZip -Force -ErrorAction SilentlyContinue
     Write-Host "ERROR: Download failed: $_"
     exit 1
 }
