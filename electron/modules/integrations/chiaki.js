@@ -693,14 +693,23 @@ function registerChiakiIpcHandlers() {
     }
   });
 
-  ipcMain.handle('chiaki:update', async () => {
+  ipcMain.handle('chiaki:update', async (event, opts) => {
     try {
       const scriptPath = getScriptPath('setup-chiaki.ps1');
       if (!fs.existsSync(scriptPath)) return { error: 'setup-chiaki.ps1 not found at: ' + scriptPath };
-      const chiakiInstallDir = path.join(app.getPath('userData'), 'chiaki-ng');
+      const defaultInstallDir = path.join(app.getPath('userData'), 'chiaki-ng');
       const SETUP_TIMEOUT = 5 * 60 * 1000;
+
+      const args = ['-ExecutionPolicy', 'Bypass', '-File', scriptPath];
+      if (opts && opts.force) args.push('-Force');
+      const installDir = (opts && opts.installDir) ? String(opts.installDir) : defaultInstallDir;
+      args.push('-InstallDir', installDir);
+      if (opts && opts.channel) args.push('-Channel', String(opts.channel));
+      if (opts && opts.assetPattern) args.push('-AssetPattern', String(opts.assetPattern));
+      if (opts && opts.localZip) args.push('-LocalZip', String(opts.localZip));
+
       return new Promise((resolve) => {
-        const child = spawn('powershell', ['-ExecutionPolicy', 'Bypass', '-File', scriptPath, '-Force', '-InstallDir', chiakiInstallDir], { cwd: path.dirname(scriptPath), stdio: 'pipe' });
+        const child = spawn('powershell', args, { cwd: path.dirname(scriptPath), stdio: 'pipe' });
         let output = '';
         let resolved = false;
         const finish = (result) => { if (resolved) return; resolved = true; clearTimeout(timer); resolve(result); };

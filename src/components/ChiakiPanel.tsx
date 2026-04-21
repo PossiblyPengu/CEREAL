@@ -60,6 +60,8 @@ export function ChiakiPanel({ show, onClose, flash, chiakiSessions }: ChiakiPane
   const [regResult, setRegResult] = useState<RegResult | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [installProgress, setInstallProgress] = useState<{ phase: string; message: string; percent: number } | null>(null);
+  const [showOptions, setShowOptions] = useState(false);
+  const [installOptions, setInstallOptions] = useState<{ channel: string; installDir?: string; assetPattern?: string; localZip?: string; force?: boolean }>({ channel: 'stable' });
 
   const PHASE_LABELS: Record<string, string> = {
     starting:    'Starting…',
@@ -78,6 +80,7 @@ export function ChiakiPanel({ show, onClose, flash, chiakiSessions }: ChiakiPane
         setChiakiStatus(st ?? null);
         const cfg = await window.api?.getChiakiConfig?.() as ChiakiConfig | undefined;
         setChiakiConfig(cfg ?? { executablePath: '', consoles: [] });
+        if (cfg && (cfg as any).installOptions) setInstallOptions((cfg as any).installOptions);
       }
     })();
   }, [show]);
@@ -88,7 +91,9 @@ export function ChiakiPanel({ show, onClose, flash, chiakiSessions }: ChiakiPane
     const unsub = window.api?.onChiakiInstallProgress?.((d) => setInstallProgress(d));
     try {
       // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-      const r = await window.api?.chiakiUpdate?.() as { ok?: boolean; version?: string; error?: string; output?: string } | undefined;
+      const cfg = await window.api?.getChiakiConfig?.() as ChiakiConfig | undefined;
+      const opts = (cfg && (cfg as any).installOptions) ? (cfg as any).installOptions : installOptions;
+      const r = await window.api?.chiakiUpdate?.(opts) as { ok?: boolean; version?: string; error?: string; output?: string } | undefined;
       // eslint-disable-next-line no-console
       console.log('[downloadChiaki] result:', r);
       flash('[DEBUG] Install result: ok=' + r?.ok + ' version=' + (r?.version || 'null') + ' error=' + (r?.error || 'null'));
@@ -110,6 +115,14 @@ export function ChiakiPanel({ show, onClose, flash, chiakiSessions }: ChiakiPane
     unsub?.();
     setDownloading(false);
     setInstallProgress(null);
+  };
+
+  const saveInstallOptions = async () => {
+    const cfg = await window.api?.getChiakiConfig?.() as ChiakiConfig | undefined;
+    const updated = { ...(cfg || {}), installOptions } as any;
+    await window.api?.saveChiakiConfig?.(updated);
+    setChiakiConfig(updated);
+    flash('Install options saved');
   };
 
   const addConsole = async () => {
@@ -336,9 +349,52 @@ export function ChiakiPanel({ show, onClose, flash, chiakiSessions }: ChiakiPane
               )}
             </div>
             {!downloading && (
-              <button className="btn-accent" onClick={downloadChiaki}>Download</button>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <button className="btn-accent" onClick={downloadChiaki}>Download</button>
+                <button className="btn-flat" onClick={() => setShowOptions(s => !s)}>{showOptions ? 'Hide' : 'Options'}</button>
+              </div>
             )}
           </div>
+          {showOptions && (
+            <div style={{ marginTop: 10 }}>
+              <div className="field-row">
+                <div className="field">
+                  <label>Channel</label>
+                  <select value={installOptions.channel} onChange={e => setInstallOptions(o => ({ ...o, channel: e.target.value }))}>
+                    <option value="stable">Stable (default)</option>
+                    <option value="latest">Latest</option>
+                    <option value="prerelease">Prerelease</option>
+                  </select>
+                </div>
+                <div className="field">
+                  <label>Install Dir</label>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input value={installOptions.installDir || ''} onChange={e => setInstallOptions(o => ({ ...o, installDir: e.target.value }))} placeholder="%APPDATA%.../chiaki-ng" />
+                    <button className="btn-sm" onClick={async () => { const p = await window.api?.pickFolder?.(); if (p) setInstallOptions(o => ({ ...o, installDir: p })); }}>Browse</button>
+                  </div>
+                </div>
+              </div>
+              <div className="field-row">
+                <div className="field">
+                  <label>Local ZIP (optional)</label>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input value={installOptions.localZip || ''} onChange={e => setInstallOptions(o => ({ ...o, localZip: e.target.value }))} />
+                    <button className="btn-sm" onClick={async () => { const p = await window.api?.pickFile?.({ filters: [{ name: 'Zip', extensions: ['zip'] }] }); if (p) setInstallOptions(o => ({ ...o, localZip: p })); }}>Browse</button>
+                  </div>
+                </div>
+                <div className="field">
+                  <label>Asset Pattern</label>
+                  <input value={installOptions.assetPattern || ''} onChange={e => setInstallOptions(o => ({ ...o, assetPattern: e.target.value }))} placeholder="optional regex to match asset name" />
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input type="checkbox" checked={!!installOptions.force} onChange={e => setInstallOptions(o => ({ ...o, force: e.target.checked }))} /> Force
+                </label>
+                <button className="btn-accent" onClick={saveInstallOptions}>Save Options</button>
+              </div>
+            </div>
+          )}
           {downloading && (
             <div style={{ marginTop: 10 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--text-3)', marginBottom: 4 }}>

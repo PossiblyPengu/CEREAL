@@ -40,7 +40,10 @@ export function SettingsPanel({
   const [chiakiUpd, setChiakiUpd] = useState<any>(null);
   const [specs, setSpecs] = useState<any>(null);
   const [specsLoading, setSpecsLoading] = useState(false);
-  const [activeSection, setActiveSection] = useState('appearance');
+  const [chiakiConfigState, setChiakiConfigState] = useState<any>(null);
+  const [chiakiInstallOptions, setChiakiInstallOptions] = useState<any>({ channel: 'stable' });
+  const [chiakiInstallProgress, setChiakiInstallProgress] = useState<{ phase: string; message: string; percent: number } | null>(null);
+  const [activeSection, setActiveSection] = useState<string>('appearance');
 
   useEffect(() => {
     if (!show) { setConfirmClear(false); setConfirmClearCovers(false); return; }
@@ -58,6 +61,13 @@ export function SettingsPanel({
         setSpecsLoading(true);
         try { const s = await (window.api as any).getSystemSpecs(); setSpecs(s); } catch (_) {}
         setSpecsLoading(false);
+      }
+      if ((window.api as any)?.getChiakiConfig) {
+        try {
+          const cfg = await (window.api as any).getChiakiConfig();
+          setChiakiConfigState(cfg || { executablePath: '', consoles: [] });
+          if (cfg && (cfg as any).installOptions) setChiakiInstallOptions((cfg as any).installOptions);
+        } catch (_) { /* ignore */ }
       }
     })();
     setChiakiUpd(null);
@@ -146,6 +156,7 @@ export function SettingsPanel({
     { id: 'library', label: 'Library', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg> },
     { id: 'behavior', label: 'Behavior', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> },
     { id: 'system', label: 'System', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg> },
+    { id: 'chiaki', label: 'Chiaki', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v6"/><path d="M5 7h14"/><path d="M7 21h10v-6H7z"/></svg> },
     { id: 'about', label: 'About', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg> },
     { id: 'danger', label: 'Danger Zone', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> },
   ];
@@ -304,6 +315,79 @@ export function SettingsPanel({
                 <Toggle value={!!(local as any).closeToTray} onChange={v => update('closeToTray' as any, v)} />
               </div>
             </div>
+
+            {/* Chiaki */}
+            {activeSection === 'chiaki' && <div className="settings-section">
+              <div className="settings-section-label">PlayStation Remote Play (chiaki-ng)</div>
+              <div className="settings-group">
+                <div className="settings-row">
+                  <div className="settings-row-info"><div className="settings-row-label">Channel</div><div className="settings-row-desc">Which GitHub release channel to use</div></div>
+                  <select className="settings-select" value={chiakiInstallOptions?.channel || 'stable'} onChange={e => setChiakiInstallOptions((p: any) => ({ ...p, channel: e.target.value }))}>
+                    <option value="stable">Stable (recommended)</option>
+                    <option value="latest">Latest</option>
+                    <option value="prerelease">Prerelease</option>
+                  </select>
+                </div>
+
+                <div className="settings-row">
+                  <div className="settings-row-info"><div className="settings-row-label">Install Directory</div><div className="settings-row-desc">Where chiaki-ng will be installed</div></div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input className="settings-input" value={chiakiInstallOptions?.installDir || ''} onChange={e => setChiakiInstallOptions((p: any) => ({ ...p, installDir: e.target.value }))} />
+                    <button className="btn-sm" onClick={async () => { const p = await (window.api as any).pickFolder?.(); if (p) setChiakiInstallOptions((o: any) => ({ ...o, installDir: p })); }}>Browse</button>
+                  </div>
+                </div>
+
+                <div className="settings-row">
+                  <div className="settings-row-info"><div className="settings-row-label">Local ZIP (optional)</div><div className="settings-row-desc">Use a local chiaki release zip instead of downloading</div></div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input className="settings-input" value={chiakiInstallOptions?.localZip || ''} onChange={e => setChiakiInstallOptions((p: any) => ({ ...p, localZip: e.target.value }))} />
+                    <button className="btn-sm" onClick={async () => { const p = await (window.api as any).pickFile?.({ filters: [{ name: 'Zip', extensions: ['zip'] }] }); if (p) setChiakiInstallOptions((o: any) => ({ ...o, localZip: p })); }}>Browse</button>
+                  </div>
+                </div>
+
+                <div className="settings-row">
+                  <div className="settings-row-info"><div className="settings-row-label">Asset Pattern</div><div className="settings-row-desc">Optional regex to match a specific release asset name</div></div>
+                  <input className="settings-input" value={chiakiInstallOptions?.assetPattern || ''} onChange={e => setChiakiInstallOptions((p: any) => ({ ...p, assetPattern: e.target.value }))} />
+                </div>
+
+                <div className="settings-row" style={{ borderBottom: 'none' }}>
+                  <div className="settings-row-info"><div className="settings-row-label">Force Install</div><div className="settings-row-desc">Overwrite existing installation</div></div>
+                  <Toggle value={!!chiakiInstallOptions?.force} onChange={v => setChiakiInstallOptions((p: any) => ({ ...p, force: v }))} />
+                </div>
+
+                <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                  <button className="btn-accent" onClick={async () => {
+                    try {
+                      const cfg = chiakiConfigState || { executablePath: '', consoles: [] };
+                      cfg.installOptions = chiakiInstallOptions;
+                      await (window.api as any).saveChiakiConfig?.(cfg);
+                      setChiakiConfigState(cfg);
+                      flash('chiaki install options saved');
+                    } catch (e: any) { flash('Save failed: ' + (e?.message || e)); }
+                  }}>Save Options</button>
+
+                  <button className="btn-flat" onClick={async () => {
+                    try {
+                      setChiakiUpd({ updating: true });
+                      const unsub = (window.api as any).onChiakiInstallProgress?.((d: any) => setChiakiInstallProgress(d));
+                      const r = await (window.api as any).chiakiUpdate?.(chiakiInstallOptions);
+                      unsub?.();
+                      if (r?.ok) { setChiakiUpd({ done: true, version: r.version }); flash('Installed chiaki-ng (v' + (r.version || '?') + ')'); }
+                      else { setChiakiUpd({ error: r?.error || 'Install failed' }); flash(r?.error || 'Install failed'); }
+                      setChiakiInstallProgress(null);
+                    } catch (e: any) { flash('Install failed: ' + (e?.message || e)); setChiakiUpd({ error: e?.message || 'error' }); }
+                  }}>Test Install</button>
+                </div>
+                {chiakiInstallProgress && (
+                  <div style={{ marginTop: 10 }}>
+                    <div style={{ fontSize: 12 }}>{chiakiInstallProgress.message}</div>
+                    <div style={{ height: 6, background: 'var(--glass2)', borderRadius: 4, overflow: 'hidden', marginTop: 6 }}>
+                      <div style={{ width: `${chiakiInstallProgress.percent}%`, height: '100%', background: 'var(--accent)' }} />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>}
 
             <div className="settings-section-label" style={{ marginTop: 16 }}>Updates</div>
             <div className="sys-update-list">

@@ -199,7 +199,7 @@ export interface ElectronAPI {
   // Chiaki (PlayStation Remote Play)
   getChiakiStatus?(): Promise<unknown>;
   chiakiCheckUpdate?(): Promise<unknown>;
-  chiakiUpdate?(): Promise<unknown>;
+  chiakiUpdate?(opts?: any): Promise<unknown>;
   getChiakiConfig?(): Promise<unknown>;
   saveChiakiConfig?(config: unknown): Promise<void>;
   setChiakiStream?(gameId: string, streamConfig: unknown): Promise<void>;
@@ -229,6 +229,8 @@ export interface ElectronAPI {
   // Dialogs
   pickExecutable?(): Promise<string | null>;
   pickImage?(): Promise<string | null>;
+  pickFolder?(): Promise<string | null>;
+  pickFile?(opts?: { filters?: Array<{ name: string; extensions: string[] }> }): Promise<string | null>;
 
   // Categories
   getCategories(): Promise<string[]>;

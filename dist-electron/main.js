@@ -4678,6 +4678,23 @@ ipcMain.handle("dialog:pickImage", async () => {
 	}
 	return null;
 });
+ipcMain.handle("dialog:pickFolder", async () => {
+	const result = await dialog.showOpenDialog(mainWindow, {
+ 		properties: ["openDirectory"]
+ 	});
+ 	if (!result.canceled && result.filePaths.length > 0) return result.filePaths[0];
+ 	return null;
+});
+
+ipcMain.handle("dialog:pickFile", async (_event, opts) => {
+ 	const filters = opts && opts.filters ? opts.filters : [{ name: 'All Files', extensions: ['*'] }];
+ 	const result = await dialog.showOpenDialog(mainWindow, {
+ 		properties: ["openFile"],
+ 		filters
+ 	});
+ 	if (!result.canceled && result.filePaths.length > 0) return result.filePaths[0];
+ 	return null;
+});
 var { registerDetectionIpcHandlers } = require_detectionIpc();
 registerDetectionIpcHandlers();
 var { registerSettingsIpcHandlers } = require_settings();

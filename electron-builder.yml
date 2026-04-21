@@ -17,6 +17,12 @@ extraResources:
     filter:
       - "**/*"
 
+  # Ensure providers directory is included in packaged app
+  - from: dist-electron/providers
+    to: providers
+    filter:
+      - "**/*"
+
 asar: true
 asarUnpack:
   - "dist-electron/native/**"

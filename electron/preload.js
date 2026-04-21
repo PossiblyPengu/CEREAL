@@ -40,7 +40,7 @@ contextBridge.exposeInMainWorld('api', {
   // chiaki-ng (PlayStation Remote Play)
   getChiakiStatus: () => ipcRenderer.invoke('chiaki:status'),
   chiakiCheckUpdate: () => ipcRenderer.invoke('chiaki:checkUpdate'),
-  chiakiUpdate: () => ipcRenderer.invoke('chiaki:update'),
+  chiakiUpdate: (opts) => ipcRenderer.invoke('chiaki:update', opts),
   getChiakiConfig: () => ipcRenderer.invoke('chiaki:getConfig'),
   saveChiakiConfig: (config) => ipcRenderer.invoke('chiaki:saveConfig', config),
   setChiakiStream: (gameId, streamConfig) => ipcRenderer.invoke('games:setChiakiStream', gameId, streamConfig),
@@ -72,6 +72,8 @@ contextBridge.exposeInMainWorld('api', {
   // Dialogs
   pickExecutable: () => ipcRenderer.invoke('dialog:pickExecutable'),
   pickImage: () => ipcRenderer.invoke('dialog:pickImage'),
+  pickFolder: () => ipcRenderer.invoke('dialog:pickFolder'),
+  pickFile: (opts) => ipcRenderer.invoke('dialog:pickFile', opts),
 
   // Categories
   getCategories: () => ipcRenderer.invoke('games:getCategories'),

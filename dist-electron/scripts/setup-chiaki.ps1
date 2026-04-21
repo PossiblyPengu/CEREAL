@@ -1,7 +1,10 @@
 #Requires -Version 5.1
 param(
     [switch]$Force,
-    [string]$InstallDir = ''
+    [string]$InstallDir = '',
+    [string]$Channel = 'stable',
+    [string]$AssetPattern = '',
+    [string]$LocalZip = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -27,20 +30,44 @@ if (-not $Force -and $alreadyInstalled) {
     exit 0
 }
 
-Write-Output 'Fetching latest chiaki-ng release...'
+Write-Output "Fetching release info (channel: $Channel)..."
 
 $headers = @{ 'User-Agent' = 'cereal-launcher' }
-$releaseUrl = "https://api.github.com/repos/$repo/releases/latest"
+$releasesUrl = "https://api.github.com/repos/$repo/releases"
 
 try {
-    $response = Invoke-WebRequest -Uri $releaseUrl -Headers $headers -UseBasicParsing
-    if ($response.StatusCode -eq 403 -or $response.StatusCode -eq 429) {
-        Write-Host "ERROR: GitHub API rate limit exceeded. Try again in a few minutes."
-        exit 1
+    if ($LocalZip -and (Test-Path $LocalZip)) {
+        Write-Output "Using local zip: $LocalZip"
+        $tmpZip = $LocalZip
+        $release = @{ tag_name = ('local:' + (Split-Path $LocalZip -Leaf)); assets = @() }
+        $useLocal = $true
     }
-    $release = $response.Content | ConvertFrom-Json
+
+    if (-not $useLocal) {
+        if ($Channel -eq 'latest') {
+            $response = Invoke-WebRequest -Uri "https://api.github.com/repos/$repo/releases/latest" -Headers $headers -UseBasicParsing
+            $release = $response.Content | ConvertFrom-Json
+        } else {
+            $response = Invoke-WebRequest -Uri $releasesUrl -Headers $headers -UseBasicParsing
+            if ($response.StatusCode -eq 403 -or $response.StatusCode -eq 429) {
+                Write-Host "ERROR: GitHub API rate limit exceeded. Try again in a few minutes."
+                exit 1
+            }
+            $allReleases = $response.Content | ConvertFrom-Json
+            if ($Channel -like 'tag:*') {
+                $tag = $Channel.Substring(4)
+                $release = $allReleases | Where-Object { $_.tag_name -eq $tag } | Select-Object -First 1
+            } elseif ($Channel -eq 'prerelease') {
+                $release = $allReleases | Where-Object { $_.prerelease } | Select-Object -First 1
+            } else {
+                # Prefer the most recent non-prerelease; fallback to the first entry if none found
+                $release = $allReleases | Where-Object { -not $_.prerelease } | Select-Object -First 1
+                if (-not $release) { $release = $allReleases | Select-Object -First 1 }
+            }
+        }
+    }
 } catch {
-    $msg = if ($_.Exception.Response.StatusCode.value__ -eq 403 -or $_.Exception.Response.StatusCode.value__ -eq 429) {
+    $msg = if ($_.Exception -and $_.Exception.Response -and $_.Exception.Response.StatusCode.value__ -eq 403) {
         'GitHub API rate limit exceeded. Try again in a few minutes.'
     } else {
         "Failed to fetch release info: $_"
@@ -49,48 +76,56 @@ try {
     exit 1
 }
 
-# Prefer the portable zip (contains chiaki-ng.exe directly)
-$asset = $release.assets |
-    Where-Object { $_.name -match 'win' -and $_.name -match 'x64' -and $_.name -match 'portable' -and $_.name -match '\.zip$' } |
-    Select-Object -First 1
+$useLocal = $useLocal -eq $true
+$excludePattern = 'test|preview|alpha|beta|rc'
 
-if (-not $asset) {
-    # Fallback: any Windows x64 zip that isn't an installer wrapper
-    $asset = $release.assets |
-        Where-Object { $_.name -match 'win' -and $_.name -match 'x64' -and $_.name -match '\.zip$' -and $_.name -notmatch 'installer' } |
-        Select-Object -First 1
-}
+if (-not $useLocal) {
+    if ($AssetPattern -and $AssetPattern.Trim() -ne '') {
+        $asset = $release.assets | Where-Object { $_.name -match $AssetPattern } | Select-Object -First 1
+    }
+    if (-not $asset) {
+        $asset = $release.assets |
+            Where-Object { $_.name -match 'win' -and $_.name -match 'x64' -and $_.name -match 'portable' -and $_.name -match '\.zip$' -and $_.name -notmatch $excludePattern } |
+            Select-Object -First 1
+    }
+    if (-not $asset) {
+        # Fallback: any Windows x64 zip that isn't an installer wrapper and not obviously a prerelease/test build
+        $asset = $release.assets |
+            Where-Object { $_.name -match 'win' -and $_.name -match 'x64' -and $_.name -match '\.zip$' -and $_.name -notmatch 'installer' -and $_.name -notmatch $excludePattern } |
+            Select-Object -First 1
+    }
 
-if (-not $asset) {
-    Write-Host 'ERROR: No suitable Windows x64 portable zip found in the latest chiaki-ng release.'
-    exit 1
-}
-
-$totalMB = [math]::Round($asset.size / 1MB, 1)
-Write-Output "Downloading $($asset.name) ($totalMB MB)..."
-
-# Use explicit system temp path
-$systemTemp = [System.IO.Path]::GetTempPath()
-$tmpZip = Join-Path $systemTemp "chiaki-ng-setup-$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()).zip"
-Write-Output "Download target: $tmpZip"
-Write-Output "System temp: $systemTemp"
-
-$dlUrl = $asset.browser_download_url
-Write-Output "Download URL: $dlUrl"
-
-# Try BITS transfer first (more reliable for large files), fall back to Invoke-WebRequest
-try {
-    Write-Output 'Starting download with BITS...'
-    Start-BitsTransfer -Source $dlUrl -Destination $tmpZip -DisplayName 'chiaki-ng' -Description "Downloading $totalMB MB..." -ErrorAction Stop
-    Write-Output 'BITS download completed.'
-} catch {
-    Write-Output "BITS failed ($_), trying Invoke-WebRequest..."
-    try {
-        Invoke-WebRequest -Uri $dlUrl -OutFile $tmpZip -UseBasicParsing -ProgressAction SilentlyContinue
-        Write-Output 'IWR download completed.'
-    } catch {
-        Write-Host "ERROR: Download failed: $_"
+    if (-not $asset) {
+        Write-Host 'ERROR: No suitable Windows x64 portable zip found in the selected chiaki-ng release.'
         exit 1
+    }
+
+    $totalMB = [math]::Round($asset.size / 1MB, 1)
+    Write-Output "Downloading $($asset.name) ($totalMB MB)..."
+
+    # Use explicit system temp path
+    $systemTemp = [System.IO.Path]::GetTempPath()
+    $tmpZip = Join-Path $systemTemp "chiaki-ng-setup-$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()).zip"
+    Write-Output "Download target: $tmpZip"
+    Write-Output "System temp: $systemTemp"
+
+    $dlUrl = $asset.browser_download_url
+    Write-Output "Download URL: $dlUrl"
+
+    # Try BITS transfer first (more reliable for large files), fall back to Invoke-WebRequest
+    try {
+        Write-Output 'Starting download with BITS...'
+        Start-BitsTransfer -Source $dlUrl -Destination $tmpZip -DisplayName 'chiaki-ng' -Description "Downloading $totalMB MB..." -ErrorAction Stop
+        Write-Output 'BITS download completed.'
+    } catch {
+        Write-Output "BITS failed ($_), trying Invoke-WebRequest..."
+        try {
+            Invoke-WebRequest -Uri $dlUrl -OutFile $tmpZip -UseBasicParsing -ProgressAction SilentlyContinue
+            Write-Output 'IWR download completed.'
+        } catch {
+            Write-Host "ERROR: Download failed: $_"
+            exit 1
+        }
     }
 }
 
@@ -162,7 +197,7 @@ if (-not $extractedOk) {
     Remove-Item $tmpZip -Force -ErrorAction SilentlyContinue
     exit 1
 }
-Remove-Item $tmpZip -Force -ErrorAction SilentlyContinue
+if (-not $useLocal) { Remove-Item $tmpZip -Force -ErrorAction SilentlyContinue }
 
 # Count what we actually extracted
 $fileCount = (Get-ChildItem -Path $installDir -Recurse -File).Count
@@ -175,10 +210,52 @@ Get-ChildItem -Path $installDir -Recurse | ForEach-Object { Write-Output "  $($_
 
 # Find chiaki.exe anywhere in the extraction and surface all files to top level
 Write-Output 'Surfacing files to top level...'
-$exeFile = Get-ChildItem -Path $installDir -Recurse -Filter 'chiaki.exe' | Select-Object -First 1
+# Prefer exact known names for speed
+$exeFile = Get-ChildItem -Path $installDir -Recurse -Filter 'chiaki.exe' -File -ErrorAction SilentlyContinue | Select-Object -First 1
 if (-not $exeFile) {
-    $exeFile = Get-ChildItem -Path $installDir -Recurse -Filter 'chiaki-ng.exe' | Select-Object -First 1
+    $exeFile = Get-ChildItem -Path $installDir -Recurse -Filter 'chiaki-ng.exe' -File -ErrorAction SilentlyContinue | Select-Object -First 1
 }
+# Fallback: any executable with "chiaki" in the filename (covers renamed or nested builds)
+if (-not $exeFile) {
+    $exeFile = Get-ChildItem -Path $installDir -Recurse -File | Where-Object { $_.Name -like '*chiaki*.exe' } | Select-Object -First 1
+}
+
+# If we still don't have an exe, check for nested zip(s) (zip-in-zip releases) and extract them
+if (-not $exeFile) {
+    $zipEntries = @(Get-ChildItem -Path $installDir -Recurse -File -Filter '*.zip' -ErrorAction SilentlyContinue)
+    if ($zipEntries.Count -gt 0) {
+        $nestedNames = $zipEntries | ForEach-Object { $_.Name }
+        Write-Output ("Found nested archive(s): " + ($nestedNames -join ', '))
+        foreach ($nested in $zipEntries) {
+            Write-Output "Extracting nested archive: $($nested.FullName)"
+            try {
+                Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction Stop
+                $z2 = [System.IO.Compression.ZipFile]::OpenRead($nested.FullName)
+                $entries2 = $z2.Entries | Where-Object { -not $_.FullName.EndsWith('/') }
+                $tcount = $entries2.Count
+                $tc = 0
+                foreach ($entry2 in $entries2) {
+                    $tc++
+                    $dest2 = Join-Path $installDir $entry2.FullName
+                    $dir2 = Split-Path -Parent $dest2
+                    if (-not (Test-Path $dir2)) { New-Item -ItemType Directory -Path $dir2 -Force | Out-Null }
+                    [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry2, $dest2, $true)
+                    if ($tc % 10 -eq 0 -or $tc -eq $tcount) { Write-Output "Extracted nested file $tc / $tcount..." }
+                }
+                $z2.Dispose()
+                Remove-Item $nested.FullName -Force -ErrorAction SilentlyContinue
+            } catch {
+                Write-Output "Nested extraction failed for $($nested.FullName): $_"
+            }
+        }
+
+        # Recompute exeFile after nested extraction
+        $exeFile = Get-ChildItem -Path $installDir -Recurse -Filter 'chiaki.exe' -File -ErrorAction SilentlyContinue | Select-Object -First 1
+        if (-not $exeFile) { $exeFile = Get-ChildItem -Path $installDir -Recurse -Filter 'chiaki-ng.exe' -File -ErrorAction SilentlyContinue | Select-Object -First 1 }
+        if (-not $exeFile) { $exeFile = Get-ChildItem -Path $installDir -Recurse -File | Where-Object { $_.Name -like '*chiaki*.exe' } | Select-Object -First 1 }
+    }
+}
+
 if (-not $exeFile) {
     Write-Host 'ERROR: chiaki.exe not found anywhere in extraction. Contents:'
     Get-ChildItem -Path $installDir -Recurse | ForEach-Object { Write-Host "  $($_.FullName)" }
@@ -219,7 +296,12 @@ if (-not $exeFound) {
 Write-Output "Found executable: $exeFound"
 
 # Write version marker
-Set-Content -Path $versionFile -Value $release.tag_name -Encoding UTF8
+try {
+    $tagVal = $release.tag_name
+} catch {
+    $tagVal = 'unknown'
+}
+Set-Content -Path $versionFile -Value $tagVal -Encoding UTF8
 
-Write-Output "chiaki-ng $($release.tag_name) installed to $installDir"
+Write-Output "chiaki-ng $($tagVal) installed to $installDir"
 exit 0
