@@ -17,7 +17,7 @@ protocol.registerSchemesAsPrivileged([
 ]);
 // ─── Secure Credential Store (extracted to modules/credentials.js) ────────────
 const { safeStore } = require('./modules/core/credentials');
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const os = require('os');
 
 // ─── Constants (extracted to modules/constants.js) ────────────────────────────
@@ -39,7 +39,21 @@ const { getCoversDir, cleanupFile, enqueueCoverFetch } = require('./modules/game
 const { chiakiSessions, resolveChiakiExe, buildChiakiArgs, startChiakiSession, sendEmbedBoundsToAll, autoSetupChiakiIfMissing, registerChiakiIpcHandlers } = require('./modules/integrations/chiaki');
 
 // ─── xCloud (extracted to modules/xcloud.js) ─────────────────────────────────
-const { xcloudSessions, updateAllXcloudBounds, startXcloudSession } = require('./modules/integrations/xcloud');
+const { xcloudSessions, updateAllXcloudBounds, startXcloudSession, stopXcloudSession } = require('./modules/integrations/xcloud');
+
+// Tabs: notify main process when the renderer switches/closes tabs so we can show/hide embedded views
+ipcMain.handle('tabs:switch', (_event, id) => {
+  try {
+    for (const [gid, sess] of xcloudSessions) {
+      try { if (sess && sess.view) sess.view.setVisible(gid === id); } catch (_e) { /* ignore */ }
+    }
+    return { success: true };
+  } catch (e) { return { success: false, error: e && e.message }; }
+});
+
+ipcMain.handle('tabs:close', (_event, id) => {
+  try { return { success: stopXcloudSession(id) }; } catch (e) { return { success: false, error: e && e.message }; }
+});
 
 // ─── Game CRUD + Categories (extracted to modules/gameCrud.js) ────────────────────
 const { registerGameCrudIpcHandlers } = require('./modules/games/gameCrud');
@@ -386,13 +400,28 @@ app.on('before-quit', () => {
 app.on('will-quit', () => {
   // No global shortcuts registered — DevTools handled via before-input-event
   // Cleanup any active xcloud sessions
-  try {
-    for (const [_gameId, sess] of xcloudSessions) {
-      try { mainWindow?.contentView?.removeChildView(sess.view); } catch (_e) { log.debug('xcloud', 'cleanup removeChildView failed'); }
-      try { sess.view?.webContents?.close(); } catch (_e) { log.debug('xcloud', 'cleanup webContents close failed'); }
-    }
-    xcloudSessions.clear();
-  } catch (_e) { log.debug('xcloud', 'session cleanup error'); }
+    try {
+      for (const [_gameId, sess] of xcloudSessions) {
+        try { mainWindow?.contentView?.removeChildView(sess.view); } catch (_e) { log.debug('xcloud', 'cleanup removeChildView failed'); }
+        try { sess.view?.webContents?.close(); } catch (_e) { log.debug('xcloud', 'cleanup webContents close failed'); }
+      }
+      xcloudSessions.clear();
+    } catch (_e) { log.debug('xcloud', 'session cleanup error'); }
+
+    // Best-effort: kill lingering MediaInfoTool.exe processes on Windows so the EXE can be copied during dev builds
+    try {
+        // Try module-provided cleanup first
+        try {
+          const smtcNative = require(path.join(__dirname, 'native', 'smtc'));
+          if (smtcNative && typeof smtcNative.cleanup === 'function') {
+            try { smtcNative.cleanup(); } catch (_e) { /* ignore */ }
+          }
+        } catch (_e) { /* ignore - module may not exist */ }
+
+        if (process.platform === 'win32') {
+          try { spawnSync('taskkill', ['/IM', 'MediaInfoTool.exe', '/F']); } catch (_e) { /* ignore */ }
+        }
+    } catch (_e) { /* ignore */ }
 });
 
 // ─── Window Controls ──────────────────────────────────────────────────────────
@@ -412,6 +441,25 @@ ipcMain.handle('shell:openExternal', (event, url) => {
     if (!safeProtocols.includes(parsed.protocol)) return { error: 'Blocked protocol: ' + parsed.protocol };
   } catch (_e) { /* Invalid URL */ return { error: 'Invalid URL' }; }
   return shell.openExternal(url);
+});
+
+ipcMain.handle('shell:openPath', async (event, p) => {
+  if (!p || typeof p !== 'string') return { error: 'Invalid path' };
+  // Accept either a plain path or a file:/// URL
+  let normalized = p;
+  if (normalized.startsWith('file:///')) {
+    try {
+      normalized = decodeURI(normalized.replace(/^file:\/\//, ''));
+      if (process.platform === 'win32' && normalized.startsWith('/')) normalized = normalized.slice(1);
+    } catch (_e) { /* ignore */ }
+  }
+  try {
+    const res = await shell.openPath(normalized);
+    if (res) return { error: res };
+    return { success: true };
+  } catch (e) {
+    return { error: e && e.message ? e.message : 'open failed' };
+  }
 });
 ipcMain.handle('system:getSpecs', async () => {
   const ramGb = Math.round(os.totalmem() / (1024 * 1024 * 1024));

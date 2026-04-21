@@ -46,6 +46,7 @@ function startXcloudSession(gameId, url, title) {
   view.webContents.setUserAgent(ua);
 
   ctx.mainWindow.contentView.addChildView(view);
+  try { view.setVisible(false); } catch (_e) { /* ignore */ }
 
   const sess = { gameId, view, state: 'loading', startTime: Date.now() };
   xcloudSessions.set(gameId, sess);

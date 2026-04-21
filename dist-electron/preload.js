@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld("api", {
 	close: () => ipcRenderer.invoke("window:close"),
 	fullscreen: () => ipcRenderer.invoke("window:fullscreen"),
 	openExternal: (url) => ipcRenderer.invoke("shell:openExternal", url),
+	openPath: (p) => ipcRenderer.invoke("shell:openPath", p),
 	isFullscreen: () => ipcRenderer.invoke("window:isFullscreen"),
 	getGames: () => ipcRenderer.invoke("games:getAll"),
 	addGame: (game) => ipcRenderer.invoke("games:add", game),
@@ -45,6 +46,7 @@ contextBridge.exposeInMainWorld("api", {
 	chiakiDiscoverConsoles: () => ipcRenderer.invoke("chiaki:discoverConsoles"),
 	chiakiWakeConsole: (opts) => ipcRenderer.invoke("chiaki:wakeConsole", opts),
 	chiakiSetStreamBounds: (opts) => ipcRenderer.invoke("chiaki:setStreamBounds", opts),
+	chiakiUninstall: () => ipcRenderer.invoke("chiaki:uninstall"),
 	xcloudStartDirect: (url) => ipcRenderer.invoke("xcloud:startDirect", { url }),
 	xcloudStart: (opts) => ipcRenderer.invoke("xcloud:start", opts),
 	xcloudStop: (gameId) => ipcRenderer.invoke("xcloud:stop", gameId),
@@ -110,6 +112,8 @@ contextBridge.exposeInMainWorld("api", {
 	getDiscordStatus: () => ipcRenderer.invoke("discord:status"),
 	onTabsOpened: (cb) => ipcOn("tabs:opened", cb),
 	onTabsClosed: (cb) => ipcOn("tabs:closed", cb),
+	switchTab: (id) => ipcRenderer.invoke("tabs:switch", id),
+	closeTab: (id) => ipcRenderer.invoke("tabs:close", id),
 	signalReady: () => ipcRenderer.send("window:ready"),
 	getSystemSpecs: () => ipcRenderer.invoke("system:getSpecs")
 });

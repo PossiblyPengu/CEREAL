@@ -2179,6 +2179,31 @@ var require_chiaki = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 				return { error: e.message };
 			}
 		});
+		ipcMain$8.handle("chiaki:uninstall", async () => {
+			try {
+				const chiakiDir = path$7.join(app$3.getPath("userData"), "chiaki-ng");
+				const actualDir = getChiakiDir();
+				if (!actualDir) return { error: "chiaki not installed" };
+				const resolvedActual = path$7.resolve(actualDir);
+				const resolvedUser = path$7.resolve(chiakiDir);
+				if (resolvedActual !== resolvedUser) return { error: "Cannot uninstall system or bundled dev chiaki" };
+				try {
+					for (const [gid] of chiakiSessions) stopChiakiSession(gid);
+				} catch (_e) {}
+				try {
+					if (fs$6.rmSync) fs$6.rmSync(resolvedUser, {
+						recursive: true,
+						force: true
+					});
+					else fs$6.rmdirSync(resolvedUser, { recursive: true });
+				} catch (e) {
+					return { error: e && e.message ? e.message : "Failed to remove chiaki directory" };
+				}
+				return { ok: true };
+			} catch (e) {
+				return { error: e && e.message ? e.message : "Uninstall failed" };
+			}
+		});
 		ipcMain$8.handle("chiaki:getConfig", () => {
 			return ctx.db.chiakiConfig || {
 				executablePath: "",
@@ -2613,6 +2638,9 @@ var require_xcloud = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		const ua = view.webContents.getUserAgent().replace(/Electron\/\S+\s*/, "") + " Edg/120.0.0.0";
 		view.webContents.setUserAgent(ua);
 		ctx.mainWindow.contentView.addChildView(view);
+		try {
+			view.setVisible(false);
+		} catch (_e) {}
 		const sess = {
 			gameId,
 			view,
@@ -4028,7 +4056,7 @@ protocol.registerSchemesAsPrivileged([{
 	}
 }]);
 var { safeStore } = require_credentials();
-var { spawn } = require("child_process");
+var { spawn, spawnSync } = require("child_process");
 var os = require("os");
 var { ACCOUNT_SECRET_FIELDS } = require_constants();
 var log = require_logger();
@@ -4037,7 +4065,30 @@ var { connectDiscord, disconnectDiscord, setDiscordPresence, isDiscordEnabled, g
 ipcMain.handle("discord:status", () => getDiscordStatus());
 var { getCoversDir, cleanupFile, enqueueCoverFetch } = require_covers();
 var { chiakiSessions, resolveChiakiExe, buildChiakiArgs, startChiakiSession, sendEmbedBoundsToAll, autoSetupChiakiIfMissing, registerChiakiIpcHandlers } = require_chiaki();
-var { xcloudSessions, updateAllXcloudBounds, startXcloudSession } = require_xcloud();
+var { xcloudSessions, updateAllXcloudBounds, startXcloudSession, stopXcloudSession } = require_xcloud();
+ipcMain.handle("tabs:switch", (_event, id) => {
+	try {
+		for (const [gid, sess] of xcloudSessions) try {
+			if (sess && sess.view) sess.view.setVisible(gid === id);
+		} catch (_e) {}
+		return { success: true };
+	} catch (e) {
+		return {
+			success: false,
+			error: e && e.message
+		};
+	}
+});
+ipcMain.handle("tabs:close", (_event, id) => {
+	try {
+		return { success: stopXcloudSession(id) };
+	} catch (e) {
+		return {
+			success: false,
+			error: e && e.message
+		};
+	}
+});
 var { registerGameCrudIpcHandlers } = require_gameCrud();
 registerGameCrudIpcHandlers();
 var { DB_PATH, loadDB, saveDB, flushDB } = require_database();
@@ -4360,6 +4411,21 @@ app.on("will-quit", () => {
 	} catch (_e) {
 		log.debug("xcloud", "session cleanup error");
 	}
+	try {
+		try {
+			const smtcNative = require(path.join(__dirname, "native", "smtc"));
+			if (smtcNative && typeof smtcNative.cleanup === "function") try {
+				smtcNative.cleanup();
+			} catch (_e) {}
+		} catch (_e) {}
+		if (process.platform === "win32") try {
+			spawnSync("taskkill", [
+				"/IM",
+				"MediaInfoTool.exe",
+				"/F"
+			]);
+		} catch (_e) {}
+	} catch (_e) {}
 });
 ipcMain.handle("window:minimize", () => mainWindow.minimize());
 ipcMain.handle("window:maximize", () => {
@@ -4396,6 +4462,21 @@ ipcMain.handle("shell:openExternal", (event, url) => {
 		return { error: "Invalid URL" };
 	}
 	return shell.openExternal(url);
+});
+ipcMain.handle("shell:openPath", async (event, p) => {
+	if (!p || typeof p !== "string") return { error: "Invalid path" };
+	let normalized = p;
+	if (normalized.startsWith("file:///")) try {
+		normalized = decodeURI(normalized.replace(/^file:\/\//, ""));
+		if (process.platform === "win32" && normalized.startsWith("/")) normalized = normalized.slice(1);
+	} catch (_e) {}
+	try {
+		const res = await shell.openPath(normalized);
+		if (res) return { error: res };
+		return { success: true };
+	} catch (e) {
+		return { error: e && e.message ? e.message : "open failed" };
+	}
 });
 ipcMain.handle("system:getSpecs", async () => {
 	const ramGb = Math.round(os.totalmem() / (1024 * 1024 * 1024));

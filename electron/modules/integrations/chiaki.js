@@ -708,6 +708,35 @@ function registerChiakiIpcHandlers() {
     }
   });
 
+  ipcMain.handle('chiaki:uninstall', async () => {
+    try {
+      const chiakiDir = path.join(app.getPath('userData'), 'chiaki-ng');
+      const actualDir = getChiakiDir();
+      if (!actualDir) return { error: 'chiaki not installed' };
+      // Only allow uninstall of the userData-installed chiaki (avoid deleting dev resources or system installs)
+      const resolvedActual = path.resolve(actualDir);
+      const resolvedUser = path.resolve(chiakiDir);
+      if (resolvedActual !== resolvedUser) return { error: 'Cannot uninstall system or bundled dev chiaki' };
+
+      // Stop any active sessions first
+      try {
+        for (const [gid] of chiakiSessions) stopChiakiSession(gid);
+      } catch (_e) { /* best-effort */ }
+
+      // Remove the directory
+      try {
+        if (fs.rmSync) fs.rmSync(resolvedUser, { recursive: true, force: true });
+        else fs.rmdirSync(resolvedUser, { recursive: true });
+      } catch (e) {
+        return { error: e && e.message ? e.message : 'Failed to remove chiaki directory' };
+      }
+
+      return { ok: true };
+    } catch (e) {
+      return { error: e && e.message ? e.message : 'Uninstall failed' };
+    }
+  });
+
   ipcMain.handle('chiaki:getConfig', () => {
     return ctx.db.chiakiConfig || { executablePath: '', consoles: [] };
   });

@@ -4,6 +4,7 @@ import electron from 'vite-plugin-electron'
 import renderer from 'vite-plugin-electron-renderer'
 import path from 'path'
 import fs from 'fs'
+import { spawnSync } from 'child_process'
 
 function copyElectronProviders() {
   return {
@@ -36,7 +37,24 @@ function copyMediaInfoExe() {
   const dest = path.resolve(__dirname, 'dist-electron/native/MediaInfoTool.exe')
   if (fs.existsSync(src)) {
     fs.mkdirSync(path.dirname(dest), { recursive: true })
-    fs.copyFileSync(src, dest)
+    // Try a few times to copy the EXE. If it's locked by a lingering process, attempt to kill it first (Windows only).
+    const attempts = 3
+    for (let i = 0; i < attempts; i++) {
+      try {
+        fs.copyFileSync(src, dest)
+        break
+      } catch (err: any) {
+        const code = err && err.code ? err.code : ''
+        if ((code === 'EBUSY' || code === 'EPERM' || code === 'EACCES') && process.platform === 'win32') {
+          try { spawnSync('taskkill', ['/IM', 'MediaInfoTool.exe', '/F'], { stdio: 'ignore' }); } catch (_e) { /* ignore */ }
+          // small pause before retry
+          try { spawnSync('powershell', ['-NoProfile', '-Command', 'Start-Sleep -Milliseconds 150'], { stdio: 'ignore' }); } catch (_e) { /* ignore */ }
+          if (i === attempts - 1) throw err
+          continue
+        }
+        throw err
+      }
+    }
   }
   // Also copy smtc/*.js so they're available as runtime modules
   const smtcFiles = ['index.js', 'powershell-bridge.js']

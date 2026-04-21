@@ -61,6 +61,20 @@ export function SettingsPanel({
   const [specsLoading, setSpecsLoading] = useState(false);
   const [activeSection, setActiveSection] = useState('appearance');
 
+  
+  async function checkChiaki() {
+    setChiakiUpd({ checking: true });
+    try {
+      const s = await (window.api as any)?.getChiakiStatus?.();
+      const r = await (window.api as any)?.chiakiCheckUpdate?.();
+      if (r?.error) { setChiakiUpd({ error: r.error }); return; }
+      const current = r?.current || s?.version || null;
+      const installed = !!(s && s.status && s.status !== 'missing');
+      if (r?.hasUpdate) setChiakiUpd({ current, latest: r.latest, hasUpdate: true, installed, status: s?.status || null });
+      else setChiakiUpd({ current, latest: r?.latest || null, hasUpdate: false, installed, status: s?.status || null });
+    } catch (e: any) { setChiakiUpd({ error: e.message }); }
+  }
+
   useEffect(() => {
     if (!show) { requestAnimationFrame(() => { setConfirmClear(false); setConfirmClearCovers(false); }); return; }
     requestAnimationFrame(() => setLocal({ ...settings }));
@@ -85,7 +99,7 @@ export function SettingsPanel({
         setSpecsLoading(false);
       }
     })();
-    requestAnimationFrame(() => setChiakiUpd(null));
+    requestAnimationFrame(() => { setChiakiUpd(null); requestAnimationFrame(() => { void checkChiaki(); }); });
   }, [show, settings, specs]);
 
   useEffect(() => {
@@ -139,6 +153,8 @@ export function SettingsPanel({
     setConfirmClearCovers(false);
     flash('Covers reset to defaults');
   };
+
+  
 
   const doClearAll = async () => {
     if (!confirmClear) { setConfirmClear(true); return; }
@@ -374,18 +390,7 @@ export function SettingsPanel({
                 </div>
                 <div className="sys-update-card-desc">PlayStation Remote Play engine</div>
                 <div className="sys-update-card-actions">
-                  <button className="btn-sm" disabled={chiakiUpd?.checking || chiakiUpd?.updating}
-                    onClick={async () => {
-                      setChiakiUpd({ checking: true });
-                      try {
-                        const s = await (window.api as any)?.getChiakiStatus?.();
-                        const r = await (window.api as any)?.chiakiCheckUpdate?.();
-                        if (r?.error) { setChiakiUpd({ error: r.error }); return; }
-                        const current = r?.current || s?.version || null;
-                        if (r?.hasUpdate) setChiakiUpd({ current, latest: r.latest, hasUpdate: true });
-                        else setChiakiUpd({ current, latest: r?.latest || null, hasUpdate: false });
-                      } catch (e: any) { setChiakiUpd({ error: e.message }); }
-                    }}>Check</button>
+                  <button className="btn-sm" disabled={chiakiUpd?.checking || chiakiUpd?.updating} onClick={() => checkChiaki()}>Check</button>
                   {chiakiUpd?.hasUpdate && (
                     <button className="btn-sm primary" disabled={chiakiUpd?.updating}
                       onClick={async () => {
@@ -395,7 +400,19 @@ export function SettingsPanel({
                           if (r?.ok) setChiakiUpd({ done: true, version: r.version });
                           else setChiakiUpd({ error: r?.error || 'Update failed' });
                         } catch (e: any) { setChiakiUpd({ error: e.message }); }
-                      }}>Update</button>
+                      }}>{chiakiUpd?.installed ? 'Update' : 'Install'}</button>
+                  )}
+                  {chiakiUpd?.installed && (
+                    <button className="btn-sm danger" disabled={chiakiUpd?.updating || chiakiUpd?.checking}
+                      onClick={async () => {
+                        if (!confirm('Uninstall chiaki-ng and remove downloaded files?')) return;
+                        setChiakiUpd((prev: any) => ({ ...prev, uninstalling: true }));
+                        try {
+                          const r = await (window.api as any)?.chiakiUninstall?.();
+                          if (r?.ok) { setChiakiUpd(null); if (typeof flash === 'function') flash('chiaki-ng uninstalled'); }
+                          else setChiakiUpd({ error: r?.error || 'Uninstall failed' });
+                        } catch (e: any) { setChiakiUpd({ error: e.message }); }
+                      }}>Uninstall</button>
                   )}
                 </div>
               </div>
@@ -487,7 +504,7 @@ export function SettingsPanel({
                     <div className="lib-data-path-label">Storage location</div>
                     <div className="lib-data-path-val">{dataPath}</div>
                   </div>
-                  <button className="btn-sm" style={{ flexShrink: 0 }} onClick={() => (window.api as any)?.openExternal?.('file:///' + dataPath.replace(/\\/g, '/'))}>Open</button>
+                  <button className="btn-sm" style={{ flexShrink: 0 }} onClick={() => (window.api as any)?.openPath?.(dataPath)}>Open</button>
                 </div>
               </>
             )}
@@ -588,7 +605,7 @@ export function SettingsPanel({
                       <div className="lib-data-path-label">Data folder</div>
                       <div className="lib-data-path-val">{dataPath}</div>
                     </div>
-                    <button className="btn-sm" style={{ flexShrink: 0 }} onClick={() => (window.api as any)?.openExternal?.('file:///' + dataPath.replace(/\\/g, '/'))}>Open</button>
+                    <button className="btn-sm" style={{ flexShrink: 0 }} onClick={() => (window.api as any)?.openPath?.(dataPath)}>Open</button>
                   </div>
                 </>}
 

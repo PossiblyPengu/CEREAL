@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('api', {
   close: () => ipcRenderer.invoke('window:close'),
   fullscreen: () => ipcRenderer.invoke('window:fullscreen'),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
+  openPath: (p) => ipcRenderer.invoke('shell:openPath', p),
   isFullscreen: () => ipcRenderer.invoke('window:isFullscreen'),
 
   // Games
@@ -55,6 +56,7 @@ contextBridge.exposeInMainWorld('api', {
   chiakiDiscoverConsoles: () => ipcRenderer.invoke('chiaki:discoverConsoles'),
   chiakiWakeConsole: (opts) => ipcRenderer.invoke('chiaki:wakeConsole', opts),
   chiakiSetStreamBounds: (opts) => ipcRenderer.invoke('chiaki:setStreamBounds', opts),
+  chiakiUninstall: () => ipcRenderer.invoke('chiaki:uninstall'),
 
   // xCloud (Xbox Cloud Gaming)
   xcloudStartDirect: (url) => ipcRenderer.invoke('xcloud:startDirect', { url }),
@@ -130,6 +132,8 @@ contextBridge.exposeInMainWorld('api', {
   // Tab system
   onTabsOpened: (cb) => ipcOn('tabs:opened', cb),
   onTabsClosed: (cb) => ipcOn('tabs:closed', cb),
+  switchTab: (id) => ipcRenderer.invoke('tabs:switch', id),
+  closeTab: (id) => ipcRenderer.invoke('tabs:close', id),
 
   // Signal to main process that the renderer has finished loading all data
   signalReady: () => ipcRenderer.send('window:ready'),
