@@ -1,4 +1,8 @@
-﻿## v0.2.4 - 2026-04-20
+﻿## v0.2.5 - 2026-04-20
+
+- Maintenance release
+
+## v0.2.4 - 2026-04-20
 
 ### New
 - Enhance Chiaki integration with customizable installation options

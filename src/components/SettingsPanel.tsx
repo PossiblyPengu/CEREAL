@@ -315,29 +315,30 @@ export function SettingsPanel({
                 <Toggle value={!!(local as any).closeToTray} onChange={v => update('closeToTray' as any, v)} />
               </div>
             </div>
+          </div>}
 
-            {/* Chiaki */}
-            {activeSection === 'chiaki' && <div className="settings-section">
-              <div className="settings-section-label">PlayStation Remote Play (chiaki-ng)</div>
-              <div className="settings-group">
-                <div className="settings-row">
-                  <div className="settings-row-info"><div className="settings-row-label">Channel</div><div className="settings-row-desc">Which GitHub release channel to use</div></div>
-                  <select className="settings-select" value={chiakiInstallOptions?.channel || 'stable'} onChange={e => setChiakiInstallOptions((p: any) => ({ ...p, channel: e.target.value }))}>
-                    <option value="stable">Stable (recommended)</option>
-                    <option value="latest">Latest</option>
-                    <option value="prerelease">Prerelease</option>
-                  </select>
+          {/* Chiaki */}
+          {activeSection === 'chiaki' && <div className="settings-section">
+            <div className="settings-section-label">PlayStation Remote Play (chiaki-ng)</div>
+            <div className="settings-group">
+              <div className="settings-row">
+                <div className="settings-row-info"><div className="settings-row-label">Channel</div><div className="settings-row-desc">Which GitHub release channel to use</div></div>
+                <select className="settings-select" value={chiakiInstallOptions?.channel || 'stable'} onChange={e => setChiakiInstallOptions((p: any) => ({ ...p, channel: e.target.value }))}>
+                  <option value="stable">Stable (recommended)</option>
+                  <option value="latest">Latest</option>
+                  <option value="prerelease">Prerelease</option>
+                </select>
+              </div>
+
+              <div className="settings-row">
+                <div className="settings-row-info"><div className="settings-row-label">Install Directory</div><div className="settings-row-desc">Where chiaki-ng will be installed</div></div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input className="settings-input" value={chiakiInstallOptions?.installDir || ''} onChange={e => setChiakiInstallOptions((p: any) => ({ ...p, installDir: e.target.value }))} />
+                  <button className="btn-sm" onClick={async () => { const p = await (window.api as any).pickFolder?.(); if (p) setChiakiInstallOptions((o: any) => ({ ...o, installDir: p })); }}>Browse</button>
                 </div>
+              </div>
 
-                <div className="settings-row">
-                  <div className="settings-row-info"><div className="settings-row-label">Install Directory</div><div className="settings-row-desc">Where chiaki-ng will be installed</div></div>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <input className="settings-input" value={chiakiInstallOptions?.installDir || ''} onChange={e => setChiakiInstallOptions((p: any) => ({ ...p, installDir: e.target.value }))} />
-                    <button className="btn-sm" onClick={async () => { const p = await (window.api as any).pickFolder?.(); if (p) setChiakiInstallOptions((o: any) => ({ ...o, installDir: p })); }}>Browse</button>
-                  </div>
-                </div>
-
-                <div className="settings-row">
+              <div className="settings-row">
                   <div className="settings-row-info"><div className="settings-row-label">Local ZIP (optional)</div><div className="settings-row-desc">Use a local chiaki release zip instead of downloading</div></div>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <input className="settings-input" value={chiakiInstallOptions?.localZip || ''} onChange={e => setChiakiInstallOptions((p: any) => ({ ...p, localZip: e.target.value }))} />
