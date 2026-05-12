@@ -35,6 +35,16 @@ export interface Game {
   // Steam-specific dynamic fields
   software?: boolean;
   type?: string;
+
+  // Metadata
+  website?: string;
+  description?: string;
+  developer?: string;
+  publisher?: string;
+  releaseDate?: string;
+  metacritic?: number;
+  notes?: string;
+  screenshots?: string[];
 }
 
 // ─── Settings ────────────────────────────────────────────────────────────────
@@ -58,11 +68,21 @@ export interface Settings {
   steamPath?: string;
   epicPath?: string;
   gogPath?: string;
+  xboxPath?: string;
   firstRun?: boolean;
   filterPlatforms?: string[];
   filterCategories?: string[];
   filterHideSteamSoftware?: boolean;
+  filterShowHidden?: boolean;
+  filterSortBy?: string;
   chiakiPath?: string;
+  // Window & tray behaviour
+  minimizeToTray?: boolean;
+  startMinimized?: boolean;
+  rememberWindowBounds?: boolean;
+  windowBounds?: { x?: number; y?: number; width?: number; height?: number; isMaximized?: boolean };
+  // Bookkeeping
+  launchOnStartup?: boolean;
   // Any additional persisted keys
   [key: string]: unknown;
 }
@@ -131,11 +151,14 @@ export interface MediaInfo {
 // ─── Progress overlays ──────────────────────────────────────────────────────
 
 export interface ImportProgress {
-  status: 'running' | 'done' | 'error';
+  status: 'running' | 'done' | 'error' | string;
   provider?: string;
   processed?: number;
   total?: number;
+  imported?: number;
+  updated?: number;
   name?: string;
+  message?: string;
 }
 
 export interface MetaProgress {
@@ -162,22 +185,134 @@ export interface ArtPickerOpts {
   field: 'coverUrl' | 'headerUrl';
 }
 
+// ─── IPC result types ────────────────────────────────────────────────────────
+// Most main-process IPC handlers return either a typed value or a discriminated
+// `{ ok: true, ... }` / `{ ok: false, error }` envelope. Capture the common
+// shapes here so call sites can drop their `as any` casts.
+
+export interface IpcOk { ok: true; }
+export interface IpcErr { ok: false; error: string; }
+export type IpcResult<T = unknown> = (IpcOk & T) | IpcErr;
+
+export interface ChiakiStatus {
+  status: 'ready' | 'missing' | string;
+  version?: string;
+  path?: string;
+}
+
+export interface ChiakiConsole {
+  host: string;
+  name?: string;
+  type?: string;
+  registered?: boolean;
+  registKey?: string;
+  morning?: string;
+  state?: string;
+  [key: string]: unknown;
+}
+
+export interface ChiakiUpdateResult {
+  ok: boolean;
+  version?: string;
+  error?: string;
+  output?: string;
+}
+
+export interface ChiakiRegisterResult {
+  success: boolean;
+  ok?: boolean;
+  error?: string;
+}
+
+export interface ChiakiDiscoverResult {
+  consoles: ChiakiConsole[];
+}
+
+export interface ChiakiSessionsResult {
+  sessions: Record<string, ChiakiSession>;
+}
+
+export interface AccountInfo {
+  connected?: boolean;
+  displayName?: string;
+  gamertag?: string;
+  avatarUrl?: string;
+  gameCount?: number;
+  lastSync?: string;
+  [key: string]: unknown;
+}
+export type AccountsMap = Record<string, AccountInfo>;
+
+export interface PlatformAuthResult {
+  success?: boolean;
+  error?: string;
+  account?: AccountInfo;
+}
+
+export interface PlatformImportResult {
+  // Older providers return the count, newer ones return the imported list. Renderer
+  // accepts either via `Array.isArray(imported) ? imported.length : imported`.
+  imported?: number | Game[];
+  // Some providers also surface a list of games that were updated (playtime sync etc.).
+  updated?: Game[];
+  // The provider may return a refreshed list of games to merge into the renderer state.
+  games?: Game[];
+  // 'local' means the provider used local-disk scan (no API key); 'remote' means full library.
+  source?: 'local' | 'remote' | string;
+  error?: string;
+}
+
+export interface XboxDetectResult {
+  games?: Game[];
+  xboxAppFound?: boolean;
+  cloudGamingUrl?: string;
+}
+
+export interface ApiKeyInfo {
+  ok: boolean;
+  hasSecret?: boolean;
+  fingerprint?: string | null;
+  error?: string;
+}
+
+export interface SystemSpecs {
+  ramGb?: number;
+  cpuCount?: number;
+  cpuModel?: string;
+  gpuName?: string;
+  platform?: string;
+  arch?: string;
+}
+
+export interface UpdateEvent {
+  type: 'checking-for-update' | 'update-available' | 'update-not-available'
+      | 'download-progress' | 'update-downloaded' | 'error' | string;
+  data?: unknown;
+}
+
+export interface TabOpenedEvent {
+  id: string;
+  title: string;
+  platform: string;
+}
+
 // ─── Electron API (exposed via preload) ──────────────────────────────────────
 
 export interface ElectronAPI {
   // Window controls
-  minimize?(): void;
-  maximize?(): void;
-  close?(): void;
+  minimize?(): Promise<void>;
+  maximize?(): Promise<void>;
+  close?(): Promise<void>;
   fullscreen?(): Promise<void>;
   openExternal?(url: string): Promise<void>;
+  openPath?(path: string): Promise<string>;
   isFullscreen?(): Promise<boolean>;
   signalReady?(): void;
 
   // Games
   getGames(): Promise<Game[]>;
-  addGame(game: Game): Promise<Game>;
-  updateGame(game: Game): Promise<Game>;
+  addGame(game: Partial<Game>): Promise<Game>;
+  updateGame(game: Partial<Game> & { id: string }): Promise<Game>;
   fetchCoverNow?(gameId: string): Promise<void>;
   deleteGame(id: string): Promise<void>;
   toggleFavorite(id: string): Promise<Game>;
@@ -190,34 +325,40 @@ export interface ElectronAPI {
   detectEpic?(): Promise<{ games: Game[] }>;
   detectGOG?(): Promise<{ games: Game[] }>;
   detectPSRemote?(): Promise<{ games: Game[] }>;
-  detectXbox?(): Promise<{ games: Game[] }>;
+  detectXbox?(): Promise<XboxDetectResult>;
   detectEA?(): Promise<{ games: Game[] }>;
   detectBattleNet?(): Promise<{ games: Game[] }>;
   detectItchio?(): Promise<{ games: Game[] }>;
   detectUbisoft?(): Promise<{ games: Game[] }>;
 
   // Chiaki (PlayStation Remote Play)
-  getChiakiStatus?(): Promise<unknown>;
-  chiakiCheckUpdate?(): Promise<unknown>;
-  chiakiUpdate?(): Promise<unknown>;
-  getChiakiConfig?(): Promise<unknown>;
-  saveChiakiConfig?(config: unknown): Promise<void>;
-  setChiakiStream?(gameId: string, streamConfig: unknown): Promise<void>;
-  chiakiStartStreamDirect?(opts: unknown): Promise<void>;
-  chiakiStartStream?(gameId: string): Promise<void>;
+  getChiakiStatus?(): Promise<ChiakiStatus | null>;
+  chiakiCheckUpdate?(): Promise<{ available: boolean; version?: string; error?: string }>;
+  chiakiUpdate?(): Promise<ChiakiUpdateResult>;
+  // Pass-through config types: the renderer keeps its own internal `ChiakiConfig`
+  // shape and the main process accepts whatever JSON-serializable object it gets,
+  // so we use a loose object type here.
+  getChiakiConfig?(): Promise<object>;
+  saveChiakiConfig?(config: object): Promise<void>;
+  setChiakiStream?(gameId: string, streamConfig: object): Promise<void>;
+  chiakiStartStreamDirect?(opts: object): Promise<{ success?: boolean; error?: string }>;
+  chiakiStartStream?(gameId: string): Promise<{ success?: boolean; error?: string }>;
   chiakiStopStream?(gameId: string): Promise<void>;
-  chiakiGetSessions?(): Promise<unknown>;
-  chiakiOpenGui?(): Promise<void>;
-  chiakiRegisterConsole?(opts: unknown): Promise<{ success: boolean; error?: string }>;
-  chiakiDiscoverConsoles?(): Promise<unknown>;
-  chiakiWakeConsole?(opts: unknown): Promise<void>;
-  chiakiSetStreamBounds?(opts: unknown): Promise<void>;
+  chiakiGetSessions?(): Promise<ChiakiSessionsResult>;
+  chiakiOpenGui?(): Promise<{ ok?: boolean; error?: string }>;
+  chiakiRegisterConsole?(opts: { host: string; psnAccountId: string; pin: string }): Promise<ChiakiRegisterResult>;
+  chiakiDiscoverConsoles?(): Promise<ChiakiDiscoverResult>;
+  // `morning` is optional because some call sites only have a registKey — the
+  // main process tolerates this and falls back to a default wake payload.
+  chiakiWakeConsole?(opts: { host: string; credentials: { registKey?: string; morning?: string } }): Promise<ChiakiRegisterResult>;
+  chiakiSetStreamBounds?(opts: { gameId: string; bounds: { x: number; y: number; width: number; height: number } }): Promise<void>;
+  chiakiUninstall?(): Promise<{ ok?: boolean; error?: string }>;
 
   // xCloud (Xbox Cloud Gaming)
-  xcloudStartDirect?(url: string): Promise<void>;
-  xcloudStart?(opts: unknown): Promise<void>;
+  xcloudStartDirect?(url: string): Promise<{ id?: string; error?: string }>;
+  xcloudStart?(opts: { url?: string; gameId?: string }): Promise<{ id?: string; error?: string }>;
   xcloudStop?(gameId: string): Promise<void>;
-  xcloudGetSessions?(): Promise<unknown>;
+  xcloudGetSessions?(): Promise<Record<string, { url: string }>>;
 
   // Stream events (PS + Xbox)
   onChiakiEvent?(cb: (evt: ChiakiSession) => void): () => void;
@@ -235,12 +376,12 @@ export interface ElectronAPI {
   removeCategory?(cat: string): Promise<string[]>;
 
   // Metadata
-  fetchMetadata?(gameId: string): Promise<unknown>;
-  applyMetadata?(gameId: string, force?: boolean): Promise<unknown>;
+  fetchMetadata?(gameId: string): Promise<Partial<Game> | null>;
+  applyMetadata?(gameId: string, force?: boolean): Promise<{ ok: boolean; updated?: boolean; error?: string }>;
   fetchAllMetadata?(): Promise<{ total: number; updated: number; failed: number }>;
-  searchArt?(gameName: string, platform: string): Promise<unknown>;
-  fetchMetadataForName?(name: string, platform: string, platformId?: string): Promise<unknown>;
-  steamGridDbLogin?(): Promise<unknown>;
+  searchArt?(gameName: string, platform: string): Promise<{ covers?: { url: string }[]; heroes?: { url: string }[]; error?: string }>;
+  fetchMetadataForName?(name: string, platform: string, platformId?: string): Promise<Partial<Game> | null>;
+  steamGridDbLogin?(): Promise<void>;
   readClipboard?(): Promise<string>;
   onMetadataProgress?(cb: (p: Partial<MetaProgress>) => void): () => void;
   onCoverProgress?(cb: (p: CoverProgress) => void): () => void;
@@ -249,10 +390,10 @@ export interface ElectronAPI {
   syncPlaytime?(): Promise<{ games: Game[]; updated: string[] }>;
 
   // Platform Accounts
-  getAccounts?(): Promise<unknown>;
-  removeAccount?(platform: string): Promise<unknown>;
-  platformAuth?(platform: string): Promise<unknown>;
-  platformImport?(platform: string): Promise<unknown>;
+  getAccounts?(): Promise<AccountsMap>;
+  removeAccount?(platform: string): Promise<void>;
+  platformAuth?(platform: string): Promise<PlatformAuthResult>;
+  platformImport?(platform: string): Promise<PlatformImportResult>;
 
   // Import progress
   onImportProgress?(cb: (data: ImportProgress) => void): () => void;
@@ -261,38 +402,38 @@ export interface ElectronAPI {
   getSettings(): Promise<Settings>;
   saveSettings(s: Partial<Settings>): Promise<Settings>;
   resetSettings?(): Promise<Settings>;
-  exportLibrary?(): Promise<unknown>;
-  importLibrary?(): Promise<unknown>;
+  exportLibrary?(): Promise<{ ok: boolean; path?: string; error?: string }>;
+  importLibrary?(): Promise<{ ok: boolean; imported?: number; error?: string }>;
   clearAllGames?(): Promise<void>;
   clearCovers?(): Promise<void>;
   getDataPath?(): Promise<string>;
   getAppVersion?(): Promise<string>;
 
   // Auto-Update
-  checkForUpdate?(): Promise<unknown>;
-  installUpdate?(): void;
-  onUpdateEvent?(cb: (e: { type: string; data: unknown }) => void): () => void;
+  checkForUpdate?(): Promise<{ available: boolean; version?: string }>;
+  installUpdate?(): Promise<void>;
+  onUpdateEvent?(cb: (e: UpdateEvent) => void): () => void;
 
   // System media controls (SMTC)
   getMediaInfo?(): Promise<MediaInfo | null>;
-  mediaControl?(action: string): Promise<void>;
+  mediaControl?(action: 'play' | 'pause' | 'next' | 'previous' | 'stop' | string): Promise<void>;
 
   // Secure API key storage
-  saveApiKey?(provider: string, apiKey: string): Promise<void>;
-  getApiKeyInfo?(provider: string): Promise<unknown>;
-  deleteApiKey?(provider: string): Promise<void>;
-  validateApiKey?(provider: string, apiKey: string): Promise<unknown>;
-  validateStoredApiKey?(provider: string): Promise<unknown>;
-  getDiscordStatus?(): Promise<unknown>;
+  saveApiKey?(provider: string, apiKey: string): Promise<ApiKeyInfo>;
+  getApiKeyInfo?(provider: string): Promise<ApiKeyInfo>;
+  deleteApiKey?(provider: string): Promise<{ ok: boolean }>;
+  validateApiKey?(provider: string, apiKey: string): Promise<{ ok: boolean; error?: string }>;
+  validateStoredApiKey?(provider: string): Promise<{ ok: boolean; error?: string }>;
+  getDiscordStatus?(): Promise<{ enabled: boolean; connected?: boolean }>;
 
   // Tab system
-  onTabsOpened?(cb: (d: { id: string; title: string; platform: string }) => void): () => void;
+  onTabsOpened?(cb: (d: TabOpenedEvent) => void): () => void;
   onTabsClosed?(cb: (d: { id: string }) => void): () => void;
-  switchTab?(id: string): void;
-  closeTab?(id: string): void;
+  switchTab?(id: string): Promise<{ success: boolean }>;
+  closeTab?(id: string): Promise<{ success: boolean }>;
 
   // System specs
-  getSystemSpecs?(): Promise<unknown>;
+  getSystemSpecs?(): Promise<SystemSpecs>;
 }
 
 declare global {

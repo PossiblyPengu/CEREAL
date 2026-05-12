@@ -38,23 +38,34 @@ function disconnectDiscord() {
 
 const PLATFORM_LABELS = {
   steam: 'Steam', epic: 'Epic Games', gog: 'GOG', psn: 'PlayStation',
-  xbox: 'Xbox', custom: 'PC', psremote: 'PlayStation'
+  xbox: 'Xbox', custom: 'PC', psremote: 'PlayStation',
+  battlenet: 'Battle.net', ea: 'EA App', ubisoft: 'Ubisoft Connect', itchio: 'itch.io',
 };
+
+// Only set smallImageKey for platforms that have a registered Discord asset.
+// Sending an unknown key shows nothing in the client and may emit a warning.
+const KNOWN_SMALL_IMAGE_KEYS = new Set([
+  'steam', 'epic', 'gog', 'psn', 'xbox', 'custom',
+  'battlenet', 'ea', 'ubisoft', 'itchio', 'psremote',
+]);
 
 function setDiscordPresence(gameName, platform, startTimestamp) {
   discordCurrentGame = { name: gameName, platform, startTimestamp: startTimestamp || Date.now() };
   if (!discordRpc || !discordReady) return;
   try {
-    discordRpc.setActivity({
+    const activity = {
       details: gameName,
       state: 'via ' + (PLATFORM_LABELS[platform] || 'Cereal Launcher'),
       startTimestamp: discordCurrentGame.startTimestamp,
       largeImageKey: 'cereal_logo',
       largeImageText: 'Cereal Launcher',
-      smallImageKey: platform || 'custom',
-      smallImageText: PLATFORM_LABELS[platform] || 'Game',
       instance: false,
-    });
+    };
+    if (platform && KNOWN_SMALL_IMAGE_KEYS.has(platform)) {
+      activity.smallImageKey = platform;
+      activity.smallImageText = PLATFORM_LABELS[platform] || 'Game';
+    }
+    discordRpc.setActivity(activity);
   } catch (_e) { log.warn('discord', 'Presence error:', _e.message); }
 }
 

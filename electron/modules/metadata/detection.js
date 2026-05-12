@@ -4,16 +4,35 @@
 
 const path = require('path');
 const fs = require('fs');
+const ctx = require('../core/context');
+const {
+  programDataDir,
+  programFilesDir,
+  programFilesX86Dir,
+  localAppDataDir,
+  systemDriveDir,
+} = require('../core/paths');
+
+// User-supplied path overrides from db.settings, applied first so a user who
+// installed Steam/Epic/GOG/Xbox to a non-default drive can point us at it.
+function userPathOverride(field) {
+  try {
+    const v = ctx?.db?.settings?.[field];
+    return (typeof v === 'string' && v.trim()) ? v.trim() : null;
+  } catch (_e) { return null; }
+}
 
 // ─── Steam Root Resolution ───────────────────────────────────────────────────
 function findSteamRoot() {
+  const override = userPathOverride('steamPath');
   const steamPaths = [
-    path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Steam'),
-    path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Steam'),
+    override,
+    path.join(programFilesX86Dir(), 'Steam'),
+    path.join(programFilesDir(), 'Steam'),
     path.join(process.env.HOME || process.env.USERPROFILE || '', 'Steam'),
-  ];
+  ].filter(Boolean);
   for (const p of steamPaths) {
-    if (fs.existsSync(p)) return p;
+    try { if (fs.existsSync(p)) return p; } catch (_e) { /* ignore */ }
   }
   return null;
 }
@@ -76,11 +95,24 @@ function scanSteamInstalled() {
 function scanEpicInstalled() {
   const games = [];
   try {
-    const manifestDir = path.join(
-      process.env.PROGRAMDATA || 'C:\\ProgramData',
-      'Epic', 'EpicGamesLauncher', 'Data', 'Manifests'
-    );
-    if (!fs.existsSync(manifestDir)) return games;
+    // The user can point `epicPath` at the Epic install root (e.g.
+    // `D:\Epic Games`) OR at the manifests directory directly. Try the
+    // override as a manifests-dir first, then as an install root.
+    const override = userPathOverride('epicPath');
+    const candidates = [];
+    if (override) {
+      candidates.push(override);
+      candidates.push(path.join(override, 'Data', 'Manifests'));
+      candidates.push(path.join(override, 'Manifests'));
+    }
+    candidates.push(path.join(programDataDir(), 'Epic', 'EpicGamesLauncher', 'Data', 'Manifests'));
+
+    let manifestDir = null;
+    for (const c of candidates) {
+      try { if (c && fs.existsSync(c) && fs.statSync(c).isDirectory()) { manifestDir = c; break; } }
+      catch (_e) { /* ignore */ }
+    }
+    if (!manifestDir) return games;
     const files = fs.readdirSync(manifestDir).filter(f => f.endsWith('.item'));
     for (const file of files) {
       try {
@@ -109,9 +141,13 @@ function scanEpicInstalled() {
 function scanGogInstalled() {
   const games = [];
   try {
-    const gogGamesDir = 'C:\\GOG Games';
-    const gogProgramFiles = path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'GOG Galaxy', 'Games');
-    const dirsToScan = [gogGamesDir, gogProgramFiles].filter(d => { try { return fs.existsSync(d); } catch { return false; } });
+    const override = userPathOverride('gogPath');
+    const dirsToScan = [
+      override,
+      path.join(systemDriveDir(), 'GOG Games'), // matches the GOG Galaxy default
+      path.join(programFilesX86Dir(), 'GOG Galaxy', 'Games'),
+      path.join(programFilesDir(), 'GOG Galaxy', 'Games'),
+    ].filter(Boolean).filter(d => { try { return fs.existsSync(d); } catch { return false; } });
     for (const dir of dirsToScan) {
       const entries = fs.readdirSync(dir, { withFileTypes: true });
       for (const entry of entries) {
@@ -148,10 +184,21 @@ function scanGogInstalled() {
 function scanXboxInstalled() {
   const games = [];
 
-  // Scan XboxGames directory (common custom install location)
-  const xboxGamesDir = 'C:\\XboxGames';
-  if (fs.existsSync(xboxGamesDir)) {
-    const entries = fs.readdirSync(xboxGamesDir, { withFileTypes: true });
+  // Honor the user's `xboxPath` override (set in Settings ▸ System ▸ Platform
+  // Paths) for users who relocated their install drive in the Xbox app's
+  // "Change where new things install" dialog. Otherwise fall back to the
+  // system-drive default.
+  const override = userPathOverride('xboxPath');
+  const xboxGamesCandidates = [
+    override,
+    path.join(systemDriveDir(), 'XboxGames'),
+  ].filter(Boolean);
+
+  for (const xboxGamesDir of xboxGamesCandidates) {
+    let entries;
+    try { entries = fs.existsSync(xboxGamesDir) ? fs.readdirSync(xboxGamesDir, { withFileTypes: true }) : null; }
+    catch (_e) { continue; }
+    if (!entries) continue;
     for (const entry of entries) {
       if (entry.isDirectory() && entry.name !== 'Content') {
         games.push({
@@ -166,12 +213,16 @@ function scanXboxInstalled() {
         });
       }
     }
+    // If we successfully read one of the candidates, prefer those results and
+    // don't keep scanning lower-priority paths (avoids duplicates if the user
+    // happens to keep both the override and the C: default populated).
+    break;
   }
 
   // Check if Xbox app is installed for cloud gaming
   const xboxAppPaths = [
-    path.join(process.env.LOCALAPPDATA || '', 'Microsoft', 'WindowsApps', 'XboxApp.exe'),
-    path.join(process.env.ProgramFiles || '', 'WindowsApps', 'Microsoft.GamingApp_*'),
+    path.join(localAppDataDir(), 'Microsoft', 'WindowsApps', 'XboxApp.exe'),
+    path.join(programFilesDir(), 'WindowsApps', 'Microsoft.GamingApp_*'),
   ];
 
   let xboxAppFound = false;

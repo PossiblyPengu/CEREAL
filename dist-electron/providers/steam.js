@@ -4,25 +4,42 @@ const os = require('os');
 const { httpGet, httpGetJson } = require('./http');
 const { findExisting, makeGameEntry, updateAccountSync } = require('./utils');
 const log = require('../modules/core/logger');
+const { programFilesDir, programFilesX86Dir } = require('../modules/core/paths');
 
+// Both URLs use shared.steamstatic.com (matches our CSP connect-src policy).
+// The CDN-fronted shared.cloudflare.steamstatic.com host is functionally
+// identical but isn't whitelisted, so an over-strict CSP parser can block it.
 function steamCoverUrl(appId) {
-  return `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${appId}/library_600x900.jpg`;
+  return `https://shared.steamstatic.com/store_item_assets/steam/apps/${appId}/library_600x900.jpg`;
 }
 
 function steamHeaderUrl(appId) {
   return `https://shared.steamstatic.com/store_item_assets/steam/apps/${appId}/header.jpg`;
 }
 
+// Read the user's `steamPath` override from db.settings without creating a
+// require-cycle on context (provider modules are loaded before ctx is hydrated
+// during early boot — guard with try/catch).
+function userSteamPath() {
+  try {
+    const ctx = require('../modules/core/context');
+    const v = ctx?.db?.settings?.steamPath;
+    return (typeof v === 'string' && v.trim()) ? v.trim() : null;
+  } catch (_e) { return null; }
+}
+
 // Scan local Steam installation for installed games via .acf manifest files.
 // Works offline and without any API key. Gets installed games only.
 function detectLocalLibrary() {
+  const override = userSteamPath();
   const steamPaths = [
-    'C:\\Program Files (x86)\\Steam',
-    'C:\\Program Files\\Steam',
+    override,
+    path.join(programFilesX86Dir(), 'Steam'),
+    path.join(programFilesDir(), 'Steam'),
     path.join(os.homedir(), 'Steam'),
     path.join(os.homedir(), '.local', 'share', 'Steam'), // Linux
     path.join(os.homedir(), 'Library', 'Application Support', 'Steam'), // macOS
-  ];
+  ].filter(Boolean);
 
   let steamRoot = null;
   for (const p of steamPaths) {

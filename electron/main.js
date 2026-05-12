@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, session, Tray, Menu, nativeImage, net, protocol } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Tray, Menu, nativeImage, protocol } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -18,7 +18,6 @@ protocol.registerSchemesAsPrivileged([
 // ─── Secure Credential Store (extracted to modules/credentials.js) ────────────
 const { safeStore } = require('./modules/core/credentials');
 const { spawn, spawnSync } = require('child_process');
-const os = require('os');
 
 // ─── Constants (extracted to modules/constants.js) ────────────────────────────
 const { ACCOUNT_SECRET_FIELDS } = require('./modules/core/constants');
@@ -33,7 +32,7 @@ ipcMain.handle('discord:status', () => getDiscordStatus());
 
 
 // ─── Cover Image Caching (extracted to modules/covers.js) ─────────────────────
-const { getCoversDir, cleanupFile, enqueueCoverFetch } = require('./modules/games/covers');
+const { getCoversDir, cleanupFile, enqueueCoverFetch, evictOldCovers, shouldSkipDueToPriorFailure } = require('./modules/games/covers');
 
 // ─── Chiaki + Win32 Embed (extracted to modules/chiaki.js) ────────────────────
 const { chiakiSessions, resolveChiakiExe, buildChiakiArgs, startChiakiSession, sendEmbedBoundsToAll, autoSetupChiakiIfMissing, registerChiakiIpcHandlers } = require('./modules/integrations/chiaki');
@@ -62,6 +61,12 @@ registerGameCrudIpcHandlers();
 // ─── Database (extracted to modules/database.js) ─────────────────────────────
 const { DB_PATH, loadDB, saveDB, flushDB } = require('./modules/core/database');
 let db = null;
+
+// ─── Core IPC modules (extracted) ────────────────────────────────────────────
+const { registerLocalImageProtocol } = require('./modules/core/protocol');
+const { registerSecurityHandlers } = require('./modules/core/security');
+const { registerWindowIpc } = require('./modules/core/windowIpc');
+const { registerSystemIpc } = require('./modules/core/systemIpc');
 
 // ─── Window ───────────────────────────────────────────────────────────────────
 let mainWindow;
@@ -97,6 +102,10 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      // sandbox: true puts the renderer in Chromium's OS-level sandbox, blocking
+      // direct access to Node primitives. Our preload only uses `require('electron')`
+      // which is allowed in sandboxed preloads, so this is a clean hardening win.
+      sandbox: true,
       backgroundThrottling: false
     }
   };
@@ -159,10 +168,14 @@ function createWindow() {
     }
   });
 
-  mainWindow.on('minimize', () => {
-    for (const session of chiakiSessions.values()) {
-      if (session.embedProcess && !session.embedProcess.killed) {
-        try { session.embedProcess.stdin.write('hide\n'); } catch (_e) { /* ok */ }
+  mainWindow.on('minimize', (e) => {
+    if (db && db.settings && db.settings.minimizeToTray) {
+      try { e.preventDefault(); } catch (_e) { /* ok */ }
+      mainWindow.hide();
+    }
+    for (const sess of chiakiSessions.values()) {
+      if (sess.embedProcess && !sess.embedProcess.killed) {
+        try { sess.embedProcess.stdin.write('hide\n'); } catch (_e) { /* ok */ }
       }
     }
     for (const sess of xcloudSessions.values()) {
@@ -171,9 +184,9 @@ function createWindow() {
   });
 
   mainWindow.on('focus', () => {
-    for (const session of chiakiSessions.values()) {
-      if (session.embedded && session.embedProcess && !session.embedProcess.killed) {
-        try { session.embedProcess.stdin.write('show\n'); } catch (_e) { /* ok */ }
+    for (const sess of chiakiSessions.values()) {
+      if (sess.embedded && sess.embedProcess && !sess.embedProcess.killed) {
+        try { sess.embedProcess.stdin.write('show\n'); } catch (_e) { /* ok */ }
       }
     }
     for (const sess of xcloudSessions.values()) {
@@ -216,21 +229,9 @@ function createTray() {
 }
 
 app.whenReady().then(() => {
-  // Register protocol handler for serving local images to the renderer
-  // (file:// URLs are blocked when renderer loads from http:// in dev mode)
-  protocol.handle('local-image', (request) => {
-    // URL format: local-image:///C:/path/to/file.jpg
-    let filePath = decodeURIComponent(new URL(request.url).pathname);
-    // On Windows, strip leading slash from /C:/...
-    if (process.platform === 'win32' && filePath.startsWith('/')) filePath = filePath.slice(1);
-    // Security: only allow files from the covers directory
-    const coversDir = getCoversDir();
-    const resolved = path.resolve(filePath);
-    if (!resolved.startsWith(coversDir + path.sep) && resolved !== coversDir) {
-      return new Response('Forbidden', { status: 403 });
-    }
-    return net.fetch('file:///' + resolved.replace(/\\/g, '/'));
-  });
+  // Register protocol handler for serving local cover/header images to the
+  // renderer (file:// URLs are blocked when renderer loads from http:// in dev).
+  registerLocalImageProtocol();
 
   db = loadDB();
   // Populate shared context for extracted modules
@@ -240,6 +241,15 @@ app.whenReady().then(() => {
   ctx.saveDB = saveDB;
   ctx.flushDB = () => flushDB(db);
   ctx.sendToRenderer = sendToRenderer;
+
+  // Run idempotent legacy-credential / account-field migrations once per box.
+  // Best-effort — failures must not block app start.
+  try {
+    const { runMigrations } = require('./modules/core/legacyMigration');
+    runMigrations({ db, safeStore });
+  } catch (e) {
+    require('./modules/core/logger').warn('migration', 'Legacy migration runner threw:', e && e.message);
+  }
 
   if (db.accounts && typeof db.accounts === 'object') {
     let changed = false;
@@ -254,107 +264,64 @@ app.whenReady().then(() => {
   }
 
   // ─── One-time migrations (gated by version so they only run once) ────────────
-  const CURRENT_MIGRATION = 2;
-  const lastMigration = (db.settings && db.settings._migrationVersion) || 0;
-  if (lastMigration < 1) {
-    // Migration 1: clear references to corrupt cover files (< 1KB) from old redirect bug
-    let coversCleaned = 0;
-    for (const game of (db.games || [])) {
-      if (game.localCoverPath) {
-        try {
-          if (!fs.existsSync(game.localCoverPath) || fs.statSync(game.localCoverPath).size < 1024) {
-            cleanupFile(game.localCoverPath);
-            game.localCoverPath = null;
-            coversCleaned++;
-          }
-        } catch (_e) { game.localCoverPath = null; coversCleaned++; }
-      }
-      if (game.localHeaderPath) {
-        try {
-          if (!fs.existsSync(game.localHeaderPath) || fs.statSync(game.localHeaderPath).size < 1024) {
-            cleanupFile(game.localHeaderPath);
-            game.localHeaderPath = null;
-            coversCleaned++;
-          }
-        } catch (_e) { game.localHeaderPath = null; coversCleaned++; }
-      }
+  // Versioned schema migrations — see modules/core/migrations.js for the list.
+  // The runner persists incrementally so a crash mid-stream resumes from the
+  // right place, and snapshots the DB to .pre-migrate.v<N>.bak before any
+  // upgrade hop.
+  try {
+    const { runMigrations: runDbMigrations } = require('./modules/core/migrations');
+    const summary = runDbMigrations({
+      db,
+      saveDB,
+      dbPath: DB_PATH,
+      deps: { cleanupFile, getCoversDir },
+    });
+    if (summary && summary.ran && summary.ran.length > 0) {
+      log.info('main', `DB migrations: v${summary.from} → v${summary.to}, ${summary.ran.length} applied`);
     }
-    if (coversCleaned > 0) log.info('main', 'Cleaned', coversCleaned, 'corrupt cover references');
-    // Purge small corrupt files from covers directory
-    try {
-      const coversDir = getCoversDir();
-      let purged = 0;
-      for (const f of fs.readdirSync(coversDir)) {
-        const fp = path.join(coversDir, f);
-        try { if (fs.statSync(fp).size < 1024) { fs.unlinkSync(fp); purged++; } } catch (_e) { /* ignore */ }
-      }
-      if (purged > 0) log.info('main', 'Purged', purged, 'corrupt files from covers directory');
-    } catch (_e) { /* ignore */ }
-  }
-  if (lastMigration < 2) {
-    // Migration 2: backfill headerUrl for Steam games
-    let backfilled = 0;
-    for (const game of (db.games || [])) {
-      if (game.platform === 'steam' && game.platformId && !game.headerUrl) {
-        game.headerUrl = `https://shared.steamstatic.com/store_item_assets/steam/apps/${game.platformId}/header.jpg`;
-        backfilled++;
-      }
-    }
-    if (backfilled > 0) log.info('main', 'Backfilled', backfilled, 'Steam header URLs');
-  }
-  if (lastMigration < CURRENT_MIGRATION) {
-    db.settings = db.settings || {};
-    db.settings._migrationVersion = CURRENT_MIGRATION;
-    saveDB(db);
+  } catch (e) {
+    log.error('main', 'Migration runner failed:', e && e.message);
   }
 
-  // Re-enqueue cover downloads for any game that has a coverUrl/headerUrl but no local file
+  // Re-enqueue cover downloads for any game that has a coverUrl/headerUrl but no local file.
+  // Games with a recent persistent failure (no library art on the CDN, etc.)
+  // are skipped — see shouldSkipDueToPriorFailure / clearCoverFailure.
   setTimeout(() => {
     let requeued = 0;
+    let skipped = 0;
     for (const game of (db.games || [])) {
       const needsCover = !game.localCoverPath && (game.coverUrl || game.headerUrl || (game.screenshots && game.screenshots.length));
       const needsHeader = !game.localHeaderPath && game.headerUrl;
       if (needsCover || needsHeader) {
+        if (shouldSkipDueToPriorFailure(game)) { skipped++; continue; }
         enqueueCoverFetch(game.id);
         requeued++;
       }
     }
-    if (requeued > 0) log.info('main', 'Re-enqueued', requeued, 'games for cover download');
+    if (requeued > 0 || skipped > 0) {
+      log.info(
+        'main',
+        `Re-enqueued ${requeued} games for cover download` +
+        (skipped > 0 ? ` (skipped ${skipped} with recent failures)` : ''),
+      );
+    }
+    // Bounded LRU sweep on startup: trims long-stale orphaned covers (renamed
+    // games, deleted titles) without forcing a "Reset Covers" from the user.
+    evictOldCovers({ force: true }).catch(() => { /* non-fatal */ });
   }, 3000);
-  // Security: restrict permissions requested by renderer
-  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
-    const allowed = ['clipboard-read', 'clipboard-sanitized-write', 'fullscreen'];
-    callback(allowed.includes(permission));
-  });
+  // Security: permission request gating + CSP response headers.
+  // See modules/core/security.js for the full policy.
+  registerSecurityHandlers();
 
-  // Security: Content Security Policy
-  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-    callback({
-      responseHeaders: {
-        ...details.responseHeaders,
-        'Content-Security-Policy': [
-          "default-src 'self'",
-          "script-src 'self' 'unsafe-inline'",
-          "style-src 'self' 'unsafe-inline'",
-          "img-src 'self' data: local-image: https: http:",
-          "font-src 'self' data:",
-          [
-            "connect-src 'self'",
-            'https://*.steampowered.com https://*.steamstatic.com https://store.steampowered.com https://api.steampowered.com https://steamcdn-a.akamaihd.net',
-            'https://*.steamgriddb.com https://*.gog.com https://*.epicgames.com',
-            'https://*.xbox.com https://*.xboxlive.com',
-            'https://*.wikipedia.org https://*.wikidata.org https://*.wikimedia.org https://*.duckduckgo.com',
-            // Dev-only: Vite HMR WebSocket
-            ...(!app.isPackaged ? ['https://localhost ws://localhost wss://localhost'] : []),
-          ].join(' '),
-        ].join('; '),
-      },
-    });
-  });
+  // Window controls + shell IPC (window:minimize, shell:openExternal, etc.).
+  registerWindowIpc();
+
+  // System info IPC (system:getSpecs) for the startup wizard recommendations.
+  registerSystemIpc();
 
   createWindow();
   ctx.mainWindow = mainWindow;
-  if (db.settings && db.settings.closeToTray) createTray();
+  if (db.settings && (db.settings.closeToTray || db.settings.minimizeToTray)) createTray();
 
   // DevTools shortcuts handled by before-input-event in createWindow (app-scoped, not global)
 
@@ -424,56 +391,8 @@ app.on('will-quit', () => {
     } catch (_e) { /* ignore */ }
 });
 
-// ─── Window Controls ──────────────────────────────────────────────────────────
-ipcMain.handle('window:minimize', () => mainWindow.minimize());
-ipcMain.handle('window:maximize', () => {
-  if (mainWindow.isMaximized()) mainWindow.unmaximize();
-  else mainWindow.maximize();
-  return mainWindow.isMaximized();
-});
-ipcMain.handle('window:close', () => mainWindow.close());
-ipcMain.handle('window:fullscreen', () => { mainWindow.setFullScreen(!mainWindow.isFullScreen()); return mainWindow.isFullScreen(); });
-ipcMain.handle('window:isFullscreen', () => mainWindow.isFullScreen());
-ipcMain.handle('shell:openExternal', (event, url) => {
-  try {
-    const parsed = new URL(url);
-    const safeProtocols = ['http:', 'https:', 'mailto:', 'steam:', 'epicgames:', 'com.epicgames.launcher:', 'goggalaxy:', 'origin:', 'origin2:', 'uplay:', 'battlenet:', 'xbox:', 'msxbox:', 'ms-xbl-multiplayer:'];
-    if (!safeProtocols.includes(parsed.protocol)) return { error: 'Blocked protocol: ' + parsed.protocol };
-  } catch (_e) { /* Invalid URL */ return { error: 'Invalid URL' }; }
-  return shell.openExternal(url);
-});
-
-ipcMain.handle('shell:openPath', async (event, p) => {
-  if (!p || typeof p !== 'string') return { error: 'Invalid path' };
-  // Accept either a plain path or a file:/// URL
-  let normalized = p;
-  if (normalized.startsWith('file:///')) {
-    try {
-      normalized = decodeURI(normalized.replace(/^file:\/\//, ''));
-      if (process.platform === 'win32' && normalized.startsWith('/')) normalized = normalized.slice(1);
-    } catch (_e) { /* ignore */ }
-  }
-  try {
-    const res = await shell.openPath(normalized);
-    if (res) return { error: res };
-    return { success: true };
-  } catch (e) {
-    return { error: e && e.message ? e.message : 'open failed' };
-  }
-});
-ipcMain.handle('system:getSpecs', async () => {
-  const ramGb = Math.round(os.totalmem() / (1024 * 1024 * 1024));
-  const cpus = os.cpus();
-  const cpuCount = cpus.length;
-  const cpuModel = cpus[0]?.model?.trim() || '';
-  let gpuName = '';
-  try {
-    const gpuInfo = await app.getGPUInfo('basic');
-    const gpu = gpuInfo?.gpuDevice?.[0];
-    if (gpu?.description) gpuName = gpu.description;
-  } catch (_e) { log.debug('system', 'GPU info unavailable', _e); }
-  return { ramGb, cpuCount, cpuModel, gpuName };
-});
+// Window controls + shell + system IPC handlers are registered in
+// modules/core/{windowIpc,systemIpc}.js when whenReady() resolves above.
 
 // ─── Stream embed bounds tracking ─────────────────────────────────────────────
 let _embedResizeTimer = null;

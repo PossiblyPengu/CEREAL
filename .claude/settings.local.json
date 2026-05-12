@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//d/CODE/**)",
+      "Bash(dotnet new *)",
+      "Bash(powershell.exe -Command \"& 'C:\\\\Program Files\\\\dotnet\\\\dotnet.exe' --version\")",
+      "Bash('/d/CODE/important files/dotnet-sdk-8.0.404-win-x64/dotnet.exe' --version)",
+      "Bash(mkdir -p \"/d/CODE/cereal-cs\")",
+      "Bash('/d/CODE/important files/dotnet-sdk-8.0.404-win-x64/dotnet.exe' new sln -n Cereal)",
+      "Bash('/d/CODE/important files/dotnet-sdk-8.0.404-win-x64/dotnet.exe' new avalonia.app -n Cereal.App -o Cereal.App)",
+      "Bash('/d/CODE/important files/dotnet-sdk-8.0.404-win-x64/dotnet.exe' sln add Cereal.App/Cereal.App.csproj)",
+      "Bash('/d/CODE/important files/dotnet-sdk-8.0.404-win-x64/dotnet.exe' add package CommunityToolkit.Mvvm --version 8.3.2)",
+      "Bash('/d/CODE/important files/dotnet-sdk-8.0.404-win-x64/dotnet.exe' add package Microsoft.Extensions.DependencyInjection --version 8.0.1)",
+      "Bash('/d/CODE/important files/dotnet-sdk-8.0.404-win-x64/dotnet.exe' add package Serilog --version 4.2.0)",
+      "Bash('/d/CODE/important files/dotnet-sdk-8.0.404-win-x64/dotnet.exe' add package Serilog.Sinks.File --version 6.0.0)",
+      "Bash('/d/CODE/important files/dotnet-sdk-8.0.404-win-x64/dotnet.exe' add package System.Text.Json --version 8.0.5)",
+      "Bash('/d/CODE/important files/dotnet-sdk-8.0.404-win-x64/dotnet.exe' add package Velopack --version 0.0.988)"
+    ]
+  }
+}

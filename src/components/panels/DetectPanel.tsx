@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { SidePanel } from './SidePanel';
-import { platformLabel } from '../utils';
-import type { Game } from '../types';
+import { SidePanel } from '../SidePanel';
+import { platformLabel } from '../../utils';
+import type { Game } from '../../types';
 
 interface DetectPanelProps {
   show: boolean;

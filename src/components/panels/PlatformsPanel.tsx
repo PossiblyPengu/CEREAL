@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { SidePanel } from './SidePanel';
-import { I } from '../constants';
-import { fmtDate } from '../utils';
-import type { Game } from '../types';
+import { SidePanel } from '../SidePanel';
+import { I } from '../../constants';
+import { fmtDate } from '../../utils';
+import type { Game, ImportProgress } from '../../types';
 
 interface PlatformsPanelProps {
   show: boolean;
@@ -39,16 +39,16 @@ export function PlatformsPanel({ show, onClose, flash, setGames, onOpenChiaki, o
   });
   const [loading, setLoading] = useState<Record<string, boolean>>({});
   const [importing, setImporting] = useState('');
-  const [importProgress, setImportProgress] = useState<{ provider: string; status: string; processed: number; imported: number; updated: number; message?: string; total?: number } | null>(null);
+  const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
   const [apiKeys, setApiKeys] = useState<Record<string, ApiKeyState>>({});
   const [platFilter, setPlatFilter] = useState('');
 
   useEffect(() => {
     if (!show) return;
     (async () => {
-      if (window.api?.getAccounts) { const a = await (window.api as any).getAccounts(); setAccounts(a || {}); }
+      if ((window.api as any)?.getAccounts) { const a = await (window.api as any).getAccounts(); setAccounts(a || {}); }
       const p: Record<string, PlatState> = { ...platforms };
-      if (window.api) {
+      if ((window.api as any)) {
         try { const s = await (window.api as any).detectSteam(); p.steam = { status: s.games?.length ? 'connected' : 'not-found', games: s.games?.length || 0 }; } catch (_) { p.steam = { status: 'not-found', games: 0 }; }
         try { const ep = await (window.api as any).detectEpic(); p.epic = { status: ep.games?.length ? 'connected' : 'not-found', games: ep.games?.length || 0 }; } catch (_) { p.epic = { status: 'not-found', games: 0 }; }
         try { const g = await (window.api as any).detectGOG(); p.gog = { status: g.games?.length ? 'connected' : 'not-found', games: g.games?.length || 0 }; } catch (_) { p.gog = { status: 'not-found', games: 0 }; }
@@ -72,7 +72,7 @@ export function PlatformsPanel({ show, onClose, flash, setGames, onOpenChiaki, o
 
   useEffect(() => {
     if (!show) return;
-    const unsub = (window.api as any)?.onImportProgress?.((data: any) => {
+    const unsub = window.api?.onImportProgress?.((data) => {
       setImportProgress(data);
       if (data.status === 'done' || data.status === 'error') {
         setTimeout(() => setImportProgress(null), 2500);
@@ -81,7 +81,7 @@ export function PlatformsPanel({ show, onClose, flash, setGames, onOpenChiaki, o
     return () => { unsub?.(); };
   }, [show]);
 
-  const refreshAccounts = async () => { if (window.api?.getAccounts) { const a = await (window.api as any).getAccounts(); setAccounts(a || {}); } };
+  const refreshAccounts = async () => { if ((window.api as any)?.getAccounts) { const a = await (window.api as any).getAccounts(); setAccounts(a || {}); } };
   const setKeyField = (id: string, field: keyof ApiKeyState, val: any) => setApiKeys(prev => ({ ...prev, [id]: { ...(prev[id] || { input: '', saved: null, status: null }), [field]: val } }));
 
   const doAuth = async (id: string, name: string) => {
@@ -139,7 +139,7 @@ export function PlatformsPanel({ show, onClose, flash, setGames, onOpenChiaki, o
     if (r?.ok) { setKeyField(id, 'saved', null); setKeyField(id, 'input', ''); flash('Key deleted'); } else flash('Delete failed');
   };
   const doPasteKey = async (id: string) => {
-    if (!window.api?.readClipboard) return flash('Clipboard not available');
+    if (!(window.api as any)?.readClipboard) return flash('Clipboard not available');
     const txt = await (window.api as any).readClipboard();
     if (!txt) return flash('Clipboard empty');
     const candidate = txt.trim();
@@ -158,7 +158,7 @@ export function PlatformsPanel({ show, onClose, flash, setGames, onOpenChiaki, o
     return (
       <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--glass-border)' }}>
         <div style={{ fontSize: 10, color: 'var(--text-3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>{label}</div>
-        {help && <div style={{ fontSize: 10, color: 'var(--text-4)', lineHeight: 1.6, marginBottom: 8 }}>{help}{url && <> <a href="#" onClick={e => { e.preventDefault(); (window.api as any)?.openExternal?.(url); }} style={{ color: 'var(--accent)', textDecoration: 'underline', cursor: 'pointer' }}>Get your key here</a></>}</div>}
+        {help && <div style={{ fontSize: 10, color: 'var(--text-4)', lineHeight: 1.6, marginBottom: 8 }}>{help}{url && <> <a href="#" onClick={e => { e.preventDefault(); window.api?.openExternal?.(url); }} style={{ color: 'var(--accent)', textDecoration: 'underline', cursor: 'pointer' }}>Get your key here</a></>}</div>}
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <input type="password" value={k.input || ''} onChange={e => setKeyField(id, 'input', e.target.value)} placeholder={k.saved ? `••••••••${k.saved}` : 'Paste key'} style={{ flex: 1, fontSize: 11 }} />
           <button className="btn-flat" onClick={() => doPasteKey(id)}>Paste</button>
@@ -225,7 +225,7 @@ export function PlatformsPanel({ show, onClose, flash, setGames, onOpenChiaki, o
                     {importProgress.total ? <span style={{ fontSize: 10, color: 'var(--text-4)' }}>{importProgress.processed} / {importProgress.total}</span> : null}
                   </div>
                   <div style={{ height: 3, borderRadius: 2, background: 'var(--glass-border)', overflow: 'hidden' }}>
-                    <div style={{ height: '100%', borderRadius: 2, background: 'var(--accent)', width: importProgress.total ? `${Math.round((importProgress.processed / importProgress.total) * 100)}%` : '100%', transition: 'width 0.3s ease', animation: importProgress.total ? 'none' : 'progress-pulse 1.5s ease-in-out infinite' }} />
+                    <div style={{ height: '100%', borderRadius: 2, background: 'var(--accent)', width: importProgress.total ? `${Math.round(((importProgress.processed ?? 0) / importProgress.total) * 100)}%` : '100%', transition: 'width 0.3s ease', animation: importProgress.total ? 'none' : 'progress-pulse 1.5s ease-in-out infinite' }} />
                   </div>
                   <div style={{ display: 'flex', gap: 12, marginTop: 5 }}>
                     <span style={{ fontSize: 10, color: 'var(--green, #4ade80)' }}>+{importProgress.imported} new</span>

@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { canonicalize, findExisting, makeGameEntry, updateAccountSync } = require('./utils');
 const log = require('../modules/core/logger');
+const { programDataDir, programFilesDir, programFilesX86Dir } = require('../modules/core/paths');
 
 const BNET_PRODUCTS = {
   'wow': { name: 'World of Warcraft', id: 'wow' },
@@ -32,8 +33,8 @@ function detectOwned() {
   const owned = [];
   try {
     const productDbPaths = [
-      path.join(process.env.PROGRAMDATA || 'C:\\ProgramData', 'Battle.net', 'Agent', 'product.db'),
-      path.join(process.env.PROGRAMDATA || 'C:\\ProgramData', 'Battle.net', 'Agent', 'data', 'product.db'),
+      path.join(programDataDir(), 'Battle.net', 'Agent', 'product.db'),
+      path.join(programDataDir(), 'Battle.net', 'Agent', 'data', 'product.db'),
     ];
 
     let productDbBuf = null;
@@ -71,7 +72,7 @@ function detectInstalled() {
   const games = [];
   try {
     const configPath = path.join(process.env.APPDATA || '', 'Battle.net', 'Battle.net.config');
-    const configPath2 = path.join(process.env.PROGRAMDATA || 'C:\\ProgramData', 'Battle.net', 'Setup', 'battle.net.config');
+    const configPath2 = path.join(programDataDir(), 'Battle.net', 'Setup', 'battle.net.config');
 
     let config = null;
     for (const cp of [configPath, configPath2]) {
@@ -105,15 +106,21 @@ function detectInstalled() {
       }
     }
 
-    const gameDirs = [
-      'C:\\Program Files (x86)\\Overwatch',
-      'C:\\Program Files (x86)\\StarCraft II',
-      'C:\\Program Files (x86)\\Hearthstone',
-      'C:\\Program Files (x86)\\Heroes of the Storm',
-      'C:\\Program Files (x86)\\Diablo III',
-      'C:\\Program Files (x86)\\World of Warcraft',
-      'C:\\Program Files (x86)\\Call of Duty',
+    // Legacy fallback: scan well-known Blizzard game folders directly. Modern
+    // Battle.net installs are picked up via product.db / battle.net.config
+    // above; this list catches old installs whose config wasn't reachable.
+    // Tries both Program Files variants because users moving WoW/Diablo to a
+    // dedicated SSD almost always re-target the install root.
+    const pfx = programFilesX86Dir();
+    const pf  = programFilesDir();
+    const gameNames = [
+      'Overwatch', 'StarCraft II', 'Hearthstone', 'Heroes of the Storm',
+      'Diablo III', 'Diablo IV', 'World of Warcraft', 'Call of Duty',
     ];
+    const gameDirs = gameNames.flatMap(name => [
+      path.join(pfx, name),
+      path.join(pf, name),
+    ]);
 
     const seen = new Set(games.map(g => g.platformId));
     for (const dir of gameDirs) {
@@ -140,9 +147,9 @@ function detectInstalled() {
 
 function isAppInstalled() {
   const paths = [
-    path.join(process.env.ProgramFiles || '', 'Battle.net', 'Battle.net.exe'),
-    path.join(process.env['ProgramFiles(x86)'] || '', 'Battle.net', 'Battle.net.exe'),
-    path.join(process.env.PROGRAMDATA || 'C:\\ProgramData', 'Battle.net', 'Setup', 'Battle.net-Setup.exe'),
+    path.join(programFilesDir(),    'Battle.net', 'Battle.net.exe'),
+    path.join(programFilesX86Dir(), 'Battle.net', 'Battle.net.exe'),
+    path.join(programDataDir(),     'Battle.net', 'Setup', 'Battle.net-Setup.exe'),
   ];
   return paths.some(p => fs.existsSync(p));
 }

@@ -2,6 +2,16 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!--
+      Defense-in-depth CSP fallback. The authoritative policy lives in
+      electron/main.js (session header), which can vary between dev and prod.
+      This meta tag protects against the (rare) case where the session handler
+      hasn't installed by the time the document parses. It's intentionally
+      permissive enough to work in both modes; the session header tightens
+      it further at runtime.
+    -->
+    <meta http-equiv="Content-Security-Policy"
+          content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: local-image: https: http:; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; connect-src 'self' https: ws: wss: http://localhost:* ws://localhost:*">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Cereal Launcher</title>

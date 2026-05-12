@@ -1,14 +1,20 @@
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
 
-// Path is relative to dist-electron/native/ at runtime (smtc module lives at dist-electron/native/smtc/)
-// In production, native files are asarUnpacked so we replace .asar with .asar.unpacked for exec()/spawn()
+// Path is relative to dist-electron/native/ at runtime (smtc module lives at
+// dist-electron/native/smtc/). In production native files are asarUnpacked, so
+// we rewrite app.asar → app.asar.unpacked for exec()/spawn().
+//
+// SMTC is by definition a Windows feature (the C# helper executable wraps
+// Windows.Media.Control); on macOS/Linux we never produce or ship the .exe.
+const IS_WINDOWS = process.platform === 'win32';
 const EXE_PATH = path.join(__dirname, '..', 'MediaInfoTool.exe').replace('app.asar', 'app.asar.unpacked');
 
 const children = new Set();
 
 function runExe(args) {
   return new Promise(resolve => {
+    if (!IS_WINDOWS) return resolve({ error: 'SMTC not supported on ' + process.platform });
     const argv = args || [];
     let child;
     try {

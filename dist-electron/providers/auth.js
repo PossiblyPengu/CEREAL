@@ -43,12 +43,16 @@ const CONFIG = {
 };
 
 // ─── Steam ───────────────────────────────────────────────────────────────────
+// Steam OpenID 2.0 doesn't support a standard `state` param, so we tunnel one
+// through openid.return_to as a query string. The provider echoes return_to
+// verbatim on success, letting us validate CSRF on callback.
 function buildSteamAuthUrl(state) {
   const c = CONFIG.steam;
+  const returnUrl = state ? c.returnUrl + '?state=' + encodeURIComponent(state) : c.returnUrl;
   const params = new URLSearchParams({
     'openid.ns': 'http://specs.openid.net/auth/2.0',
     'openid.mode': 'checkid_setup',
-    'openid.return_to': c.returnUrl,
+    'openid.return_to': returnUrl,
     'openid.realm': c.realm,
     'openid.identity': 'http://specs.openid.net/auth/2.0/identifier_select',
     'openid.claimed_id': 'http://specs.openid.net/auth/2.0/identifier_select',
@@ -61,6 +65,10 @@ function extractSteamId(callbackUrl) {
   const claimedId = u.searchParams.get('openid.claimed_id') || '';
   const m = claimedId.match(/(\d{17})$/);
   return m ? m[1] : null;
+}
+
+function extractSteamState(callbackUrl) {
+  try { return new URL(callbackUrl).searchParams.get('state'); } catch { return null; }
 }
 
 async function fetchSteamProfile(steamId) {
@@ -104,9 +112,10 @@ async function refreshGogToken(refreshToken) {
 }
 
 // ─── Epic ────────────────────────────────────────────────────────────────────
-function buildEpicAuthUrl() {
+function buildEpicAuthUrl(state) {
   const c = CONFIG.epic;
-  const redirectUrl = `${c.redirectApiUrl}?clientId=${c.clientId}&responseType=code`;
+  const stateQs = state ? `&state=${encodeURIComponent(state)}` : '';
+  const redirectUrl = `${c.redirectApiUrl}?clientId=${c.clientId}&responseType=code${stateQs}`;
   return `${c.authUrl}?redirectUrl=${encodeURIComponent(redirectUrl)}`;
 }
 
@@ -252,6 +261,7 @@ module.exports = {
   // Steam
   buildSteamAuthUrl,
   extractSteamId,
+  extractSteamState,
   fetchSteamProfile,
   // GOG
   buildGogAuthUrl,

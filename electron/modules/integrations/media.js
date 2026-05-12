@@ -6,14 +6,22 @@ const log = require('../core/logger');
 
 // Native SMTC addon - lazy loaded
 let smtcNative = null;
+let smtcLoadAttempted = false;
 function getSmtcNative() {
-  if (!smtcNative) {
-    try {
-      smtcNative = require(path.join(__dirname, 'native', 'smtc'));
-      log.info('media', 'native addon loaded');
-    } catch (e) {
-      log.warn('media', 'failed to load native addon:', e.message);
-    }
+  if (smtcLoadAttempted) return smtcNative;
+  smtcLoadAttempted = true;
+  // SMTC = Windows System Media Transport Controls. The native addon spawns
+  // a Win32-only `MediaInfoTool.exe` so loading it on macOS/Linux is
+  // guaranteed to fail — short-circuit before logging a misleading warning.
+  if (process.platform !== 'win32') {
+    log.info('media', 'SMTC unavailable on', process.platform, '- media controls disabled');
+    return null;
+  }
+  try {
+    smtcNative = require(path.join(__dirname, 'native', 'smtc'));
+    log.info('media', 'native addon loaded');
+  } catch (e) {
+    log.warn('media', 'failed to load native addon:', e.message);
   }
   return smtcNative;
 }

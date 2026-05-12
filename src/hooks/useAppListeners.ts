@@ -12,6 +12,8 @@ interface ListenerSetters {
   setSelectedPlatforms: React.Dispatch<React.SetStateAction<string[]>>;
   setSelectedCategories: React.Dispatch<React.SetStateAction<string[]>>;
   setHideSteamSoftware: React.Dispatch<React.SetStateAction<boolean>>;
+  setShowHidden: React.Dispatch<React.SetStateAction<boolean>>;
+  setSortBy: React.Dispatch<React.SetStateAction<string>>;
   setShowWizard: React.Dispatch<React.SetStateAction<boolean>>;
   setChiakiSessions: React.Dispatch<React.SetStateAction<Record<string, ChiakiSession>>>;
   setImportProgress: React.Dispatch<React.SetStateAction<ImportProgress | null>>;
@@ -21,8 +23,8 @@ interface ListenerSetters {
   flash: (m: React.ReactNode) => void;
 }
 
-export function useInitialDataLoad(setters: Pick<ListenerSetters, 'setGames' | 'setCats' | 'setSettings' | 'setGamesLoaded' | 'setViewMode' | 'setTab' | 'setSelectedPlatforms' | 'setSelectedCategories' | 'setHideSteamSoftware' | 'setShowWizard' | 'setImportProgress'>) {
-  const { setGames, setCats, setSettings, setGamesLoaded, setViewMode, setTab, setSelectedPlatforms, setSelectedCategories, setHideSteamSoftware, setShowWizard, setImportProgress } = setters;
+export function useInitialDataLoad(setters: Pick<ListenerSetters, 'setGames' | 'setCats' | 'setSettings' | 'setGamesLoaded' | 'setViewMode' | 'setTab' | 'setSelectedPlatforms' | 'setSelectedCategories' | 'setHideSteamSoftware' | 'setShowHidden' | 'setSortBy' | 'setShowWizard' | 'setImportProgress'>) {
+  const { setGames, setCats, setSettings, setGamesLoaded, setViewMode, setTab, setSelectedPlatforms, setSelectedCategories, setHideSteamSoftware, setShowHidden, setSortBy, setShowWizard, setImportProgress } = setters;
 
   useEffect(() => {
     (async () => {
@@ -48,6 +50,8 @@ export function useInitialDataLoad(setters: Pick<ListenerSetters, 'setGames' | '
           if (s.filterPlatforms && Array.isArray(s.filterPlatforms)) setSelectedPlatforms(s.filterPlatforms);
           if (s.filterCategories && Array.isArray(s.filterCategories)) setSelectedCategories(s.filterCategories);
           if (s.filterHideSteamSoftware) setHideSteamSoftware(!!s.filterHideSteamSoftware);
+          if (s.filterShowHidden) setShowHidden(!!s.filterShowHidden);
+          if (typeof s.filterSortBy === 'string' && s.filterSortBy) setSortBy(s.filterSortBy);
           setShowWizard(s.firstRun !== false);
         }
         setGamesLoaded(true);
@@ -84,7 +88,7 @@ export function useChiakiAndRefreshListeners(
     let unsubChiaki: (() => void) | null = null;
     let unsubRefresh: (() => void) | null = null;
     if (window.api?.onChiakiEvent) {
-      unsubChiaki = window.api.onChiakiEvent!((evt: ChiakiSession) => {
+      unsubChiaki = window.api.onChiakiEvent((evt: ChiakiSession) => {
         const gid = evt.gameId;
         if (!gid) return;
         if (evt.type === 'title_change') {
@@ -105,7 +109,7 @@ export function useChiakiAndRefreshListeners(
       });
     }
     if (window.api?.onGamesRefresh) {
-      unsubRefresh = window.api.onGamesRefresh!((g: Game[]) => {
+      unsubRefresh = window.api.onGamesRefresh((g: Game[]) => {
         const incoming = g || [];
         setGames(prev => {
           const prevMap = new Map((prev || []).map(x => [x.id, x]));

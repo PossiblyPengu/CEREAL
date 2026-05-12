@@ -43,22 +43,22 @@ The NSIS installer lets you choose your install directory and creates Start Menu
 npm install
 
 # Start in development mode (builds native tools then launches Vite + Electron)
-.\dev.ps1
+.\scripts\dev.ps1
 
 # Build a distributable installer
 npm run build
 npx electron-builder --win
 ```
 
-The `publish.ps1` script bumps the version, generates release notes from conventional commits, tags, and pushes — CI picks it up from there.
+The `scripts/publish.ps1` script bumps the version, generates release notes from conventional commits, tags, and pushes — CI picks it up from there.
 
 ```powershell
 # Patch bump (default)
-.\publish.ps1
+.\scripts\publish.ps1
 
 # Minor or major bump
-.\publish.ps1 -Bump minor
-.\publish.ps1 -Bump major
+.\scripts\publish.ps1 -Bump minor
+.\scripts\publish.ps1 -Bump major
 ```
 
 ---
@@ -75,19 +75,22 @@ The `publish.ps1` script bumps the version, generates release notes from convent
 
 ---
 
+## Repository layout
+
+| Path | Purpose |
+|------|---------|
+| `src/` | React renderer: `App.tsx`, shared `types` / `utils` / `constants`, `hooks/`, and `components/` |
+| `src/components/panels/` | Large side-panel flows (settings, detection, platforms, Chiaki, add/edit game, art picker, startup wizard) |
+| `electron/main.js`, `electron/preload.js` | Electron entry points |
+| `electron/modules/` | Main-process code: `core/` (DB, IPC, security), `games/`, `integrations/`, `metadata/` |
+| `electron/providers/` | Storefront provider modules loaded at runtime |
+| `electron/native/` | Native helpers (MediaInfoTool, SMTC, etc.) |
+| `electron/scripts/` | PowerShell helpers bundled next to the app |
+| `scripts/` | Repo automation (`dev.ps1`, `publish.ps1`, icon build) |
+| `build/` | Installer icons and release notes template |
+
+---
+
 ## License
 
 © 2026 PossiblyPengu. All rights reserved.
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```

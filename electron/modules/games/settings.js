@@ -4,7 +4,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const ctx = require('../core/context');
 const { connectDiscord, disconnectDiscord } = require('../integrations/discord');
-const { cleanupFile } = require('./covers');
+const { cleanupFile, clearCoverFailure } = require('./covers');
 
 const DEFAULT_SETTINGS = {
   defaultView: 'orbit',          // 'orbit' | 'cards'
@@ -15,11 +15,20 @@ const DEFAULT_SETTINGS = {
   autoSyncPlaytime: false,
   minimizeOnLaunch: false,
   closeToTray: false,
+  minimizeToTray: false,         // hide to tray on minimize (instead of taskbar)
   defaultTab: 'all',             // 'all' | 'favorites' | 'recent' | platform key
   discordPresence: false,        // show currently playing on Discord
   metadataSource: 'steam',       // 'steam' | 'wikipedia'
   launchOnStartup: false,        // start app when Windows boots
   startMinimized: false,         // start hidden to tray
+  navPosition: 'top',            // 'top' | 'bottom' | 'left' | 'right'
+  toolbarPosition: 'top',        // mirrors navPosition (kept for compat)
+  filterHideSteamSoftware: false,
+  steamPath: '',                 // optional override (Steam install root)
+  epicPath: '',                  // Epic install root or manifests dir
+  gogPath: '',                   // GOG Games root directory
+  xboxPath: '',                  // Xbox app install root (typically <drive>:\XboxGames)
+  chiakiPath: '',                // path to a custom chiaki-ng executable
 };
 
 function getSettings() {
@@ -45,9 +54,10 @@ function registerSettingsIpcHandlers({ createTray, destroyTray, DB_PATH }) {
       try { app.setLoginItemSettings({ openAtLogin: !!newSettings.launchOnStartup }); } catch (_e) { /* ok */ }
     }
 
-    // Create or destroy tray based on closeToTray setting
-    if ('closeToTray' in newSettings) {
-      if (newSettings.closeToTray) createTray();
+    // Create or destroy tray based on tray-using settings
+    if ('closeToTray' in newSettings || 'minimizeToTray' in newSettings) {
+      const needsTray = !!(ctx.db.settings.closeToTray || ctx.db.settings.minimizeToTray);
+      if (needsTray) createTray();
       else destroyTray();
     }
 
@@ -121,6 +131,9 @@ function registerSettingsIpcHandlers({ createTray, destroyTray, DB_PATH }) {
         game.coverUrl = '';
         game.headerUrl = '';
       }
+      // User explicitly requested a refresh — clear any persistent-failure
+      // marker so previously-skipped games get another shot at downloading.
+      clearCoverFailure(game);
     }
     ctx.saveDB(ctx.db);
     return { success: true, games: ctx.db.games };

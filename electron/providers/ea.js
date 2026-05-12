@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { canonicalize, findExisting, makeGameEntry, updateAccountSync } = require('./utils');
 const log = require('../modules/core/logger');
+const { programDataDir, programFilesDir, programFilesX86Dir } = require('../modules/core/paths');
 
 const LAUNCHER_NAMES = new Set([
   'ea desktop',
@@ -61,17 +62,21 @@ function detectInstalled() {
   const games = [];
   try {
     const eaDataDirs = [
-      path.join(process.env.PROGRAMDATA || 'C:\\ProgramData', 'EA Desktop', 'InstallData'),
-      path.join(process.env.PROGRAMDATA || 'C:\\ProgramData', 'Origin', 'LocalContent'),
+      path.join(programDataDir(), 'EA Desktop', 'InstallData'),
+      path.join(programDataDir(), 'Origin', 'LocalContent'),
     ];
 
+    // Both Program Files variants for every well-known EA install root —
+    // resolved through env-var helpers so non-C: drives work correctly.
+    const pf  = programFilesDir();
+    const pfx = programFilesX86Dir();
     const installDirs = [
-      'C:\\Program Files\\EA Games',
-      'C:\\Program Files (x86)\\EA Games',
-      'C:\\Program Files\\Electronic Arts',
-      'C:\\Program Files (x86)\\Electronic Arts',
-      path.join(process.env.ProgramFiles || 'C:\\Program Files', 'EA Games'),
-      path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Origin Games'),
+      path.join(pf,  'EA Games'),
+      path.join(pfx, 'EA Games'),
+      path.join(pf,  'Electronic Arts'),
+      path.join(pfx, 'Electronic Arts'),
+      path.join(pf,  'Origin Games'),
+      path.join(pfx, 'Origin Games'),
     ];
 
     for (const dataDir of eaDataDirs) {

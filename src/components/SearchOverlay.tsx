@@ -58,6 +58,7 @@ export function SearchOverlay({ show, onClose, games, onSelect, onLaunch }: Sear
         placeholder="Search games..."
         onClick={e => e.stopPropagation()}
       />
+      <div className="search-overlay-hint" style={{ fontSize: 10, color: 'var(--text-4)', marginTop: 6, textAlign: 'center' }}>↑↓ select · Enter open details · Ctrl+Enter launch</div>
       <div className="search-results" onClick={e => e.stopPropagation()} role="listbox">
         {activePlats.length > 1 && (
           <div className="search-plat-chips">

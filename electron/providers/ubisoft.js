@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { canonicalize, findExisting, makeGameEntry, updateAccountSync } = require('./utils');
 const log = require('../modules/core/logger');
+const { programFilesDir, programFilesX86Dir } = require('../modules/core/paths');
 
 // ─── Detect ALL owned games from Ubisoft Connect's local cache ───────────────
 function detectOwned() {
@@ -90,10 +91,8 @@ function detectInstalled() {
   const games = [];
   try {
     const ubiDirs = [
-      path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Ubisoft', 'Ubisoft Game Launcher', 'games'),
-      path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Ubisoft', 'Ubisoft Game Launcher', 'games'),
-      'C:\\Program Files (x86)\\Ubisoft\\Ubisoft Game Launcher\\games',
-      'C:\\Program Files\\Ubisoft\\Ubisoft Game Launcher\\games',
+      path.join(programFilesDir(),    'Ubisoft', 'Ubisoft Game Launcher', 'games'),
+      path.join(programFilesX86Dir(), 'Ubisoft', 'Ubisoft Game Launcher', 'games'),
     ];
 
     const configDir = path.join(process.env.LOCALAPPDATA || '', 'Ubisoft Game Launcher');
@@ -172,10 +171,10 @@ function detectInstalled() {
 
 function isAppInstalled() {
   const paths = [
-    path.join(process.env.ProgramFiles || '', 'Ubisoft', 'Ubisoft Game Launcher', 'UbisoftConnect.exe'),
-    path.join(process.env['ProgramFiles(x86)'] || '', 'Ubisoft', 'Ubisoft Game Launcher', 'UbisoftConnect.exe'),
-    path.join(process.env.ProgramFiles || '', 'Ubisoft', 'Ubisoft Game Launcher', 'Uplay.exe'),
-    path.join(process.env['ProgramFiles(x86)'] || '', 'Ubisoft', 'Ubisoft Game Launcher', 'Uplay.exe'),
+    path.join(programFilesDir(),    'Ubisoft', 'Ubisoft Game Launcher', 'UbisoftConnect.exe'),
+    path.join(programFilesX86Dir(), 'Ubisoft', 'Ubisoft Game Launcher', 'UbisoftConnect.exe'),
+    path.join(programFilesDir(),    'Ubisoft', 'Ubisoft Game Launcher', 'Uplay.exe'),
+    path.join(programFilesX86Dir(), 'Ubisoft', 'Ubisoft Game Launcher', 'Uplay.exe'),
   ];
   return paths.some(p => fs.existsSync(p));
 }

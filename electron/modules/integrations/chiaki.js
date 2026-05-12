@@ -69,11 +69,20 @@ function getBundledChiakiVersion() {
 const chiakiSessions = new Map(); // gameId -> session object
 
 function resolveChiakiExe(fallbackPath) {
-  // Priority: bundled > system > user-configured
+  // Priority: bundled > user-configured (`db.settings.chiakiPath`) > system > caller fallback
   const bundled = getBundledChiakiExe();
   if (bundled) return bundled;
 
+  // Read the override late so we always pick up the latest setting after the
+  // user changes it without requiring an app restart.
+  let userChiakiPath = null;
+  try {
+    const v = ctx?.db?.settings?.chiakiPath;
+    if (typeof v === 'string' && v.trim()) userChiakiPath = v.trim();
+  } catch (_e) { /* ignore */ }
+
   const systemPaths = [
+    userChiakiPath,
     ...CHIAKI_SYSTEM_PATHS,
     path.join(process.env.ProgramFiles || '', 'chiaki-ng', 'chiaki-ng.exe'),
     path.join(process.env.LOCALAPPDATA || '', 'chiaki-ng', 'chiaki-ng.exe'),

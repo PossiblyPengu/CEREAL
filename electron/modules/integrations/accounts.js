@@ -17,7 +17,13 @@ function getProviders() {
   return providers;
 }
 function getAuth() {
-  if (!auth) auth = require(path.join(getProvidersDir(), 'auth'));
+  if (!auth) {
+    auth = require(path.join(getProvidersDir(), 'auth'));
+    // Apply appsettings.json + CEREAL_* env-var overrides on first access.
+    // Done lazily so the module loads cleanly during boot before app.whenReady.
+    try { require('../core/appConfig').applyOverrides(auth.CONFIG); }
+    catch (e) { log.warn('accounts', 'config overlay failed:', e && e.message); }
+  }
   return auth;
 }
 
@@ -435,13 +441,16 @@ function registerAccountIpcHandlers() {
   // ── Steam OpenID Sign-in ──
   ipcMain.handle('accounts:steam:auth', async () => {
     const c = a.CONFIG.steam;
+    const oauthState = generateOAuthState();
     return runOAuthFlow({
       partition: 'persist:steam-auth', ...c.windowSize,
-      authUrl: a.buildSteamAuthUrl(),
+      authUrl: a.buildSteamAuthUrl(oauthState),
       redirectMatch: (url) => url.startsWith(c.returnUrl),
       keepSession: true,
       onRedirect: async (url, finish) => {
         try {
+          const returnedState = a.extractSteamState(url);
+          if (!validateOAuthState(returnedState)) { finish({ error: 'Security validation failed (state mismatch)' }); return; }
           const steamId = a.extractSteamId(url);
           if (!steamId) { finish({ error: 'Could not extract Steam ID' }); return; }
           const profile = await a.fetchSteamProfile(steamId);
@@ -506,13 +515,16 @@ function registerAccountIpcHandlers() {
   // ── Epic Games OAuth ──
   ipcMain.handle('accounts:epic:auth', async () => {
     const c = a.CONFIG.epic;
+    const oauthState = generateOAuthState();
     return runOAuthFlow({
       partition: 'auth:epic', ...c.windowSize,
-      authUrl: a.buildEpicAuthUrl(),
+      authUrl: a.buildEpicAuthUrl(oauthState),
       redirectMatch: (url) => url.includes('epicgames.com/id/api/redirect'),
       allowNavigate: true,
       onRedirect: async (url, finish, { session: authSess }) => {
         try {
+          const returnedState = (() => { try { return new URL(url).searchParams.get('state'); } catch { return null; } })();
+          if (!validateOAuthState(returnedState)) { finish({ error: 'Security validation failed (state mismatch)' }); return; }
           const resp = await authSess.fetch(url);
           if (!resp.ok) { finish({ error: 'Epic redirect fetch failed: ' + resp.status }); return; }
           const data = await resp.json();

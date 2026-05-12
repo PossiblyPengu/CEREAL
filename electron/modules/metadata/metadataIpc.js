@@ -2,7 +2,7 @@
 const { ipcMain } = require('electron');
 const ctx = require('../core/context');
 const { fetchGameMetadata, applyMetadataToGame, invalidateMetadataCache } = require('./metadata');
-const { enqueueCoverFetch } = require('../games/covers');
+const { enqueueCoverFetch, clearCoverFailure } = require('../games/covers');
 const { registerMetadataSearchHandlers } = require('./metadataSearch');
 
 function registerMetadataIpcHandlers() {
@@ -45,8 +45,8 @@ function registerMetadataIpcHandlers() {
         if (meta.metacritic != null) game.metacritic = meta.metacritic;
         if (meta.website) game.website = meta.website;
         // If cover/header URL changed, clear cached local file so re-download is triggered
-        if (game.coverUrl !== prevCoverUrl) { game.localCoverPath = null; game._imgStamp = Date.now(); }
-        if (game.headerUrl !== prevHeaderUrl) { game.localHeaderPath = null; game._imgStamp = Date.now(); }
+        if (game.coverUrl !== prevCoverUrl) { game.localCoverPath = null; game._imgStamp = Date.now(); clearCoverFailure(game); }
+        if (game.headerUrl !== prevHeaderUrl) { game.localHeaderPath = null; game._imgStamp = Date.now(); clearCoverFailure(game); }
         ctx.saveDB(db);
         ctx.sendToRenderer('games:refresh', db.games);
         enqueueCoverFetch(game.id);
@@ -54,6 +54,8 @@ function registerMetadataIpcHandlers() {
       } else {
         const changed = applyMetadataToGame(game, meta);
         if (changed) {
+          // Fresh metadata may have given us new URLs to try.
+          clearCoverFailure(game);
           ctx.saveDB(db);
           ctx.sendToRenderer('games:refresh', db.games);
           enqueueCoverFetch(game.id);
@@ -101,6 +103,7 @@ function registerMetadataIpcHandlers() {
           if (applyMetadataToGame(r.value.game, r.value.meta)) {
             updated++; batchUpdated++;
             // Enqueue cover download now that coverUrl may have been set
+            clearCoverFailure(r.value.game);
             enqueueCoverFetch(r.value.game.id);
           }
         } else { failed++; }

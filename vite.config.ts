@@ -6,20 +6,55 @@ import path from 'path'
 import fs from 'fs'
 import { spawnSync } from 'child_process'
 
+/** Vitest files under providers/ are not needed in dist-electron or packaged apps. */
+function stripProviderTests(dir: string) {
+  if (!fs.existsSync(dir)) return
+  for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, ent.name)
+    if (ent.isDirectory()) stripProviderTests(p)
+    else if (/\.test\.(mjs|js|cjs|ts)$/.test(ent.name)) {
+      try {
+        fs.unlinkSync(p)
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+}
+
+/**
+ * Old builds emitted loose `dist-electron/modules/*.js` copies; main is fully bundled
+ * and only `./providers` + `./native` are external, so this folder is stale if present.
+ */
+function removeStaleDistElectronModules() {
+  const legacy = path.resolve(__dirname, 'dist-electron/modules')
+  if (!fs.existsSync(legacy)) return
+  try {
+    fs.rmSync(legacy, { recursive: true, force: true })
+  } catch {
+    /* ignore */
+  }
+}
+
 function copyElectronProviders() {
   return {
     name: 'copy-electron-providers',
     closeBundle() {
+      removeStaleDistElectronModules()
       const src = path.resolve(__dirname, 'electron/providers')
       const dest = path.resolve(__dirname, 'dist-electron/providers')
       fs.cpSync(src, dest, { recursive: true })
+      stripProviderTests(dest)
       copyScripts()
       copyMediaInfoExe()
     },
     buildStart() {
       const src = path.resolve(__dirname, 'electron/providers')
       const dest = path.resolve(__dirname, 'dist-electron/providers')
-      if (fs.existsSync(src)) fs.cpSync(src, dest, { recursive: true })
+      if (fs.existsSync(src)) {
+        fs.cpSync(src, dest, { recursive: true })
+        stripProviderTests(dest)
+      }
       copyScripts()
       copyMediaInfoExe()
     },

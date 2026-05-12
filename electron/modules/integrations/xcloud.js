@@ -3,6 +3,7 @@ const { WebContentsView, session } = require('electron');
 const ctx = require('../core/context');
 const { CONTROL_BAR_HEIGHT } = require('../core/constants');
 const log = require('../core/logger');
+const { clearDiscordPresence, isDiscordEnabled } = require('./discord');
 
 const xcloudSessions = new Map(); // gameId -> { view, state, startTime }
 
@@ -33,9 +34,23 @@ function updateAllXcloudBounds() {
 function startXcloudSession(gameId, url, title) {
   stopXcloudSession(gameId);
 
+  // Storage strategy:
+  //   - Auth cookies live on `persist:xcloud` so the user only signs in once.
+  //   - Per-session ephemeral storage (localStorage / sessionStorage / cache)
+  //     is cleared at start so a stale session from a previous run can't
+  //     poison the next one. Mirrors the C# port's per-session WebView2
+  //     user-data isolation without forcing re-auth.
+  const xcloudSession = session.fromPartition('persist:xcloud');
+  try {
+    xcloudSession.clearStorageData({
+      origin: 'https://www.xbox.com',
+      storages: ['localstorage', 'sessionstorage', 'cachestorage', 'shadercache'],
+    }).catch(() => { /* best-effort */ });
+  } catch (_e) { /* ignore */ }
+
   const view = new WebContentsView({
     webPreferences: {
-      session: session.fromPartition('persist:xcloud'),
+      session: xcloudSession,
       contextIsolation: true,
       sandbox: true,
     }
@@ -92,6 +107,10 @@ function stopXcloudSession(gameId) {
     // 3. Notify renderer
     sendStreamEvent(gameId, 'disconnected', { reason: 'stopped', platform: 'xbox' });
     ctx.sendToRenderer('tabs:closed', { id: gameId });
+
+    // Clear Discord Rich Presence — xCloud sessions don't have an exe to wait on,
+    // so the launch path doesn't auto-clear. Match Chiaki behaviour and clear here.
+    if (isDiscordEnabled()) clearDiscordPresence();
 
     // 4. Async cleanup: navigate to Xbox home to signal session end, then close
     if (sess.view?.webContents && !sess.view.webContents.isDestroyed()) {

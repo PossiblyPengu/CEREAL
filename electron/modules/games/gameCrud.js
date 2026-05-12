@@ -6,7 +6,7 @@ const crypto = require('crypto');
 const ctx = require('../core/context');
 const { getProvidersDir } = require('../core/paths');
 
-const { enqueueCoverFetch } = require('./covers');
+const { enqueueCoverFetch, clearCoverFailure } = require('./covers');
 const { fetchGameMetadata, applyMetadataToGame } = require('../metadata/metadata');
 const log = require('../core/logger');
 
@@ -98,11 +98,13 @@ function registerGameCrudIpcHandlers() {
           if (prev.localCoverPath) { try { fs.unlinkSync(prev.localCoverPath); } catch (_e) { log.debug('covers', 'unlink cover failed'); } }
           merged.localCoverPath = null;
           merged._imgStamp = Date.now();
+          clearCoverFailure(merged);
         }
         if (headerChanged) {
           if (prev.localHeaderPath) { try { fs.unlinkSync(prev.localHeaderPath); } catch (_e) { log.debug('covers', 'unlink header failed'); } }
           merged.localHeaderPath = null;
           merged._imgStamp = Date.now();
+          clearCoverFailure(merged);
         }
         if (!coverChanged && !headerChanged) merged._imgStamp = prev._imgStamp;
       } catch (_e) { merged._imgStamp = prev._imgStamp; }

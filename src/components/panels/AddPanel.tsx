@@ -1,7 +1,23 @@
 import { useState, useEffect } from 'react';
-import { SidePanel } from './SidePanel';
-import { PLATFORMS, STREAMING_PLATFORMS, I } from '../constants';
-import type { Game } from '../types';
+import { SidePanel } from '../SidePanel';
+import { PLATFORMS, I } from '../../constants';
+import type { Game } from '../../types';
+
+// Platforms that expose a free-form Platform ID input on the Add/Edit dialog.
+// (Streaming-only platforms like xbox/psn don't have a launcher-side id.)
+const PLATFORM_ID_PROVIDERS = new Set([
+  'steam', 'epic', 'gog', 'battlenet', 'ea', 'ubisoft', 'itchio', 'xbox',
+]);
+const PLATFORM_ID_PLACEHOLDER: Record<string, string> = {
+  steam: 'App ID (e.g. 1091500)',
+  epic: 'App name / catalog ID',
+  gog: 'GOG product ID',
+  battlenet: 'Product key',
+  ea: 'EA Origin offerId',
+  ubisoft: 'Ubisoft launcher ID',
+  itchio: 'itch.io game ID',
+  xbox: 'Xbox titleId',
+};
 
 interface ArtPickerOpts {
   gameName: string;
@@ -139,10 +155,21 @@ export function AddPanel({ show, onClose, onSave, categories, editGame, flash, o
       <div className="field"><label>Name</label><input value={f.name} onChange={e => setF(p => ({ ...p, name: e.target.value }))} placeholder="Game title" /></div>
       <div className="field"><label>Platform</label>
         <select value={f.platform} onChange={e => setF(p => ({ ...p, platform: e.target.value }))}>
-          {Object.keys(PLATFORMS).filter(k => !STREAMING_PLATFORMS.includes(k)).map(k => <option key={k} value={k}>{PLATFORMS[k].label}</option>)}
+          {/* All platforms are selectable; PSN is allowed so users can manually
+              register a Remote Play title (matches the C# Add Game dialog). */}
+          {Object.keys(PLATFORMS).map(k => <option key={k} value={k}>{PLATFORMS[k].label}</option>)}
         </select>
       </div>
-      {['steam', 'epic', 'gog'].includes(f.platform) && <div className="field"><label>Platform ID</label><input value={(f as any).platformId || ''} onChange={e => setF(p => ({ ...p, platformId: e.target.value }))} placeholder="App ID" /></div>}
+      {PLATFORM_ID_PROVIDERS.has(f.platform) && (
+        <div className="field">
+          <label>Platform ID</label>
+          <input
+            value={(f as any).platformId || ''}
+            onChange={e => setF(p => ({ ...p, platformId: e.target.value }))}
+            placeholder={PLATFORM_ID_PLACEHOLDER[f.platform] || 'Platform-specific ID'}
+          />
+        </div>
+      )}
       {f.platform === 'custom' && (
         <div className="field"><label>Executable</label>
           <div style={{ display: 'flex', gap: '8px' }}>
@@ -161,12 +188,32 @@ export function AddPanel({ show, onClose, onSave, categories, editGame, flash, o
       </div>
       <div className="field"><label>Categories</label>
         <div className="tag-row">{(categories || []).map(c => <button key={c} className={'tag' + (f.categories.includes(c) ? ' sel' : '')} onClick={() => toggle(c)}>{c}</button>)}</div>
+        <input
+          style={{ marginTop: 8 }}
+          value={(f.categories || []).join(', ')}
+          onChange={e => {
+            const parts = e.target.value
+              .split(',')
+              .map(s => s.trim())
+              .filter(Boolean);
+            const seen = new Set<string>();
+            const dedup = parts.filter(c => {
+              const k = c.toLowerCase();
+              if (seen.has(k)) return false;
+              seen.add(k);
+              return true;
+            });
+            setF(p => ({ ...p, categories: dedup }));
+          }}
+          placeholder="Comma-separated — type new categories here"
+        />
+        <div className="field-hint">Toggle existing chips above, or type a comma-separated list to add new categories.</div>
       </div>
       <div className="field"><label>Notes</label><textarea value={(f as any).notes || ''} onChange={e => setF(p => ({ ...p, notes: e.target.value }))} placeholder="Personal notes about this game..." rows={2} /></div>
       <button className={'meta-toggle' + (showMeta ? ' open' : '')} onClick={() => setShowMeta(!showMeta)}>
         {chevron} Metadata
         <span style={{ marginLeft: 'auto', fontSize: 9, fontWeight: 400, color: 'var(--text-4)', textTransform: 'none', letterSpacing: 0 }}>{fetching ? 'Fetching...' : 'Auto-fill from web'}</span>
-        <button className="btn-sm" style={{ padding: '3px 10px', marginLeft: 8, opacity: (f.name.trim() && !fetching) ? 1 : 0.4 }} onClick={e => { e.stopPropagation(); if (!f.name.trim() || fetching) return; editGame ? doFetch() : doFetchForNew(); }}>{I.download}</button>
+        <button className="btn-sm" style={{ padding: '3px 10px', marginLeft: 8, opacity: (f.name.trim() && !fetching) ? 1 : 0.4 }} onClick={e => { e.stopPropagation(); if (!f.name.trim() || fetching) return; if (editGame) doFetch(); else doFetchForNew(); }}>{I.download}</button>
       </button>
       {showMeta && (
         <div className="meta-section">

@@ -9,19 +9,18 @@ import { useInitialDataLoad, useChiakiAndRefreshListeners, useTabListeners, useA
 import { TabBar } from './components/TabBar';
 import { Toast } from './components/Toast';
 import { SearchOverlay } from './components/SearchOverlay';
-import { DetectPanel } from './components/DetectPanel';
+import { DetectPanel } from './components/panels/DetectPanel';
 import { ContinueBanner } from './components/ContinueBanner';
 import { StreamOverlay } from './components/StreamOverlay';
 import { MediaPlayer } from './components/MediaPlayer';
 
-const PlatformsPanel = lazy(() => import('./components/PlatformsPanel').then(m => ({ default: m.PlatformsPanel })));
-const ChiakiPanel    = lazy(() => import('./components/ChiakiPanel').then(m => ({ default: m.ChiakiPanel })));
-const XcloudPanel    = lazy(() => import('./components/XcloudPanel').then(m => ({ default: m.XcloudPanel })));
-const SettingsPanel  = lazy(() => import('./components/SettingsPanel').then(m => ({ default: m.SettingsPanel })));
-const ArtPicker      = lazy(() => import('./components/ArtPicker').then(m => ({ default: m.ArtPicker })));
+const PlatformsPanel = lazy(() => import('./components/panels/PlatformsPanel').then(m => ({ default: m.PlatformsPanel })));
+const ChiakiPanel    = lazy(() => import('./components/panels/ChiakiPanel').then(m => ({ default: m.ChiakiPanel })));
+const SettingsPanel  = lazy(() => import('./components/panels/SettingsPanel').then(m => ({ default: m.SettingsPanel })));
+const ArtPicker      = lazy(() => import('./components/panels/ArtPicker').then(m => ({ default: m.ArtPicker })));
 const FocusView      = lazy(() => import('./components/FocusView').then(m => ({ default: m.FocusView })));
-const AddPanel       = lazy(() => import('./components/AddPanel').then(m => ({ default: m.AddPanel })));
-const StartupWizard  = lazy(() => import('./components/StartupWizard').then(m => ({ default: m.StartupWizard })));
+const AddPanel       = lazy(() => import('./components/panels/AddPanel').then(m => ({ default: m.AddPanel })));
+const StartupWizard  = lazy(() => import('./components/panels/StartupWizard').then(m => ({ default: m.StartupWizard })));
 
 // ─── Progressive Card Grid ─────────────────────────────────────────────────
 // Renders cards in chunks to avoid 1500+ DOM nodes on initial paint.
@@ -179,13 +178,12 @@ export default function App() {
   const [showLayoutPicker, setShowLayoutPicker] = useState(false);
   const [hideSteamSoftware, setHideSteamSoftware] = useState(false);
   const [showInstalledOnly, setShowInstalledOnly] = useState(false);
+  const [showHidden, setShowHidden] = useState(false);
   const [focusGame, setFocusGame] = useState<Game | null>(null);
   const [showSearch, setShowSearch] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [showDetect, setShowDetect] = useState(false);
   const [showPlatforms, setShowPlatforms] = useState(false);
-  const [showChiaki, setShowChiaki] = useState(false);
-  const [showXcloud, setShowXcloud] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [settings, setSettings] = useState<Settings>({
     defaultView: 'orbit', theme: 'midnight', starDensity: 'normal',
@@ -211,6 +209,57 @@ export default function App() {
   );
   const [activeTabId, setActiveTabId] = useState('launcher');
 
+  // ─── Panel tabs (Chiaki as a full tab, not a sidebar) ──────────────────────
+  // Stable IDs so `tabs:switch` IPC won't accidentally collide with game-window
+  // session ids and so re-opening a panel returns to the existing tab instead
+  // of creating a duplicate. xCloud is NOT a panel tab — clicking the xCloud
+  // entry point launches the embedded WebContentsView directly via
+  // `xcloudStartDirect`, which the main process surfaces as its own tab.
+  const PANEL_TAB_DEFS: Record<'chiaki', { id: string; title: string; platform: string }> = {
+    chiaki: { id: 'panel:chiaki', title: 'PlayStation Remote Play', platform: 'psn' },
+  };
+  const isPanelTabId = (id: string) => id === 'panel:chiaki';
+  const showChiaki = activeTabId === 'panel:chiaki';
+
+  const openPanelTab = useCallback((kind: 'chiaki') => {
+    const def = PANEL_TAB_DEFS[kind];
+    setTabs(p => p.some(t => t.id === def.id) ? p : [...p, { id: def.id, title: def.title, closable: true, platform: def.platform }]);
+    setActiveTabId(def.id);
+    // Switch backing views so any embedded xCloud session hides while a panel tab is on top
+    (window.api as unknown as Record<string, (id: string) => void>)?.switchTab?.(def.id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const closePanelTab = useCallback((kind: 'chiaki') => {
+    const def = PANEL_TAB_DEFS[kind];
+    setTabs(p => p.filter(t => t.id !== def.id));
+    setActiveTabId(p => p === def.id ? 'launcher' : p);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Launch xCloud immediately — no intermediate menu. The main process opens
+  // a `xbox:cloud` tab via `tabs:opened` and the listener in useAppListeners
+  // adds it + auto-switches to it. If a session already exists, just refocus.
+  const launchXcloud = useCallback(() => {
+    const api = window.api as unknown as {
+      xcloudStartDirect?: (url: string) => void;
+      switchTab?: (id: string) => void;
+    } | undefined;
+    if (!api) return;
+    setTabs(prev => {
+      const existing = prev.find(t => t.id === 'xbox:cloud');
+      if (existing) {
+        setActiveTabId('xbox:cloud');
+        api.switchTab?.('xbox:cloud');
+        return prev;
+      }
+      api.xcloudStartDirect?.('https://www.xbox.com/play');
+      flash('Launching Xbox Cloud Gaming…');
+      return prev;
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ─── Custom hooks ─────────────────────────────────────────────────────────
   const {
     cam, animating, galaxyEntering, setGalaxyEntering,
@@ -219,7 +268,22 @@ export default function App() {
   } = useGalaxyCamera(viewMode);
   const { parallaxRefsArray } = useParallax(viewMode);
 
-  const kbStateRef = useRef({ focusGame: null as Game | null, showThemePicker: false, showLayoutPicker: false, showFilters: '' });
+  const kbStateRef = useRef({
+    focusGame: null as Game | null,
+    showThemePicker: false,
+    showLayoutPicker: false,
+    showFilters: '',
+    showSearch: false,
+    showSettings: false,
+    showAdd: false,
+    showDetect: false,
+    showChiaki: false,
+    showPlatforms: false,
+    showWizard: false,
+    artPickerOpen: false,
+  });
+  const pickRandomGameRef = useRef<() => void>(() => {});
+  const tryPickRandomRef = useRef<() => void>(() => {});
   const [globalArtPicker, setGlobalArtPicker] = useState<ArtPickerOpts | null>(null);
   const artResolve = useRef<((url: string | null) => void) | null>(null);
   const gpMouseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -259,7 +323,7 @@ export default function App() {
   useAutoUpdateListener(setAppUpdate);
 
   useChiakiAndRefreshListeners(flash, setChiakiSessions, setGames);
-  useInitialDataLoad({ setGames, setCats, setSettings, setGamesLoaded, setViewMode, setTab, setSelectedPlatforms, setSelectedCategories, setHideSteamSoftware, setShowWizard, setImportProgress });
+  useInitialDataLoad({ setGames, setCats, setSettings, setGamesLoaded, setViewMode, setTab, setSelectedPlatforms, setSelectedCategories, setHideSteamSoftware, setShowHidden, setSortBy, setShowWizard, setImportProgress });
 
   // Auto-dismiss the import progress overlay once done/error
   useEffect(() => {
@@ -291,13 +355,13 @@ export default function App() {
     const t = setTimeout(async () => {
       try {
         if (window.api?.saveSettings) {
-          await window.api.saveSettings({ filterPlatforms: selectedPlatforms, filterCategories: selectedCategories, filterHideSteamSoftware: hideSteamSoftware });
+          await window.api.saveSettings({ filterPlatforms: selectedPlatforms, filterCategories: selectedCategories, filterHideSteamSoftware: hideSteamSoftware, filterShowHidden: showHidden, filterSortBy: sortBy });
         }
-        setSettings(prev => ({ ...prev, filterPlatforms: selectedPlatforms, filterCategories: selectedCategories, filterHideSteamSoftware: hideSteamSoftware } as Settings));
+        setSettings(prev => ({ ...prev, filterPlatforms: selectedPlatforms, filterCategories: selectedCategories, filterHideSteamSoftware: hideSteamSoftware, filterShowHidden: showHidden, filterSortBy: sortBy } as Settings));
       } catch { /* ignore */ }
     }, 300);
     return () => clearTimeout(t);
-  }, [selectedPlatforms, selectedCategories, hideSteamSoftware]);
+  }, [selectedPlatforms, selectedCategories, hideSteamSoftware, showHidden, sortBy]);
 
   // Auto-sync playtime
   useEffect(() => {
@@ -325,13 +389,39 @@ export default function App() {
   }, [settings.showAnimations]);
 
   // Keep a stable ref so the keyboard handler never needs to be re-registered
-  useEffect(() => { kbStateRef.current = { focusGame, showThemePicker, showLayoutPicker, showFilters }; });
+  useEffect(() => {
+    kbStateRef.current = {
+      focusGame,
+      showThemePicker,
+      showLayoutPicker,
+      showFilters,
+      showSearch,
+      showSettings,
+      showAdd,
+      showDetect,
+      showChiaki,
+      showPlatforms,
+      showWizard,
+      artPickerOpen: !!globalArtPicker,
+    };
+  }, [focusGame, showThemePicker, showLayoutPicker, showFilters, showSearch, showSettings, showAdd, showDetect, showChiaki, showPlatforms, showWizard, globalArtPicker]);
 
   // Keyboard shortcuts — registered once, reads state via ref
   useEffect(() => {
+    const typingTarget = (t: EventTarget | null) => {
+      if (!t || !(t instanceof HTMLElement)) return false;
+      const tag = t.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+      return t.isContentEditable;
+    };
     const handler = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); setShowSearch(true); }
       if ((e.ctrlKey || e.metaKey) && e.key === ',') { e.preventDefault(); setShowSettings(true); }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'r' || e.key === 'R')) {
+        e.preventDefault();
+        if (typingTarget(e.target)) return;
+        tryPickRandomRef.current();
+      }
       if (e.key === 'Escape') {
         const { focusGame: fg, showThemePicker: stp, showLayoutPicker: slp, showFilters: sf } = kbStateRef.current;
         if (fg) { setFocusGame(null); return; }
@@ -389,6 +479,18 @@ export default function App() {
     if (window.api) { const u = await window.api.toggleFavorite(id); setGames(g => g.map(x => x.id === id ? { ...u, _imgStamp: x._imgStamp } : x)); }
     else setGames(g => g.map(x => x.id === id ? { ...x, favorite: !x.favorite } : x));
   }, [setGames]);
+
+  const doToggleHidden = useCallback(async (game: Game) => {
+    const willHide = !game.hidden;
+    if (window.api) {
+      const u = await window.api.updateGame({ id: game.id, hidden: willHide });
+      if (u) _updateGameInState(u);
+    } else {
+      setGames(g => g.map(x => x.id === game.id ? { ...x, hidden: willHide } : x));
+    }
+    flash(willHide ? 'Hidden — enable "Show hidden" in filters to see it' : 'Shown in library again');
+    if (willHide) setFocusGame(fg => (fg?.id === game.id ? null : fg));
+  }, [_updateGameInState, setGames, flash]);
 
   const doAdd = async (f: Partial<Game>) => {
     let created: Game | null = null;
@@ -505,13 +607,13 @@ export default function App() {
   const onSettingsChange = (s: Partial<Settings>) => {
     setSettings(prev => ({ ...prev, ...s }));
     if (s.defaultView) setViewMode(s.defaultView);
-    if (s.theme) applyTheme(s.theme as string);
+    if (s.theme) applyTheme(s.theme);
     if (s.accentColor !== undefined && s.accentColor !== '') {
       document.documentElement.style.setProperty('--accent', s.accentColor);
       document.documentElement.style.setProperty('--accent-soft', s.accentColor + '1f');
       document.documentElement.style.setProperty('--accent-border', s.accentColor + '4d');
     }
-    if (s.uiScale) applyUiScale(s.uiScale as string);
+    if (s.uiScale) applyUiScale(s.uiScale);
   };
 
   const doEditFromFocus = (game: Game) => { setFocusGame(null); setEditGame(game); setShowAdd(true); };
@@ -525,6 +627,7 @@ export default function App() {
 
   const filteredGames = useMemo(() => {
     let list = games.filter(g => !STREAMING_PLATFORMS.includes(g.platform));
+    if (!showHidden) list = list.filter(g => !g.hidden);
     if (tab === 'favorites') list = list.filter(g => g.favorite);
     else if (tab === 'recent') list = list.filter(g => g.lastPlayed).sort((a, b) => new Date(b.lastPlayed!).getTime() - new Date(a.lastPlayed!).getTime());
     else if (tab !== 'all') list = list.filter(g => g.platform === tab);
@@ -556,7 +659,19 @@ export default function App() {
     if (selectedPlatforms && selectedPlatforms.length > 0) list = list.filter(g => selectedPlatforms.includes(g.platform));
     if (selectedCategories && selectedCategories.length > 0) list = list.filter(g => (g.categories || []).some(c => selectedCategories.includes(c)));
     return list;
-  }, [games, tab, gameFilter, selectedPlatforms, selectedCategories, hideSteamSoftware, showInstalledOnly]);
+  }, [games, tab, gameFilter, selectedPlatforms, selectedCategories, hideSteamSoftware, showInstalledOnly, showHidden]);
+
+  pickRandomGameRef.current = () => {
+    if (filteredGames.length === 0) { flash('No games match current filters'); return; }
+    const pick = filteredGames[Math.floor(Math.random() * filteredGames.length)];
+    setFocusGame(pick);
+    flash('Random: ' + pick.name);
+  };
+
+  tryPickRandomRef.current = () => {
+    if (focusGame || showSearch || showSettings || showAdd || showDetect || showChiaki || showPlatforms || showWizard || globalArtPicker || showThemePicker || showLayoutPicker || !!showFilters) return;
+    pickRandomGameRef.current();
+  };
 
   const groupedByPlatform = useMemo(() => {
     const groups: Record<string, Game[]> = {};
@@ -568,6 +683,7 @@ export default function App() {
     platform, games: sortBy === 'name' ? [...gms].sort((a, b) => a.name.localeCompare(b.name))
       : sortBy === 'played' ? [...gms].sort((a, b) => (b.playtimeMinutes || 0) - (a.playtimeMinutes || 0))
       : sortBy === 'recent' ? [...gms].sort((a, b) => new Date(b.lastPlayed || 0).getTime() - new Date(a.lastPlayed || 0).getTime())
+      : sortBy === 'added' ? [...gms].sort((a, b) => new Date(b.addedAt || 0).getTime() - new Date(a.addedAt || 0).getTime())
       : sortBy === 'installed' ? [...gms].sort((a, b) => (b.installed === false ? 0 : 1) - (a.installed === false ? 0 : 1) || a.name.localeCompare(b.name))
       : gms,
   })), [groupedByPlatform, sortBy]);
@@ -601,7 +717,13 @@ export default function App() {
     const result: OrbItem[] = []; let idx = 0;
     Object.entries(groups).forEach(([plat, gms]) => {
       const c = CLUSTER_CENTERS[plat] || { x: 1500, y: 1000 };
-      const sortedGms = [...gms].sort(sortBy === 'name' ? (a, b) => a.name.localeCompare(b.name) : sortBy === 'recent' ? (a, b) => new Date(b.lastPlayed || 0).getTime() - new Date(a.lastPlayed || 0).getTime() : sortBy === 'installed' ? (a, b) => (b.installed === false ? 0 : 1) - (a.installed === false ? 0 : 1) || a.name.localeCompare(b.name) : (a, b) => (b.playtimeMinutes || 0) - (a.playtimeMinutes || 0));
+      const sortedGms = [...gms].sort(
+        sortBy === 'name' ? (a, b) => a.name.localeCompare(b.name)
+        : sortBy === 'recent' ? (a, b) => new Date(b.lastPlayed || 0).getTime() - new Date(a.lastPlayed || 0).getTime()
+        : sortBy === 'added' ? (a, b) => new Date(b.addedAt || 0).getTime() - new Date(a.addedAt || 0).getTime()
+        : sortBy === 'installed' ? (a, b) => (b.installed === false ? 0 : 1) - (a.installed === false ? 0 : 1) || a.name.localeCompare(b.name)
+        : (a, b) => (b.playtimeMinutes || 0) - (a.playtimeMinutes || 0)
+      );
       const nArms = Math.max(2, Math.ceil(sortedGms.length / 6));
       sortedGms.forEach((game, i) => {
         const pt = game.playtimeMinutes || 0;
@@ -666,7 +788,7 @@ export default function App() {
     return s;
   }, []);
 
-  const anyPanelOpen = showChiaki || showXcloud || showSettings || showAdd || showDetect || showPlatforms || showSearch || showWizard;
+  const anyPanelOpen = showChiaki || showSettings || showAdd || showDetect || showPlatforms || showSearch || showWizard;
   const liveFocus = useMemo(() => focusGame ? games.find(g => g.id === focusGame.id) || focusGame : null, [focusGame, games]);
   const tbPos: string = settings.toolbarPosition || 'top';
   const isVertical = tbPos === 'left' || tbPos === 'right';
@@ -683,8 +805,7 @@ export default function App() {
         if (showSearch) { setShowSearch(false); continue; }
         if (showAdd) { setShowAdd(false); setEditGame(null); continue; }
         if (showDetect) { setShowDetect(false); continue; }
-        if (showChiaki) { setShowChiaki(false); continue; }
-        if (showXcloud) { setShowXcloud(false); continue; }
+        if (showChiaki) { closePanelTab('chiaki'); continue; }
         if (showSettings) { setShowSettings(false); continue; }
         if (showPlatforms) { setShowPlatforms(false); continue; }
         if (showWizard) { setShowWizard(false); continue; }
@@ -707,7 +828,7 @@ export default function App() {
         continue;
       }
       if (focusGame) {
-        const focusBtns = ['play', 'fav', 'edit', 'delete'];
+        const focusBtns = ['play', 'fav', 'edit', 'hide', 'delete'];
         if (act === 'left') setGpIdx(i => (i - 1 + focusBtns.length) % focusBtns.length);
         if (act === 'right') setGpIdx(i => (i + 1) % focusBtns.length);
         if (act === 'confirm') {
@@ -715,6 +836,7 @@ export default function App() {
           if (focusBtns[fi] === 'play') doLaunch(focusGame);
           else if (focusBtns[fi] === 'fav') doFav(focusGame.id);
           else if (focusBtns[fi] === 'edit') { setFocusGame(null); setEditGame(focusGame); setShowAdd(true); }
+          else if (focusBtns[fi] === 'hide') doToggleHidden(focusGame);
           else if (focusBtns[fi] === 'delete') doDelete(focusGame.id);
         }
         if (act === 'x') doFav(focusGame.id);
@@ -731,7 +853,7 @@ export default function App() {
           if (act === 'left') setGpIdx(i => (i - 1 + pillCount) % pillCount);
           if (act === 'right') setGpIdx(i => (i + 1) % pillCount);
           if (act === 'up') { setGpArea('cards'); setGpIdx(Math.max(0, allCards.length - 1)); }
-          if (act === 'confirm') { const sp = STREAMING_PLATFORMS[gpIdx % pillCount]; if (sp === 'psn') setShowChiaki(true); else setShowXcloud(true); }
+          if (act === 'confirm') { const sp = STREAMING_PLATFORMS[gpIdx % pillCount]; if (sp === 'psn') openPanelTab('chiaki'); else launchXcloud(); }
           continue;
         }
         if (act === 'right') { idx = Math.min(allCards.length - 1, idx + 1); setGpIdx(idx); }
@@ -772,18 +894,32 @@ export default function App() {
       }
     }
   }, [gpActive, focusGame, viewMode, tab, activePlatforms, gpIdx, gpArea, anyPanelOpen, showFilters,
-      showSearch, showAdd, showDetect, showChiaki, showXcloud, showSettings, showPlatforms, showWizard,
-      groupedByPlatform, orbData, doDelete, doFav, doLaunch, switchView]));
+      showSearch, showAdd, showDetect, showChiaki, showSettings, showPlatforms, showWizard,
+      groupedByPlatform, orbData, doDelete, doFav, doToggleHidden, doLaunch, switchView, openPanelTab, closePanelTab, launchXcloud]));
 
   const handleCloseTab = (id: string) => {
     setTabs(p => p.filter(t => t.id !== id));
     setActiveTabId(p => p === id ? 'launcher' : p);
-    (window.api as unknown as Record<string, (id: string) => void>)?.closeTab?.(id);
+    // Panel tabs (chiaki) have no backing main-process view, so skip the IPC.
+    // Game-window and xCloud streaming tabs need the main process to dispose.
+    if (!isPanelTabId(id)) {
+      (window.api as unknown as Record<string, (id: string) => void>)?.closeTab?.(id);
+    }
   };
 
   return (
-    <div className={'pos-' + tbPos + '-layout'} style={{ width: '100%', height: '100%', position: 'relative' }}>
+    <div className={'pos-' + tbPos + '-layout' + (showChiaki ? ' panel-tab-active' : '')} style={{ width: '100%', height: '100%', position: 'relative' }}>
       <TabBar tabs={tabs} activeTab={activeTabId} onSwitch={id => { setActiveTabId(id); (window.api as unknown as Record<string, (id: string) => void>)?.switchTab?.(id); }} onClose={handleCloseTab} />
+
+      {/* Panel-tab pages (rendered only when their tab is active) */}
+      {showChiaki && (
+        <div className="tab-page">
+          <Suspense fallback={null}>
+            <ChiakiPanel mode="tab" show onClose={() => closePanelTab('chiaki')} flash={flash} games={games} setGames={setGames} chiakiSessions={chiakiSessions} />
+          </Suspense>
+        </div>
+      )}
+
       <div className="void-layer">
         {starLayers.map((layer, d) => (
           <div key={d} ref={parallaxRefsArray.current[d]} className={'parallax-layer depth-' + d}>
@@ -834,7 +970,10 @@ export default function App() {
             })}
             {activeStations.map(plat => {
               const c = CLUSTER_CENTERS[plat]; const p = PLATFORMS[plat]; const col = p.color;
-              const onClick = () => { if (!dragInfo.current.moved) { if (plat === 'psn') setShowChiaki(true); else setShowXcloud(true); } };
+              const onClick = () => {
+                if (dragInfo.current.moved) return;
+                if (plat === 'psn') openPanelTab('chiaki'); else launchXcloud();
+              };
               return (
                 <React.Fragment key={'station-' + plat}>
                   <div className="nebula" style={{ left: c.x, top: c.y, width: 350, height: 350, background: col, opacity: 0.04 }} />
@@ -925,7 +1064,7 @@ export default function App() {
             const p = PLATFORMS[plat];
             return (
               <button key={plat} className={'stream-pill-btn' + (gpActive && gpArea === 'pill' && gpIdx === pi ? ' gp-focus' : '')}
-                onClick={() => { if (plat === 'psn') setShowChiaki(true); else setShowXcloud(true); }}>
+                onClick={() => { if (plat === 'psn') openPanelTab('chiaki'); else launchXcloud(); }}>
                 <div className="sp-icon" style={{ background: p.color + '33', color: p.color }}>{p.icon}</div>
                 {plat === 'psn' ? 'Remote Play' : 'Cloud Gaming'}
               </button>
@@ -965,7 +1104,7 @@ export default function App() {
         <div className="nav-sep" />
         {/* Filter button */}
         {(() => {
-          const filterCount = selectedPlatforms.length + selectedCategories.length + (hideSteamSoftware ? 1 : 0) + (gameFilter ? 1 : 0) + (showInstalledOnly ? 1 : 0) + (sortBy !== 'default' ? 1 : 0);
+          const filterCount = selectedPlatforms.length + selectedCategories.length + (hideSteamSoftware ? 1 : 0) + (gameFilter ? 1 : 0) + (showInstalledOnly ? 1 : 0) + (showHidden ? 1 : 0) + (sortBy !== 'default' ? 1 : 0);
           return (
             <div className="nav-filter-wrap" style={{ position: 'relative' }}>
               <button className="nav-btn" onClick={() => setShowFilters(s => s ? '' : 'open')} title="Filter games" style={{ position: 'relative' }}>
@@ -978,7 +1117,7 @@ export default function App() {
                   <input value={gameFilter} onChange={e => setGameFilter(e.target.value)} placeholder="Search games..." autoFocus />
                   <div className="filter-section-label">Sort by</div>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
-                    {([['default', 'Default'], ['name', 'Name'], ['played', 'Most Played'], ['recent', 'Recent'], ['installed', 'Installed']] as [string, string][]).map(([v, l]) => (
+                    {([['default', 'Default'], ['name', 'Name'], ['played', 'Most Played'], ['recent', 'Recent'], ['added', 'Added'], ['installed', 'Installed']] as [string, string][]).map(([v, l]) => (
                       <button key={v} className={'tag' + (sortBy === v ? ' sel' : '')} onClick={() => setSortBy(v)}>{l}</button>
                     ))}
                   </div>
@@ -1016,8 +1155,16 @@ export default function App() {
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--text-2)', fontWeight: 600 }}>Installed only</div>
                   </div>
+                  <div className="toggle-row" style={{ marginBottom: 10 }}>
+                    <div role="switch" aria-checked={showHidden} tabIndex={0} className={'switch' + (showHidden ? ' on' : '')}
+                      onClick={() => setShowHidden(s => !s)}
+                      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setShowHidden(s => !s); } }}>
+                      <div className="switch-knob" />
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-2)', fontWeight: 600 }}>Show hidden games</div>
+                  </div>
                   <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                    <button className="btn-sm" onClick={() => { setGameFilter(''); setSelectedPlatforms([]); setSelectedCategories([]); setHideSteamSoftware(false); setShowInstalledOnly(false); setSortBy('default'); }}>Reset all</button>
+                    <button className="btn-sm" onClick={() => { setGameFilter(''); setSelectedPlatforms([]); setSelectedCategories([]); setHideSteamSoftware(false); setShowInstalledOnly(false); setShowHidden(false); setSortBy('default'); }}>Reset all</button>
                     <button className="btn-sm primary" onClick={() => setShowFilters('')}>Done</button>
                   </div>
                 </div>,
@@ -1030,6 +1177,15 @@ export default function App() {
           <button className={viewMode === 'orbit' ? 'active' : ''} onClick={() => switchView('orbit')} title="Orbit view" aria-label="Orbit view">{I.orbit}</button>
           <button className={viewMode === 'cards' ? 'active' : ''} onClick={() => switchView('cards')} title="Card view" aria-label="Card view">{I.grid}</button>
         </div>
+        <button
+          type="button"
+          className="nav-btn"
+          title="Pick a random game from the current list (Ctrl+Shift+R)"
+          aria-label="Random game"
+          onClick={() => tryPickRandomRef.current()}
+        >
+          {I.dice}
+        </button>
         <div className="nav-sep" />
         {/* Theme picker */}
         {(() => {
@@ -1171,14 +1327,14 @@ export default function App() {
         <ContinueBanner game={mostRecentGame} onPlay={() => doLaunch(mostRecentGame)} onDismiss={() => setContinueBannerDismissed(true)} />
       )}
 
-      {liveFocus && <Suspense fallback={null}><FocusView game={liveFocus} onClose={() => setFocusGame(null)} onLaunch={doLaunch} onFav={doFav} onEdit={doEditFromFocus} onDelete={doDelete}
+      {liveFocus && <Suspense fallback={null}><FocusView game={liveFocus} onClose={() => setFocusGame(null)} onLaunch={doLaunch} onFav={doFav} onEdit={doEditFromFocus} onDelete={doDelete} onToggleHidden={doToggleHidden}
         onRefreshGame={(g: Game) => { _updateGameInState(g); setFocusGame(g); flash('Metadata updated'); }}
         gpFocusIdx={gpActive && gpArea === 'focus' ? gpIdx : -1} /></Suspense>}
 
       {Object.entries(chiakiSessions).filter(([, s]) => s.state === 'gui').map(([gid]) => {
         const g = games.find(x => x.id === gid); if (!g) return null;
         return (
-          <div key={gid} className="stream-float" onClick={() => setShowChiaki(true)}>
+          <div key={gid} className="stream-float" onClick={() => openPanelTab('chiaki')}>
             <div className="stream-float-dot connecting" />
             <div className="stream-float-info">
               <div className="stream-float-name">{g.name}</div>
@@ -1206,9 +1362,7 @@ export default function App() {
         onUpdated={(g: Game) => { _updateGameInState(g); setShowAdd(false); setEditGame(null); }}
         categories={cats} editGame={editGame} flash={flash} onOpenArtPicker={openArtPicker} /></Suspense>}
       <DetectPanel show={showDetect} onClose={() => setShowDetect(false)} onImport={doImport} />
-      {showPlatforms && <Suspense fallback={null}><PlatformsPanel show={showPlatforms} onClose={() => setShowPlatforms(false)} flash={flash} setGames={setGames} onOpenChiaki={() => setShowChiaki(true)} onOpenXcloud={() => setShowXcloud(true)} /></Suspense>}
-      {showChiaki && <Suspense fallback={null}><ChiakiPanel show={showChiaki} onClose={() => setShowChiaki(false)} flash={flash} games={games} setGames={setGames} chiakiSessions={chiakiSessions} /></Suspense>}
-      {showXcloud && <Suspense fallback={null}><XcloudPanel show={showXcloud} onClose={() => setShowXcloud(false)} flash={flash} /></Suspense>}
+      {showPlatforms && <Suspense fallback={null}><PlatformsPanel show={showPlatforms} onClose={() => setShowPlatforms(false)} flash={flash} setGames={setGames} onOpenChiaki={() => openPanelTab('chiaki')} onOpenXcloud={() => launchXcloud()} /></Suspense>}
       {showSettings && <Suspense fallback={null}><SettingsPanel show={showSettings} onClose={() => setShowSettings(false)} flash={flash} settings={settings} onSettingsChange={(s: Settings) => onSettingsChange(s)}
           games={games} setGames={setGames} setCats={setCats}
           onOpenPlatforms={() => { setShowSettings(false); setTimeout(() => setShowPlatforms(true), 150); }}

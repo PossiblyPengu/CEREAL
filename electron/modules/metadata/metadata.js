@@ -7,6 +7,7 @@
 const { net } = require('electron');
 const ctx = require('../core/context');
 const log = require('../core/logger');
+const { steamPortraitProbeUrls, steamHeroUrl, fetchSteamGridDBArt } = require('./gameArt');
 
 const METADATA_CACHE = new Map();
 const METADATA_CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -56,10 +57,7 @@ async function fetchSteamMetadata(appId) {
     // Validate library capsule exists (many software/tools/DLC don't have one)
     // Try 2x first, then 1x — never fall back to wide header/screenshots for coverUrl
     let coverUrl = '';
-    const capsuleUrls = [
-      `https://shared.steamstatic.com/store_item_assets/steam/apps/${appId}/library_600x900_2x.jpg`,
-      `https://shared.steamstatic.com/store_item_assets/steam/apps/${appId}/library_600x900.jpg`,
-    ];
+    const capsuleUrls = steamPortraitProbeUrls(appId);
     try {
       const probes = await Promise.allSettled(
         capsuleUrls.map(url =>
@@ -79,7 +77,7 @@ async function fetchSteamMetadata(appId) {
       releaseDate: info.release_date?.date || '',
       genres: (info.genres || []).map(g => g.description),
       coverUrl,
-      headerUrl: info.header_image || `https://shared.steamstatic.com/store_item_assets/steam/apps/${appId}/library_hero.jpg`,
+      headerUrl: info.header_image || steamHeroUrl(appId),
       screenshots: (info.screenshots || []).slice(0, 4).map(s => s.path_full),
       metacritic: info.metacritic?.score || null,
       website: info.website || '',
@@ -183,39 +181,6 @@ async function fetchWikipediaMetadata(gameName) {
   }
 }
 
-// Fetch best cover + header art from SteamGridDB (requires API key)
-async function fetchSteamGridDBArt(gameName, apiKey) {
-  if (!apiKey) return null;
-  try {
-    const q = encodeURIComponent(gameName);
-    const sgdbFetch = async (endpoint) => {
-      const resp = await net.fetch(endpoint, {
-        headers: { 'Authorization': 'Bearer ' + apiKey },
-      });
-      if (!resp.ok) throw new Error('SGDB HTTP ' + resp.status);
-      return resp.json();
-    };
-
-    const searchData = await sgdbFetch(`https://www.steamgriddb.com/api/v2/search/autocomplete/${q}`);
-    if (!searchData?.success || !searchData?.data?.length) return null;
-    const gameId = searchData.data[0].id;
-
-    const [covers, heroes] = await Promise.allSettled([
-      sgdbFetch(`https://www.steamgriddb.com/api/v2/grids/game/${gameId}?dimensions=600x900&limit=1`),
-      sgdbFetch(`https://www.steamgriddb.com/api/v2/heroes/game/${gameId}?limit=1`),
-    ]);
-
-    const coverUrl = (covers.status === 'fulfilled' && covers.value?.data?.[0]?.url) || '';
-    const headerUrl = (heroes.status === 'fulfilled' && heroes.value?.data?.[0]?.url) || '';
-
-    if (coverUrl || headerUrl) return { coverUrl, headerUrl };
-    return null;
-  } catch (e) {
-    log.debug('metadata', 'SteamGridDB art fetch failed for', gameName, e.message);
-    return null;
-  }
-}
-
 async function fetchGameMetadata(game) {
   if (!game || !game.name) return null;
 
@@ -246,14 +211,21 @@ async function fetchGameMetadata(game) {
     }
   }
 
-  // Enhance with SteamGridDB art if API key is available
-  // Official Steam portrait capsule has priority — SGDB fills the gap or serves as download fallback
+  // Enhance with SteamGridDB art if API key is available.
+  // Official Steam portrait capsule has priority — SGDB fills the gap (when
+  // there is no library capsule) AND always lands in meta.sgdbCoverUrl so the
+  // cover queue can use it as a download fallback when the Steam URL 404s.
   if (meta && ms.steamGridDbKey) {
     try {
       const art = await fetchSteamGridDBArt(game.name, ms.steamGridDbKey);
       if (art) {
-        if (art.coverUrl && !meta.coverUrl) meta.coverUrl = art.coverUrl;
-        else if (art.coverUrl) meta.sgdbCoverUrl = art.coverUrl;
+        if (art.coverUrl) {
+          if (!meta.coverUrl) meta.coverUrl = art.coverUrl;
+          // Always expose the SGDB url separately so applyMetadataToGame can
+          // store it on the game even when game.coverUrl is already populated
+          // (typically with a broken Steam library_600x900 URL for old apps).
+          meta.sgdbCoverUrl = art.coverUrl;
+        }
         if (art.headerUrl) meta.headerUrl = art.headerUrl;
       }
     } catch (_e) { /* SGDB art fetch failed, continue without it */ }

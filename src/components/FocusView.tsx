@@ -11,15 +11,18 @@ interface FocusViewProps {
   onFav: (id: string) => void;
   onEdit: (game: Game) => void;
   onDelete: (id: string) => void;
+  onToggleHidden?: (game: Game) => void;
   onRefreshGame?: (game: Game) => void;
   gpFocusIdx?: number;
 }
 
-export function FocusView({ game: gameProp, onClose, onLaunch, onFav, onEdit, onDelete, onRefreshGame, gpFocusIdx }: FocusViewProps) {
+export function FocusView({ game: gameProp, onClose, onLaunch, onFav, onEdit, onDelete, onToggleHidden, onRefreshGame, gpFocusIdx }: FocusViewProps) {
   const [closing, setClosing] = useState(false);
   const [renderedGame, setRenderedGame] = useState<Game | null>(gameProp);
   const [refreshing, setRefreshing] = useState(false);
   const [zoomSrc, setZoomSrc] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [moreActionsBusy, setMoreActionsBusy] = useState<string | null>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -37,6 +40,9 @@ export function FocusView({ game: gameProp, onClose, onLaunch, onFav, onEdit, on
       // schedule closing asynchronously
       requestAnimationFrame(() => setClosing(true));
     }
+    // Reset transient action state whenever the focused game changes
+    setConfirmingDelete(false);
+    setMoreActionsBusy(null);
   }, [gameProp, renderedGame]);
 
   // Focus trap inside dialog
@@ -73,10 +79,11 @@ export function FocusView({ game: gameProp, onClose, onLaunch, onFav, onEdit, on
       else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); if (window.confirm('Remove "' + renderedGame.name + '" from library?')) onDelete(renderedGame.id); }
       else if (e.key === 'e' || e.key === 'E') { e.preventDefault(); onEdit(renderedGame); }
       else if (e.key === 'f' || e.key === 'F') { e.preventDefault(); onFav(renderedGame.id); }
+      else if ((e.key === 'h' || e.key === 'H') && onToggleHidden) { e.preventDefault(); onToggleHidden(renderedGame); }
     };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
-  }, [renderedGame, zoomSrc, onLaunch, onDelete, onEdit, onFav]);
+  }, [renderedGame, zoomSrc, onLaunch, onDelete, onEdit, onFav, onToggleHidden]);
 
   if (!renderedGame) return null;
 
@@ -108,7 +115,18 @@ export function FocusView({ game: gameProp, onClose, onLaunch, onFav, onEdit, on
     playtimeMinutes?: number;
     lastPlayed?: string | number;
     platform?: string;
+    website?: string;
   };
+  const PLATFORM_CLIENTS: Record<string, string> = {
+    steam: 'Steam', epic: 'Epic Games', gog: 'GOG Galaxy',
+    ea: 'EA App', battlenet: 'Battle.net', ubisoft: 'Ubisoft Connect',
+    itchio: 'itch.io',
+  };
+  const clientName = (g.platform && PLATFORM_CLIENTS[g.platform]) || null;
+  const installApi = (window.api as unknown as { installGame?: (id: string) => Promise<{ success?: boolean; error?: string }> }).installGame;
+  const openInClientApi = (window.api as unknown as { openGameInClient?: (id: string) => Promise<{ success?: boolean; error?: string }> }).openGameInClient;
+  const isStreaming = g.platform === 'psn' || g.platform === 'psremote' || g.platform === 'xbox';
+  const isCustom = g.platform === 'custom';
   const mcColor: string = g.metacritic != null && g.metacritic > 0 ? (g.metacritic >= 75 ? '#6dc849' : g.metacritic >= 50 ? '#fdca52' : '#fc4b37') : '#888888';
   const coverSrc = resolveGameImage(game, 'coverUrl');
   const screenshots = g.screenshots ?? [];
@@ -133,17 +151,33 @@ export function FocusView({ game: gameProp, onClose, onLaunch, onFav, onEdit, on
               {refreshing ? 'Fetching...' : 'Refresh Info'}
             </button>
           </div>
-          <div className="focus-title">{game.name}</div>
+          <div className="focus-title" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span>{game.name}</span>
+            {game.hidden && <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 6, background: 'rgba(248,113,113,0.12)', color: '#f87171', border: '1px solid rgba(248,113,113,0.25)' }}>Hidden</span>}
+          </div>
           {g.metacritic != null && <div className="focus-metacritic" style={{ background: mcColor + '22', color: mcColor, border: '1px solid ' + mcColor + '44' }}>{g.metacritic} Metacritic</div>}
           <div className="focus-meta">
             <span>{fmtTime(game.playtimeMinutes)}</span>
             {game.lastPlayed && <><span style={{ color: 'var(--text-4)' }}>|</span><span>Last played {fmtDate(game.lastPlayed)}</span></>}
           </div>
-          {(g.developer || g.publisher || g.releaseDate) && (
+          {(g.developer || g.publisher || g.releaseDate || g.website) && (
             <div className="focus-info-grid">
               {g.developer && <div className="focus-info-item"><span className="focus-info-label">Developer</span><span className="focus-info-value">{g.developer}</span></div>}
               {g.publisher && <div className="focus-info-item"><span className="focus-info-label">Publisher</span><span className="focus-info-value">{g.publisher}</span></div>}
               {g.releaseDate && <div className="focus-info-item"><span className="focus-info-label">Released</span><span className="focus-info-value">{g.releaseDate}</span></div>}
+              {g.website && (
+                <div className="focus-info-item">
+                  <span className="focus-info-label">Website</span>
+                  <a
+                    href={g.website}
+                    onClick={e => { e.preventDefault(); (window.api as unknown as { openExternal?: (u: string) => void }).openExternal?.(g.website!); }}
+                    className="focus-info-value"
+                    style={{ color: 'var(--accent)', textDecoration: 'none', cursor: 'pointer', wordBreak: 'break-all' }}
+                  >
+                    {g.website.replace(/^https?:\/\//, '').replace(/\/$/, '')}
+                  </a>
+                </div>
+              )}
             </div>
           )}
           {game.categories && game.categories.length > 0 && <div className="focus-cats">{game.categories.map(c => <span key={c} className="focus-cat">{c}</span>)}</div>}
@@ -154,11 +188,68 @@ export function FocusView({ game: gameProp, onClose, onLaunch, onFav, onEdit, on
             <button className={'btn-play' + (gpFocusIdx === 0 ? ' gp-focus' : '')} onClick={() => onLaunch(game)}><span style={{ display: 'flex', width: 14, height: 14 }}>{I.play}</span> Play</button>
             <button className={'btn-ghost' + (gpFocusIdx === 1 ? ' gp-focus' : '')} onClick={() => onFav(game.id)}><span style={{ display: 'flex', width: 14, height: 14 }}>{game.favorite ? I.starFill : I.star}</span>{game.favorite ? 'Unfav' : 'Fav'}</button>
             <button className={'btn-ghost' + (gpFocusIdx === 2 ? ' gp-focus' : '')} onClick={() => onEdit(game)}><span style={{ display: 'flex', width: 14, height: 14 }}>{I.edit}</span> Edit</button>
-            <button className={'btn-ghost danger' + (gpFocusIdx === 3 ? ' gp-focus' : '')} onClick={() => onDelete(game.id)}><span style={{ display: 'flex', width: 14, height: 14 }}>{I.trash}</span></button>
+            {onToggleHidden && (
+              <button
+                className={'btn-ghost' + (gpFocusIdx === 3 ? ' gp-focus' : '')}
+                onClick={() => onToggleHidden(game)}
+                title={game.hidden ? 'Show in library again' : 'Hide from library (use Filters → Show hidden to reveal)'}
+              >
+                <span style={{ display: 'flex', width: 14, height: 14 }}>{game.hidden ? I.eye : I.eyeOff}</span>
+                {game.hidden ? 'Unhide' : 'Hide'}
+              </button>
+            )}
+            <button
+              className={'btn-ghost danger' + (gpFocusIdx === (onToggleHidden ? 4 : 3) ? ' gp-focus' : '') + (confirmingDelete ? ' confirming' : '')}
+              onClick={() => {
+                if (confirmingDelete) { onDelete(game.id); return; }
+                setConfirmingDelete(true);
+                setTimeout(() => setConfirmingDelete(false), 4000);
+              }}
+              title={confirmingDelete ? 'Click again to confirm' : 'Remove from library'}
+            >
+              <span style={{ display: 'flex', width: 14, height: 14 }}>{I.trash}</span>
+              {confirmingDelete && <span style={{ marginLeft: 6, fontSize: 11 }}>Confirm</span>}
+            </button>
           </div>
+          {/* Secondary actions: install / open in client (non-streaming, non-custom only) */}
+          {!isStreaming && !isCustom && clientName && (installApi || openInClientApi) && (
+            <div className="focus-actions" style={{ marginTop: 8 }}>
+              {game.installed === false && installApi && (
+                <button
+                  className="btn-ghost"
+                  disabled={moreActionsBusy === 'install'}
+                  onClick={async () => {
+                    setMoreActionsBusy('install');
+                    try {
+                      const r = await installApi(game.id);
+                      if (r && r.success === false && r.error) window.alert(r.error);
+                    } finally { setMoreActionsBusy(null); }
+                  }}
+                >
+                  <span style={{ display: 'flex', width: 14, height: 14 }}>{I.download}</span>
+                  {moreActionsBusy === 'install' ? 'Opening…' : 'Install'}
+                </button>
+              )}
+              {openInClientApi && (
+                <button
+                  className="btn-ghost"
+                  disabled={moreActionsBusy === 'client'}
+                  onClick={async () => {
+                    setMoreActionsBusy('client');
+                    try {
+                      const r = await openInClientApi(game.id);
+                      if (r && r.success === false && r.error) window.alert(r.error);
+                    } finally { setMoreActionsBusy(null); }
+                  }}
+                >
+                  {moreActionsBusy === 'client' ? 'Opening…' : 'Open in ' + clientName}
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
-      <div className="focus-esc">ESC to close</div>
+      <div className="focus-esc">ESC · close{onToggleHidden ? ' · H hide' : ''} · Enter play · F fav · E edit</div>
       {zoomSrc && <div className="screenshot-zoom" onClick={() => setZoomSrc(null)}><img src={zoomSrc} alt="" onClick={e => e.stopPropagation()} /></div>}
     </div>
   );
