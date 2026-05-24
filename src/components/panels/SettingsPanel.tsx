@@ -72,6 +72,7 @@ const ICONS = {
   appearance: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>,
   behavior:   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>,
   library:    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>,
+  platforms:  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>,
   system:     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>,
   about:      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>,
   danger:     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>,
@@ -82,11 +83,12 @@ const NAV_GROUPS: { label: string; danger?: boolean; items: { id: string; label:
     { id: 'appearance', label: 'Appearance', icon: ICONS.appearance },
     { id: 'behavior',   label: 'Behavior',   icon: ICONS.behavior },
   ]},
-  { label: 'Content', items: [
+  { label: 'Library', items: [
     { id: 'library',    label: 'Library',    icon: ICONS.library },
-    { id: 'system',     label: 'System',     icon: ICONS.system },
+    { id: 'platforms',  label: 'Platforms',  icon: ICONS.platforms },
   ]},
-  { label: 'Info',    items: [
+  { label: 'System',  items: [
+    { id: 'system',     label: 'System',     icon: ICONS.system },
     { id: 'about',      label: 'About',      icon: ICONS.about },
   ]},
   { label: '', danger: true, items: [
@@ -188,6 +190,7 @@ export function SettingsPanel({
   const [specs, setSpecs] = useState<any>(null);
   const [specsLoading, setSpecsLoading] = useState(false);
   const [activeSection, setActiveSection] = useState('appearance');
+  const [accounts, setAccounts] = useState<Record<string, any>>({});
 
   async function checkChiaki() {
     setChiakiUpd({ checking: true });
@@ -224,6 +227,9 @@ export function SettingsPanel({
         setSpecsLoading(true);
         try { const s = await window.api.getSystemSpecs(); setSpecs(s as SystemSpecs); } catch (e) { void e; }
         setSpecsLoading(false);
+      }
+      if ((window.api as any)?.getAccounts) {
+        try { const a = await (window.api as any).getAccounts(); setAccounts(a || {}); } catch (e) { void e; }
       }
     })();
     requestAnimationFrame(() => { setChiakiUpd(null); requestAnimationFrame(() => { void checkChiaki(); }); });
@@ -521,7 +527,7 @@ export function SettingsPanel({
       <Hero
         eyebrow="Your collection"
         title="Library"
-        subtitle="Sources, sync and the artwork pipeline."
+        subtitle="Tools to keep your library fresh, plus where artwork and descriptions come from."
         chips={<>
           <Chip tone="accent">{gameCount} games</Chip>
           <Chip>{totalMins ? fmtTime(totalMins) : '0h'} played</Chip>
@@ -529,8 +535,8 @@ export function SettingsPanel({
         </>}
       />
 
-      <Card title="Quick actions" subtitle="Re-scan platforms, fetch art, manage accounts.">
-        <div className="set-action-grid">
+      <Card title="Tools" subtitle="Re-scan, refresh metadata, and back up your library.">
+        <div className="set-action-grid wrap">
           <button className="set-action" onClick={async () => { if (onRescanAll) await onRescanAll(); }}>
             <div className="set-action-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div>
             <div><div className="set-action-label">Re-scan platforms</div><div className="set-action-desc">Detect newly installed games</div></div>
@@ -543,28 +549,6 @@ export function SettingsPanel({
             <div className="set-action-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg></div>
             <div><div className="set-action-label">Sync playtime</div><div className="set-action-desc">Pull hours from Steam</div></div>
           </button>
-          <button className="set-action" onClick={onOpenPlatforms}>
-            <div className="set-action-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg></div>
-            <div><div className="set-action-label">Platforms</div><div className="set-action-desc">Manage connected accounts</div></div>
-          </button>
-        </div>
-      </Card>
-
-      <Card title="Metadata">
-        <Row
-          label="Metadata source"
-          desc="Where descriptions and details come from"
-          control={
-            <select className="settings-select" value={(local.metadataSource as string) || 'steam'} onChange={e => update('metadataSource', e.target.value)}>
-              <option value="steam">Steam (default)</option>
-              <option value="wikipedia">Wikipedia</option>
-            </select>
-          }
-        />
-      </Card>
-
-      <Card title="Backup">
-        <div className="set-action-grid two">
           <button className="set-action" onClick={doExport}>
             <div className="set-action-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
             <div><div className="set-action-label">Export library</div><div className="set-action-desc">Save to JSON file</div></div>
@@ -577,8 +561,8 @@ export function SettingsPanel({
       </Card>
 
       <Card
-        title="SteamGridDB"
-        subtitle={<>Custom artwork search. <a href="#" className="settings-link" onClick={e => { e.preventDefault(); (window.api as any)?.openExternal?.('https://www.steamgriddb.com/profile/preferences/api'); }}>Get a key</a>.</>}
+        title="Metadata & artwork"
+        subtitle={<>Where descriptions come from, plus a SteamGridDB key for richer covers. <a href="#" className="settings-link" onClick={e => { e.preventDefault(); (window.api as any)?.openExternal?.('https://www.steamgriddb.com/profile/preferences/api'); }}>Get a key</a>.</>}
         side={
           sgStatus === 'checking' ? <Chip tone="busy">Checking…</Chip>
           : sgStatus === 'valid' ? <Chip tone="ok">Valid</Chip>
@@ -587,9 +571,19 @@ export function SettingsPanel({
           : <Chip>No key</Chip>
         }
       >
+        <Row
+          label="Metadata source"
+          desc="Where descriptions and details come from"
+          control={
+            <select className="settings-select" value={(local.metadataSource as string) || 'steam'} onChange={e => update('metadataSource', e.target.value)}>
+              <option value="steam">Steam (default)</option>
+              <option value="wikipedia">Wikipedia</option>
+            </select>
+          }
+        />
         <div className="set-key-row">
           <input type="password" value={sgKey} onChange={e => { setSgKey(e.target.value); setSgStatus(null); }}
-            placeholder={sgSavedKey?.hasSecret ? 'Saved — paste to replace' : 'Paste API key'} />
+            placeholder={sgSavedKey?.hasSecret ? 'Saved SteamGridDB key — paste to replace' : 'Paste SteamGridDB API key'} />
           <button className="btn-sm" onClick={async () => {
             if (!(window.api as any)?.readClipboard) return flash('Clipboard not available');
             const txt = await (window.api as any).readClipboard();
@@ -616,50 +610,85 @@ export function SettingsPanel({
           <div className="set-key-fp">FP: {sgSavedKey.fingerprint}</div>
         )}
       </Card>
-
-      {dataPath && (
-        <Card title="Data folder" subtitle="Where Cereal stores your library JSON, covers and credentials.">
-          <div className="set-data-path">
-            <div className="set-data-path-val">{dataPath}</div>
-            <button className="btn-sm" onClick={() => (window.api as any)?.openPath?.(dataPath)}>Open</button>
-          </div>
-        </Card>
-      )}
     </>
   );
+
+  const renderPlatforms = () => {
+    const oauthIds = ['steam', 'epic', 'gog', 'xbox'];
+    const onlineConnected = oauthIds.filter(id => accounts[id]?.connected).length;
+    const expired = oauthIds.filter(id => {
+      const a = accounts[id];
+      if (!a?.connected) return false;
+      const exp = a.msExpiresAt ?? a.expiresAt;
+      return typeof exp === 'number' && Date.now() > exp - 60_000;
+    }).length;
+    const platCount = PLATFORM_PATHS.filter(({ key }) => (local[key] as string)?.trim()).length;
+    return (
+      <>
+        <Hero
+          eyebrow="Connections"
+          title="Platforms"
+          subtitle="Sign in to your stores, set up streaming, and override install paths."
+          chips={<>
+            <Chip tone={onlineConnected > 0 ? 'accent' : 'muted'}>{onlineConnected} of {oauthIds.length} signed in</Chip>
+            {expired > 0 && <Chip tone="err">{expired} need re-auth</Chip>}
+            {platCount > 0 && <Chip>{platCount} custom path{platCount === 1 ? '' : 's'}</Chip>}
+          </>}
+        />
+
+        <Card title="Connected accounts" subtitle="Manage Steam, Epic, GOG, Xbox, EA, Battle.net, itch.io, Ubisoft, and PlayStation Remote Play.">
+          <div className="set-action-grid one">
+            <button className="set-action" onClick={onOpenPlatforms}>
+              <div className="set-action-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg></div>
+              <div>
+                <div className="set-action-label">Open platform manager</div>
+                <div className="set-action-desc">OAuth sign-in, library imports, API keys &amp; Remote Play</div>
+              </div>
+              <span className="set-action-arrow">›</span>
+            </button>
+          </div>
+        </Card>
+
+        <Card
+          title="Install paths"
+          subtitle="Override auto-detection. Leave blank to let Cereal find them."
+        >
+          <div className="set-paths">
+            {PLATFORM_PATHS.map(({ key, label, letter, color, desc }) => (
+              <div key={String(key)} className="set-path-row">
+                <div className="set-path-badge" style={{ background: color + '22', color, borderColor: color + '55' }}>{letter}</div>
+                <div className="set-path-info">
+                  <div className="set-path-label">{label}</div>
+                  <div className="set-path-desc">{desc}</div>
+                </div>
+                <input
+                  type="text"
+                  className="set-path-input"
+                  value={(local[key] as string) || ''}
+                  placeholder="Auto-detect"
+                  onChange={e => setLocal(prev => ({ ...prev, [key]: e.target.value }))}
+                  onBlur={e => update(key, e.target.value)}
+                />
+              </div>
+            ))}
+          </div>
+        </Card>
+      </>
+    );
+  };
 
   const renderSystem = () => (
     <>
       <Hero
         eyebrow="Plumbing"
         title="System"
-        subtitle="Where Cereal looks for installs and stays up to date."
+        subtitle="Updates, storage and bundled tools."
+        chips={<>
+          <Chip tone="accent">v{appVersion}</Chip>
+          {updateStatus === 'ready' && <Chip tone="ok">Update ready</Chip>}
+          {updateStatus === 'up-to-date' && <Chip tone="ok">Up to date</Chip>}
+        </>}
       />
-
-      <Card
-        title="Platform paths"
-        subtitle="Override auto-detection. Leave blank to let Cereal find them."
-      >
-        <div className="set-paths">
-          {PLATFORM_PATHS.map(({ key, label, letter, color, desc }) => (
-            <div key={String(key)} className="set-path-row">
-              <div className="set-path-badge" style={{ background: color + '22', color, borderColor: color + '55' }}>{letter}</div>
-              <div className="set-path-info">
-                <div className="set-path-label">{label}</div>
-                <div className="set-path-desc">{desc}</div>
-              </div>
-              <input
-                type="text"
-                className="set-path-input"
-                value={(local[key] as string) || ''}
-                placeholder="Auto-detect"
-                onChange={e => setLocal(prev => ({ ...prev, [key]: e.target.value }))}
-                onBlur={e => update(key, e.target.value)}
-              />
-            </div>
-          ))}
-        </div>
-      </Card>
 
       <Card title="Updates" subtitle="Cereal and bundled tools.">
         <div className="set-update-list">
@@ -739,6 +768,15 @@ export function SettingsPanel({
           </div>
         </div>
       </Card>
+
+      {dataPath && (
+        <Card title="Data folder" subtitle="Where Cereal stores your library, covers and credentials.">
+          <div className="set-data-path">
+            <div className="set-data-path-val">{dataPath}</div>
+            <button className="btn-sm" onClick={() => (window.api as any)?.openPath?.(dataPath)}>Open</button>
+          </div>
+        </Card>
+      )}
     </>
   );
 
@@ -833,15 +871,6 @@ export function SettingsPanel({
             </>) : <div className="set-spec-row"><span className="set-spec-lbl muted">—</span><span className="set-spec-val muted">Unavailable</span></div>}
           </div>
         </Card>
-
-        {dataPath && (
-          <Card title="Storage">
-            <div className="set-data-path">
-              <div className="set-data-path-val">{dataPath}</div>
-              <button className="btn-sm" onClick={() => (window.api as any)?.openPath?.(dataPath)}>Open</button>
-            </div>
-          </Card>
-        )}
 
         <Card title="Keyboard shortcuts">
           <div className="wiz-shortcut-grid" style={{ marginTop: 4 }}>
@@ -949,6 +978,7 @@ export function SettingsPanel({
             {activeSection === 'appearance' && renderAppearance()}
             {activeSection === 'behavior'   && renderBehavior()}
             {activeSection === 'library'    && renderLibrary()}
+            {activeSection === 'platforms'  && renderPlatforms()}
             {activeSection === 'system'     && renderSystem()}
             {activeSection === 'about'      && renderAbout()}
             {activeSection === 'danger'     && renderDanger()}

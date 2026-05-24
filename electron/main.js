@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, Tray, Menu, nativeImage, protocol } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Tray, Menu, nativeImage, protocol, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -67,6 +67,7 @@ const { registerLocalImageProtocol } = require('./modules/core/protocol');
 const { registerSecurityHandlers } = require('./modules/core/security');
 const { registerWindowIpc } = require('./modules/core/windowIpc');
 const { registerSystemIpc } = require('./modules/core/systemIpc');
+const { clampBoundsToWorkArea, isOnScreen } = require('./modules/core/display');
 
 // ─── Window ───────────────────────────────────────────────────────────────────
 let mainWindow;
@@ -88,15 +89,33 @@ function toggleDevTools() {
 }
 
 function createWindow() {
-  // Restore previous window bounds if present and allowed by settings
-  const savedBounds = (db && db.settings && db.settings.rememberWindowBounds && db.settings.windowBounds) ? db.settings.windowBounds : null;
+  // Defaults sized for a 1080p display; will be clamped against the actual
+  // primary work area below so a 1280×800 window can't overflow a 1366×768
+  // laptop's usable area (Windows taskbar takes ~40px from height).
+  const defaults = { width: 1280, height: 800 };
+  const primaryWa = screen.getPrimaryDisplay().workArea;
+  defaults.width  = Math.min(defaults.width,  primaryWa.width  - 24);
+  defaults.height = Math.min(defaults.height, primaryWa.height - 24);
+
+  // Restore previous window bounds if present, allowed by settings, AND still
+  // visible on a connected display. A bounds object that points at a removed
+  // monitor is silently dropped so the window doesn't open off-screen.
+  const rememberAllowed = !!(db && db.settings && db.settings.rememberWindowBounds);
+  const rawSaved = rememberAllowed ? (db.settings && db.settings.windowBounds) : null;
+  let savedBounds = null;
+  if (rawSaved && isOnScreen(rawSaved)) {
+    savedBounds = clampBoundsToWorkArea(rawSaved);
+  }
+
   const winOpts = {
-    width: 1280,
-    height: 800,
+    width: defaults.width,
+    height: defaults.height,
     minWidth: 900,
     minHeight: 600,
     frame: false,
-    show: true,
+    // Defer first paint until ready-to-show fires so the user never sees an
+    // empty white frame on launch.
+    show: false,
     backgroundColor: '#0a0a0f',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -110,20 +129,20 @@ function createWindow() {
     }
   };
   if (savedBounds) {
-    if (typeof savedBounds.x === 'number' && typeof savedBounds.y === 'number') {
-      winOpts.x = savedBounds.x;
-      winOpts.y = savedBounds.y;
-    }
-    if (typeof savedBounds.width === 'number' && typeof savedBounds.height === 'number') {
-      winOpts.width = savedBounds.width;
-      winOpts.height = savedBounds.height;
-    }
+    winOpts.x = savedBounds.x;
+    winOpts.y = savedBounds.y;
+    winOpts.width  = savedBounds.width;
+    winOpts.height = savedBounds.height;
   }
 
   mainWindow = new BrowserWindow(winOpts);
-  if (savedBounds && savedBounds.isMaximized) {
+  if (savedBounds && rawSaved && rawSaved.isMaximized) {
     try { mainWindow.maximize(); } catch (_e) { /* ignore */ }
   }
+  mainWindow.once('ready-to-show', () => {
+    if (db && db.settings && db.settings.startMinimized) return;
+    mainWindow.show();
+  });
 
   if (process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
@@ -154,12 +173,21 @@ function createWindow() {
     if (!app.isPackaged) toggleDevTools();
   });
 
-  // Track window bounds changes to reposition embedded chiaki windows
+  // Track window bounds changes to reposition embedded chiaki windows.
+  // We listen to a wide set so embedded views (xCloud / chiaki) always end up
+  // covering the right area when the user drags the window between displays
+  // with different DPI factors, toggles native fullscreen, or when a webview
+  // requests HTML5 fullscreen during a streaming session.
   mainWindow.on('resize',  onWindowBoundsChanged);
   mainWindow.on('move',    onWindowBoundsChanged);
+  mainWindow.on('show',    onWindowBoundsChanged);
   mainWindow.on('restore', onWindowBoundsChanged);
   mainWindow.on('maximize', onWindowBoundsChanged);
   mainWindow.on('unmaximize', onWindowBoundsChanged);
+  mainWindow.on('enter-full-screen', onWindowBoundsChanged);
+  mainWindow.on('leave-full-screen', onWindowBoundsChanged);
+  mainWindow.on('enter-html-full-screen', onWindowBoundsChanged);
+  mainWindow.on('leave-html-full-screen', onWindowBoundsChanged);
   mainWindow.on('close', (e) => {
     saveWindowBounds();
     if (!isQuitting && db && db.settings && db.settings.closeToTray) {
@@ -321,14 +349,26 @@ app.whenReady().then(() => {
 
   createWindow();
   ctx.mainWindow = mainWindow;
+
+  // React to monitor add/remove and DPI changes (laptop dock/undock, RDP
+  // resolution changes, switching primary display, etc.) so the main window —
+  // and any embedded streaming view it owns — never end up stranded.
+  const _onDisp = () => onDisplayConfigChanged();
+  screen.on('display-added', _onDisp);
+  screen.on('display-removed', _onDisp);
+  screen.on('display-metrics-changed', _onDisp);
+  app.once('before-quit', () => {
+    try {
+      screen.removeListener('display-added', _onDisp);
+      screen.removeListener('display-removed', _onDisp);
+      screen.removeListener('display-metrics-changed', _onDisp);
+    } catch (_e) { /* ignore */ }
+  });
+
   if (db.settings && (db.settings.closeToTray || db.settings.minimizeToTray)) createTray();
 
   // DevTools shortcuts handled by before-input-event in createWindow (app-scoped, not global)
-
-  // Start minimized if enabled
-  if (db.settings && db.settings.startMinimized) {
-    mainWindow.hide();
-  }
+  // startMinimized is honored in the ready-to-show handler in createWindow().
 
   // Auto-connect Discord if enabled — delayed so it doesn't slow window creation
   if (isDiscordEnabled()) setTimeout(connectDiscord, 8000);
@@ -428,6 +468,28 @@ function onWindowBoundsChanged() {
     updateAllXcloudBounds();
   }, 50);
   scheduleSaveWindowBounds();
+}
+
+// ─── Display configuration changes ─────────────────────────────────────────
+// When a monitor is unplugged (or DPI changes) the main window can end up
+// straddling a display boundary or stranded entirely off-screen. Snap it back
+// into the closest work area and let embedded views recompute their geometry.
+function onDisplayConfigChanged() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized() || mainWindow.isFullScreen()) return;
+  try {
+    const wasMaximized = mainWindow.isMaximized();
+    if (!wasMaximized) {
+      const cur = mainWindow.getBounds();
+      const next = clampBoundsToWorkArea(cur);
+      if (next && (next.x !== cur.x || next.y !== cur.y || next.width !== cur.width || next.height !== cur.height)) {
+        mainWindow.setBounds(next);
+      }
+    }
+  } catch (e) {
+    log.warn('main', 'display reflow failed:', e && e.message);
+  }
+  onWindowBoundsChanged();
 }
 
 // ─── Key Storage & Validation (extracted to modules/keys.js) ──────────────────

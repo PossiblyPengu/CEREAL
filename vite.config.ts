@@ -6,12 +6,12 @@ import path from 'path'
 import fs from 'fs'
 import { spawnSync } from 'child_process'
 
-/** Vitest files under providers/ are not needed in dist-electron or packaged apps. */
-function stripProviderTests(dir: string) {
+/** Vitest files under providers/ and modules/ are not needed in dist-electron or packaged apps. */
+function stripTests(dir: string) {
   if (!fs.existsSync(dir)) return
   for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
     const p = path.join(dir, ent.name)
-    if (ent.isDirectory()) stripProviderTests(p)
+    if (ent.isDirectory()) stripTests(p)
     else if (/\.test\.(mjs|js|cjs|ts)$/.test(ent.name)) {
       try {
         fs.unlinkSync(p)
@@ -23,41 +23,36 @@ function stripProviderTests(dir: string) {
 }
 
 /**
- * Old builds emitted loose `dist-electron/modules/*.js` copies; main is fully bundled
- * and only `./providers` + `./native` are external, so this folder is stale if present.
+ * Copy `electron/providers/` and `electron/modules/` to `dist-electron/`.
+ *
+ * Why both?  main.js externalizes `./providers/*`, `./native/*`, and
+ * `./modules/*` (see rollup `external` below), so those folders need to exist
+ * on disk at runtime.  Critically, modules like `core/context.js` hold mutable
+ * shared state — they MUST be loaded from a single physical file so that main
+ * and the providers (which load via `require(getProvidersDir())`) share the
+ * same Node module-cache entry.  Bundling modules into main.js while leaving
+ * providers external would silently produce two separate context instances.
  */
-function removeStaleDistElectronModules() {
-  const legacy = path.resolve(__dirname, 'dist-electron/modules')
-  if (!fs.existsSync(legacy)) return
-  try {
-    fs.rmSync(legacy, { recursive: true, force: true })
-  } catch {
-    /* ignore */
-  }
-}
-
-function copyElectronProviders() {
+function copyElectronSources() {
   return {
-    name: 'copy-electron-providers',
-    closeBundle() {
-      removeStaleDistElectronModules()
-      const src = path.resolve(__dirname, 'electron/providers')
-      const dest = path.resolve(__dirname, 'dist-electron/providers')
-      fs.cpSync(src, dest, { recursive: true })
-      stripProviderTests(dest)
-      copyScripts()
-      copyMediaInfoExe()
-    },
-    buildStart() {
-      const src = path.resolve(__dirname, 'electron/providers')
-      const dest = path.resolve(__dirname, 'dist-electron/providers')
-      if (fs.existsSync(src)) {
-        fs.cpSync(src, dest, { recursive: true })
-        stripProviderTests(dest)
-      }
-      copyScripts()
-      copyMediaInfoExe()
-    },
+    name: 'copy-electron-sources',
+    buildStart() { copyAll() },
+    closeBundle() { copyAll() },
+  }
+
+  function copyAll() {
+    copyDir('electron/providers', 'dist-electron/providers')
+    copyDir('electron/modules',   'dist-electron/modules')
+    copyScripts()
+    copyMediaInfoExe()
+  }
+
+  function copyDir(srcRel: string, destRel: string) {
+    const src = path.resolve(__dirname, srcRel)
+    const dest = path.resolve(__dirname, destRel)
+    if (!fs.existsSync(src)) return
+    fs.cpSync(src, dest, { recursive: true })
+    stripTests(dest)
   }
 }
 
@@ -122,6 +117,10 @@ export default defineConfig({
                 /^node:/,
                 /^\.\/providers/,
                 /^\.\/native/,
+                // Modules folder is loaded from disk at runtime so main.js and
+                // providers share the same module-cache instance (see
+                // copyElectronSources comment for why).
+                /^\.\/modules\//,
               ],
             },
           },
@@ -142,7 +141,7 @@ export default defineConfig({
       },
     ]),
     renderer(),
-    copyElectronProviders(),
+    copyElectronSources(),
   ],
   resolve: {
     alias: { '@': path.resolve(__dirname, './src') },

@@ -1,7 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { SidePanel } from '../SidePanel';
 import { I } from '../../constants';
-import { fmtDate } from '../../utils';
 import type { Game, ImportProgress } from '../../types';
 
 interface PlatformsPanelProps {
@@ -13,20 +12,77 @@ interface PlatformsPanelProps {
   onOpenXcloud: () => void;
 }
 
-const PLATS = [
-  { id: 'steam',  name: 'Steam',      icon: 'S', color: '#1b2838', apiKeyLabel: 'API Key (optional — for private profiles)', apiKeyHelp: 'Only needed if your Steam profile is set to private. Get your key at steamcommunity.com/dev/apikey — register any domain name (e.g. "cereal-launcher").', apiKeyUrl: 'https://steamcommunity.com/dev/apikey', note: 'Sign in to import your library. An API key is only needed for private profiles.' },
-  { id: 'gog',   name: 'GOG',        icon: 'G', color: '#3a1a50' },
-  { id: 'epic',  name: 'Epic Games', icon: 'E', color: '#2a2a2a', note: "Epic's developer APIs require special registration and may limit library imports." },
-  { id: 'xbox',  name: 'Xbox',       icon: 'X', color: '#0e6a0e' },
-  { id: 'psn',   name: 'PlayStation',icon: 'P', color: '#003087', noLogin: true },
-  { id: 'ea',       name: 'EA App',          icon: 'EA', color: '#0f6fc6', note: 'Scans your local EA App installation for installed games.' },
-  { id: 'battlenet', name: 'Battle.net',     icon: 'BN', color: '#148eff', note: 'Scans your local Battle.net installation for installed games.' },
-  { id: 'itchio',   name: 'itch.io',         icon: 'io', color: '#e8395c', apiKeyLabel: 'API Key (optional)', apiKeyHelp: 'An itch.io API key enables importing your full purchased games library.', apiKeyUrl: 'https://itch.io/user/settings/api-keys', note: 'Scans locally installed itch.io games.' },
-  { id: 'ubisoft',  name: 'Ubisoft Connect', icon: 'U',  color: '#003791', note: 'Scans your local Ubisoft Connect installation for installed games.' },
-] as const;
+type AuthMethod = 'oauth' | 'local' | 'streaming';
+
+interface PlatDef {
+  id: string;
+  name: string;
+  icon: string;
+  color: string;
+  authMethod: AuthMethod;
+  group: 'online' | 'local' | 'streaming';
+  apiKeyLabel?: string;
+  apiKeyHelp?: string;
+  apiKeyUrl?: string;
+  note?: string;
+}
+
+const PLATS: PlatDef[] = [
+  // ── Online sign-in (official OAuth/OpenID routes) ──────────────────────
+  { id: 'steam', name: 'Steam', icon: 'S', color: '#1b2838', authMethod: 'oauth', group: 'online',
+    apiKeyLabel: 'Steam Web API Key (optional)',
+    apiKeyHelp: 'Only required if your Steam profile is set to private. Register any domain name (e.g. "cereal-launcher") on the Steam dev page.',
+    apiKeyUrl: 'https://steamcommunity.com/dev/apikey',
+    note: 'Signs in via Steam OpenID — Valve\'s official sign-in route.' },
+  { id: 'gog', name: 'GOG', icon: 'G', color: '#3a1a50', authMethod: 'oauth', group: 'online',
+    note: 'Signs in via GOG\'s official login.gog.com OAuth flow.' },
+  { id: 'epic', name: 'Epic Games', icon: 'E', color: '#2a2a2a', authMethod: 'oauth', group: 'online',
+    note: 'Signs in via Epic\'s official epicgames.com/id login.' },
+  { id: 'xbox', name: 'Xbox', icon: 'X', color: '#0e6a0e', authMethod: 'oauth', group: 'online',
+    note: 'Signs in via Microsoft\'s official login.live.com flow with Xbox Live scope.' },
+
+  // ── Streaming ───────────────────────────────────────────────────────────
+  { id: 'psn', name: 'PlayStation', icon: 'P', color: '#003087', authMethod: 'streaming', group: 'streaming',
+    note: 'Stream PS4 / PS5 over the network using chiaki-ng.' },
+
+  // ── Local detection only (no public OAuth) ──────────────────────────────
+  { id: 'ea', name: 'EA App', icon: 'EA', color: '#0f6fc6', authMethod: 'local', group: 'local',
+    note: 'EA does not offer a public sign-in API. Cereal reads your installed EA App library on this PC.' },
+  { id: 'battlenet', name: 'Battle.net', icon: 'BN', color: '#148eff', authMethod: 'local', group: 'local',
+    note: 'Battle.net has no public sign-in API. Cereal reads your Battle.net installation on this PC.' },
+  { id: 'itchio', name: 'itch.io', icon: 'io', color: '#e8395c', authMethod: 'local', group: 'local',
+    apiKeyLabel: 'itch.io Personal API Key',
+    apiKeyHelp: 'itch.io\'s official integration route — paste a per-user key from your account settings to import your full purchased library.',
+    apiKeyUrl: 'https://itch.io/user/settings/api-keys',
+    note: 'Detects locally installed itch.io games. Add an API key to also import your full library.' },
+  { id: 'ubisoft', name: 'Ubisoft Connect', icon: 'U', color: '#003791', authMethod: 'local', group: 'local',
+    note: 'Ubisoft Connect has no public sign-in API. Cereal reads your Ubisoft Connect installation on this PC.' },
+];
 
 interface PlatState { status: string; games?: number; chiaki?: any; cloudUrl?: string; appFound?: boolean; }
 interface ApiKeyState { input: string; saved: string | null; status: string | null; }
+
+// ─── Helpers ─────────────────────────────────────────────────────────────
+function relTime(iso?: string | null): string | null {
+  if (!iso) return null;
+  const ms = Date.now() - new Date(iso).getTime();
+  if (!Number.isFinite(ms) || ms < 0) return null;
+  const m = Math.floor(ms / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `${d}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
+function isExpired(acct: any): boolean {
+  if (!acct?.connected) return false;
+  const expiry = acct.msExpiresAt ?? acct.expiresAt;
+  if (typeof expiry !== 'number') return false;
+  return Date.now() > expiry - 60_000;
+}
 
 export function PlatformsPanel({ show, onClose, flash, setGames, onOpenChiaki, onOpenXcloud }: PlatformsPanelProps) {
   const [accounts, setAccounts] = useState<Record<string, any>>({});
@@ -41,34 +97,42 @@ export function PlatformsPanel({ show, onClose, flash, setGames, onOpenChiaki, o
   const [importing, setImporting] = useState('');
   const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
   const [apiKeys, setApiKeys] = useState<Record<string, ApiKeyState>>({});
+  const [keyOpen, setKeyOpen] = useState<Record<string, boolean>>({});
   const [platFilter, setPlatFilter] = useState('');
 
   useEffect(() => {
     if (!show) return;
     (async () => {
       if ((window.api as any)?.getAccounts) { const a = await (window.api as any).getAccounts(); setAccounts(a || {}); }
-      const p: Record<string, PlatState> = { ...platforms };
-      if ((window.api as any)) {
-        try { const s = await (window.api as any).detectSteam(); p.steam = { status: s.games?.length ? 'connected' : 'not-found', games: s.games?.length || 0 }; } catch (_) { p.steam = { status: 'not-found', games: 0 }; }
-        try { const ep = await (window.api as any).detectEpic(); p.epic = { status: ep.games?.length ? 'connected' : 'not-found', games: ep.games?.length || 0 }; } catch (_) { p.epic = { status: 'not-found', games: 0 }; }
-        try { const g = await (window.api as any).detectGOG(); p.gog = { status: g.games?.length ? 'connected' : 'not-found', games: g.games?.length || 0 }; } catch (_) { p.gog = { status: 'not-found', games: 0 }; }
-        try { const ch = await (window.api as any).getChiakiStatus(); p.psn = { status: ch.status === 'missing' ? 'not-found' : 'connected', chiaki: ch }; } catch (_) { p.psn = { status: 'not-found', chiaki: null }; }
-        try { const xb = await (window.api as any).detectXbox(); p.xbox = { status: (xb.games?.length || xb.xboxAppFound) ? 'connected' : 'available', cloudUrl: xb.cloudGamingUrl || 'https://www.xbox.com/play', appFound: xb.xboxAppFound, games: xb.games?.length || 0 }; } catch (_) { p.xbox = { status: 'available', cloudUrl: 'https://www.xbox.com/play', appFound: false, games: 0 }; }
-        try { const ea = await (window.api as any).detectEA(); p.ea = { status: ea.games?.length ? 'connected' : 'not-found', games: ea.games?.length || 0 }; } catch (_) { p.ea = { status: 'not-found', games: 0 }; }
-        try { const bn = await (window.api as any).detectBattleNet(); p.battlenet = { status: bn.games?.length ? 'connected' : 'not-found', games: bn.games?.length || 0 }; } catch (_) { p.battlenet = { status: 'not-found', games: 0 }; }
-        try { const io = await (window.api as any).detectItchio(); p.itchio = { status: io.games?.length ? 'connected' : 'not-found', games: io.games?.length || 0 }; } catch (_) { p.itchio = { status: 'not-found', games: 0 }; }
-        try { const ub = await (window.api as any).detectUbisoft(); p.ubisoft = { status: ub.games?.length ? 'connected' : 'not-found', games: ub.games?.length || 0 }; } catch (_) { p.ubisoft = { status: 'not-found', games: 0 }; }
+      const next: Record<string, PlatState> = { ...platforms };
+      const api = window.api as any;
+      if (api) {
+        const probe = async (id: string, fn: string, build: (r: any) => PlatState) => {
+          try { const r = await api[fn](); next[id] = build(r || {}); } catch { next[id] = { status: 'not-found', games: 0 }; }
+        };
+        await Promise.all([
+          probe('steam',     'detectSteam',     r => ({ status: r.games?.length ? 'connected' : 'not-found', games: r.games?.length || 0 })),
+          probe('epic',      'detectEpic',      r => ({ status: r.games?.length ? 'connected' : 'not-found', games: r.games?.length || 0 })),
+          probe('gog',       'detectGOG',       r => ({ status: r.games?.length ? 'connected' : 'not-found', games: r.games?.length || 0 })),
+          probe('psn',       'getChiakiStatus', r => ({ status: r.status === 'missing' ? 'not-found' : 'connected', chiaki: r })),
+          probe('xbox',      'detectXbox',      r => ({ status: (r.games?.length || r.xboxAppFound) ? 'connected' : 'available', cloudUrl: r.cloudGamingUrl || 'https://www.xbox.com/play', appFound: r.xboxAppFound, games: r.games?.length || 0 })),
+          probe('ea',        'detectEA',        r => ({ status: r.games?.length ? 'connected' : 'not-found', games: r.games?.length || 0 })),
+          probe('battlenet', 'detectBattleNet', r => ({ status: r.games?.length ? 'connected' : 'not-found', games: r.games?.length || 0 })),
+          probe('itchio',    'detectItchio',    r => ({ status: r.games?.length ? 'connected' : 'not-found', games: r.games?.length || 0 })),
+          probe('ubisoft',   'detectUbisoft',   r => ({ status: r.games?.length ? 'connected' : 'not-found', games: r.games?.length || 0 })),
+        ]);
       }
-      setPlatforms(p);
+      setPlatforms(next);
       if ((window.api as any)?.getApiKeyInfo) {
         const keys: Record<string, ApiKeyState> = {};
         for (const pid of ['steam', 'itchio']) {
-          try { const r = await (window.api as any).getApiKeyInfo(pid); keys[pid] = { input: '', saved: r?.ok && r.hasSecret ? r.fingerprint : null, status: null }; } catch (_) { keys[pid] = { input: '', saved: null, status: null }; }
+          try { const r = await (window.api as any).getApiKeyInfo(pid); keys[pid] = { input: '', saved: r?.ok && r.hasSecret ? r.fingerprint : null, status: null }; }
+          catch { keys[pid] = { input: '', saved: null, status: null }; }
         }
         setApiKeys(keys);
       }
     })();
-  }, [show]);
+  }, [show]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!show) return;
@@ -81,18 +145,43 @@ export function PlatformsPanel({ show, onClose, flash, setGames, onOpenChiaki, o
     return () => { unsub?.(); };
   }, [show]);
 
-  const refreshAccounts = async () => { if ((window.api as any)?.getAccounts) { const a = await (window.api as any).getAccounts(); setAccounts(a || {}); } };
-  const setKeyField = (id: string, field: keyof ApiKeyState, val: any) => setApiKeys(prev => ({ ...prev, [id]: { ...(prev[id] || { input: '', saved: null, status: null }), [field]: val } }));
+  const refreshAccounts = async () => {
+    if ((window.api as any)?.getAccounts) { const a = await (window.api as any).getAccounts(); setAccounts(a || {}); }
+  };
+  const setKeyField = (id: string, field: keyof ApiKeyState, val: any) =>
+    setApiKeys(prev => ({ ...prev, [id]: { ...(prev[id] || { input: '', saved: null, status: null }), [field]: val } }));
 
-  const doAuth = async (id: string, name: string) => {
+  const doAuth = async (id: string, name: string, method: AuthMethod) => {
+    const verb = method === 'local' ? 'connect' : 'sign-in';
     setLoading(l => ({ ...l, [id]: true }));
-    const r = await (window.api as any).platformAuth(id);
-    setLoading(l => ({ ...l, [id]: false }));
-    if (r.error === 'cancelled') return;
-    if (r.error) { flash(name + ' sign-in failed: ' + r.error); return; }
-    flash(name + ' connected' + (r.displayName || r.gamertag ? ': ' + (r.displayName || r.gamertag) : '') + ' — importing library...');
-    await refreshAccounts(); // show connected UI before import starts
-    await doImport(id);     // auto-import after connecting
+    let r: any;
+    try { r = await (window.api as any).platformAuth(id); }
+    finally { setLoading(l => ({ ...l, [id]: false })); }
+
+    // Always re-pull account state from main: provider success pages can call
+    // window.close() before our async onRedirect resolves, and a hard error
+    // partway through still might have persisted partial credentials. The DB
+    // is the source of truth — sync the panel to it before deciding what flash
+    // message to show.
+    await refreshAccounts();
+    const fresh = (window.api as any)?.getAccounts ? await (window.api as any).getAccounts() : {};
+    const nowConnected = !!fresh?.[id]?.connected;
+
+    if (r?.error === 'cancelled') {
+      if (nowConnected) {
+        const who = fresh[id].displayName || fresh[id].gamertag;
+        flash(`${name} connected${who ? ': ' + who : ''} — importing library...`);
+        await doImport(id);
+      }
+      return;
+    }
+    if (r?.error) {
+      flash(`${name} ${verb} failed: ${r.error}`);
+      return;
+    }
+    const who = r?.displayName || r?.gamertag || fresh?.[id]?.displayName || fresh?.[id]?.gamertag;
+    flash(name + ' connected' + (who ? ': ' + who : '') + ' — importing library...');
+    await doImport(id);
   };
 
   const doImport = async (id: string) => {
@@ -117,7 +206,11 @@ export function PlatformsPanel({ show, onClose, flash, setGames, onOpenChiaki, o
     refreshAccounts();
   };
 
-  const doDisconnect = async (id: string, name: string) => { await (window.api as any).removeAccount(id); refreshAccounts(); flash(name + ' disconnected'); };
+  const doDisconnect = async (id: string, name: string) => {
+    await (window.api as any).removeAccount(id);
+    refreshAccounts();
+    flash(name + ' disconnected');
+  };
 
   const doValidateKey = async (id: string) => {
     const k = apiKeys[id] || {} as ApiKeyState;
@@ -132,11 +225,13 @@ export function PlatformsPanel({ show, onClose, flash, setGames, onOpenChiaki, o
     const key = (apiKeys[id] || {} as ApiKeyState).input;
     if (!key) { flash('Enter a key to save'); return; }
     const r = await (window.api as any).saveApiKey(id, key);
-    if (r?.ok) { setKeyField(id, 'input', ''); setKeyField(id, 'saved', r.fingerprint || '✓'); flash('Key saved securely'); } else flash('Save failed: ' + r?.error);
+    if (r?.ok) { setKeyField(id, 'input', ''); setKeyField(id, 'saved', r.fingerprint || '✓'); flash('Key saved securely'); }
+    else flash('Save failed: ' + r?.error);
   };
   const doDeleteKey = async (id: string) => {
     const r = await (window.api as any).deleteApiKey(id);
-    if (r?.ok) { setKeyField(id, 'saved', null); setKeyField(id, 'input', ''); flash('Key deleted'); } else flash('Delete failed');
+    if (r?.ok) { setKeyField(id, 'saved', null); setKeyField(id, 'input', ''); setKeyField(id, 'status', null); flash('Key deleted'); }
+    else flash('Delete failed');
   };
   const doPasteKey = async (id: string) => {
     if (!(window.api as any)?.readClipboard) return flash('Clipboard not available');
@@ -145,115 +240,305 @@ export function PlatformsPanel({ show, onClose, flash, setGames, onOpenChiaki, o
     const candidate = txt.trim();
     setKeyField(id, 'input', candidate); setKeyField(id, 'status', 'checking');
     const vr = await (window.api as any).validateApiKey(id, candidate);
-    if (vr?.ok) { const sr = await (window.api as any).saveApiKey(id, candidate); if (sr?.ok) { setKeyField(id, 'input', ''); setKeyField(id, 'saved', sr.fingerprint || '✓'); setKeyField(id, 'status', 'valid'); flash('Pasted key validated and saved'); } else flash('Pasted key validated but save failed'); }
-    else { setKeyField(id, 'status', 'invalid'); flash('Pasted key invalid'); }
+    if (vr?.ok) {
+      const sr = await (window.api as any).saveApiKey(id, candidate);
+      if (sr?.ok) {
+        setKeyField(id, 'input', '');
+        setKeyField(id, 'saved', sr.fingerprint || '✓');
+        setKeyField(id, 'status', 'valid');
+        flash('Pasted key validated and saved');
+      } else flash('Pasted key validated but save failed');
+    } else { setKeyField(id, 'status', 'invalid'); flash('Pasted key invalid'); }
   };
 
-  const showPlat = (name: string) => { const q = (platFilter || '').trim().toLowerCase(); return !q || name.toLowerCase().includes(q); };
-  const connDot = (connected: boolean, pdata: PlatState | undefined, id: string) => connected ? 'ok' : (pdata?.games || id === 'xbox') ? 'warn' : 'off';
+  // ─── Filtering & summary ──────────────────────────────────────────────
+  const matchesFilter = (p: PlatDef) => {
+    const q = (platFilter || '').trim().toLowerCase();
+    return !q || p.name.toLowerCase().includes(q) || p.id.includes(q);
+  };
 
-  const ApiKeyRow = ({ id, label, help, url }: { id: string; label: string; help?: string; url?: string }) => {
-    const k = apiKeys[id] || {} as ApiKeyState;
-    const statusColor = k.status === 'valid' ? 'var(--green)' : k.status && k.status !== 'checking' ? 'var(--red)' : 'var(--text-3)';
+  const summary = useMemo(() => {
+    const oauthIds = PLATS.filter(p => p.authMethod === 'oauth').map(p => p.id);
+    const onlineConnected = oauthIds.filter(id => accounts[id]?.connected).length;
+    const expired = oauthIds.filter(id => isExpired(accounts[id])).length;
+    return { onlineConnected, onlineTotal: oauthIds.length, expired };
+  }, [accounts]);
+
+  // ─── Building blocks (defined as render functions, not subcomponents — see
+  // react-hooks/static-components rule) ──────────────────────────────────
+  const renderStatusPill = (acct: any, plat: PlatDef, pdata?: PlatState) => {
+    if (plat.authMethod === 'streaming') {
+      const ok = pdata?.status === 'connected';
+      return <span className={'login-pill ' + (ok ? 'ok' : 'muted')}><span className="pip" />{ok ? 'Ready' : 'Not configured'}</span>;
+    }
+    if (acct?.connected) {
+      if (isExpired(acct)) return <span className="login-pill warn"><span className="pip" />Re-auth needed</span>;
+      return <span className="login-pill ok"><span className="pip" />Connected</span>;
+    }
+    if (plat.authMethod === 'local') return <span className="login-pill local"><span className="pip" />Local detection</span>;
+    return <span className="login-pill muted"><span className="pip" />Not signed in</span>;
+  };
+
+  const renderApiKeyPanel = ({ id, label, help, url }: { id: string; label: string; help?: string; url?: string }) => {
+    const k = apiKeys[id] || ({} as ApiKeyState);
+    const open = !!keyOpen[id] || !!k.saved;
+    const status = k.status;
+    const statusCls = !status ? '' : status === 'valid' ? 'ok' : status === 'checking' ? 'checking' : 'bad';
+    const statusLabel = status === 'valid' ? 'Valid key' : status === 'checking' ? 'Checking…' : status?.startsWith('invalid') ? 'Invalid key' : status;
     return (
-      <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--glass-border)' }}>
-        <div style={{ fontSize: 10, color: 'var(--text-3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>{label}</div>
-        {help && <div style={{ fontSize: 10, color: 'var(--text-4)', lineHeight: 1.6, marginBottom: 8 }}>{help}{url && <> <a href="#" onClick={e => { e.preventDefault(); window.api?.openExternal?.(url); }} style={{ color: 'var(--accent)', textDecoration: 'underline', cursor: 'pointer' }}>Get your key here</a></>}</div>}
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <input type="password" value={k.input || ''} onChange={e => setKeyField(id, 'input', e.target.value)} placeholder={k.saved ? `••••••••${k.saved}` : 'Paste key'} style={{ flex: 1, fontSize: 11 }} />
-          <button className="btn-flat" onClick={() => doPasteKey(id)}>Paste</button>
-        </div>
-        <div style={{ display: 'flex', gap: 6, marginTop: 6, alignItems: 'center' }}>
-          <button className="btn-sm" onClick={() => doValidateKey(id)}>Validate</button>
-          <button className="btn-sm primary" onClick={() => doSaveKey(id)}>Save</button>
-          {k.saved && <button className="btn-sm danger" onClick={() => doDeleteKey(id)}>Delete</button>}
-          {k.status && <span style={{ fontSize: 10, color: statusColor, marginLeft: 4 }}>{k.status}</span>}
-        </div>
-        {k.saved && <div style={{ marginTop: 4, fontSize: 10, color: 'var(--text-4)' }}>Saved: ••••••••{k.saved}</div>}
+      <div className={'login-key' + (open ? ' open' : '')}>
+        <button type="button" className="login-key-toggle" onClick={() => setKeyOpen(s => ({ ...s, [id]: !open }))}>
+          <span>{label}</span>
+          {k.saved && <span className="login-pill ok" style={{ marginLeft: 6 }}><span className="pip" />Saved</span>}
+          <span className="chev">›</span>
+        </button>
+        {open && (
+          <>
+            {help && (
+              <div className="login-key-help">
+                {help}
+                {url && (
+                  <> <a onClick={e => { e.preventDefault(); window.api?.openExternal?.(url); }}>Get a key</a></>
+                )}
+              </div>
+            )}
+            <div className="login-key-input-row">
+              <input
+                type="password"
+                value={k.input || ''}
+                onChange={e => setKeyField(id, 'input', e.target.value)}
+                placeholder={k.saved ? `Saved key ····${k.saved}` : 'Paste key here'}
+                spellCheck={false}
+                autoComplete="off"
+              />
+              <button className="login-cta ghost" type="button" onClick={() => doPasteKey(id)}>Paste</button>
+            </div>
+            <div className="login-key-actions">
+              <button className="login-cta ghost" type="button" onClick={() => doValidateKey(id)} disabled={!k.input && !k.saved}>Validate</button>
+              <button className="login-cta" type="button" onClick={() => doSaveKey(id)} disabled={!k.input}>Save</button>
+              {k.saved && <button className="login-cta danger" type="button" onClick={() => doDeleteKey(id)}>Delete</button>}
+              {status && <span className={'login-key-status ' + statusCls}>{statusLabel}</span>}
+            </div>
+            {k.saved && <div className="login-key-saved">····{k.saved}</div>}
+          </>
+        )}
       </div>
     );
   };
 
-  const PlatformSection = ({ plat }: { plat: typeof PLATS[number] }) => {
-    const { id, name, icon, color } = plat;
-    const p = plat as any;
-    const acct = accounts[id] || {};
-    const connected = acct.connected;
-    const pdata = platforms[id];
-    const isLoading = loading[id];
-    const isImporting = importing === id;
+  const renderImportProgress = (id: string) => {
+    if (importing !== id || !importProgress || importProgress.provider !== id) return null;
+    const pct = importProgress.total
+      ? Math.round(((importProgress.processed ?? 0) / importProgress.total) * 100)
+      : null;
     return (
-      <div style={{ marginBottom: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-          <div className="conn-icon" style={{ background: color, width: 28, height: 28, fontSize: 11, flexShrink: 0 }}>{icon}</div>
-          <div style={{ flex: 1, fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{name}</div>
-          {!p.apiKeyOnly && <div className={'conn-dot ' + connDot(connected, pdata, id)} />}
+      <div className="login-progress">
+        <div className="login-progress-head">
+          <span className="login-progress-msg">{importProgress.message || 'Processing…'}</span>
+          {importProgress.total ? <span className="login-progress-fraction">{importProgress.processed} / {importProgress.total}</span> : null}
         </div>
-        <div style={{ padding: '12px 14px', borderRadius: '10px', background: 'var(--glass)', border: '1px solid var(--glass-border)' }}>
-          {id === 'psn' && (
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 12, color: 'var(--text)' }}>PlayStation Remote Play</div>
-                  <div style={{ fontSize: 10, color: 'var(--text-4)' }}>{pdata?.chiaki ? 'chiaki-ng v' + (pdata.chiaki.version || '') : 'Not configured'}</div>
-                </div>
-                <div className={'conn-dot ' + (pdata?.status === 'connected' ? 'ok' : pdata?.status === 'checking' ? 'warn' : 'off')} />
+        <div className="login-progress-bar">
+          <div className={'login-progress-fill' + (pct == null ? ' indeterminate' : '')} style={pct != null ? { width: pct + '%' } : undefined} />
+        </div>
+        <div className="login-progress-stats">
+          <span className="new">+{importProgress.imported ?? 0} new</span>
+          <span className="upd">{importProgress.updated ?? 0} updated</span>
+        </div>
+      </div>
+    );
+  };
+
+  const renderPlatformCard = (plat: PlatDef) => {
+    const acct = accounts[plat.id] || {};
+    const connected = !!acct.connected;
+    const expired = isExpired(acct);
+    const pdata = platforms[plat.id];
+    const isLoading = loading[plat.id];
+    const isImporting = importing === plat.id;
+    const cardCls = 'login-card'
+      + (connected ? ' connected' : '')
+      + (expired ? ' expired' : '')
+      + (!connected && plat.authMethod === 'local' ? ' local' : '');
+
+    // ── PSN / Streaming ──────────────────────────────────────────────────
+    if (plat.authMethod === 'streaming') {
+      return (
+        <div className={cardCls}>
+          <div className="login-card-head">
+            <div className="login-card-glyph" style={{ background: plat.color }}>{plat.icon}</div>
+            <div className="login-card-title">
+              <div className="login-card-name">{plat.name}</div>
+              <div className="login-card-sub">
+                {pdata?.chiaki?.version ? `chiaki-ng v${pdata.chiaki.version}` : pdata?.chiaki ? 'chiaki-ng installed' : 'Not configured'}
               </div>
-              <button className="btn-sm" onClick={() => { onClose(); onOpenChiaki(); }} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                <span style={{ display: 'flex', width: 14, height: 14 }}>{I.gear}</span><span>Configure chiaki-ng</span>
-              </button>
+            </div>
+            {renderStatusPill(acct, plat, pdata)}
+          </div>
+          <button className="login-cta ghost" onClick={() => { onClose(); onOpenChiaki(); }}>
+            <span style={{ display: 'flex', width: 14, height: 14 }}>{I.gear}</span>
+            <span>Configure Remote Play</span>
+          </button>
+          {plat.note && <div className="login-card-note">{plat.note}</div>}
+        </div>
+      );
+    }
+
+    // ── Connected (OAuth or local detection) ─────────────────────────────
+    if (connected) {
+      const identity = acct.displayName || acct.gamertag || plat.name;
+      const stats: string[] = [];
+      if (acct.gameCount) stats.push(`${acct.gameCount} ${acct.gameCount === 1 ? 'game' : 'games'}`);
+      if (pdata?.games) stats.push(`${pdata.games} installed`);
+      const synced = relTime(acct.lastSync);
+      if (synced) stats.push(`synced ${synced}`);
+
+      return (
+        <div className={cardCls}>
+          <div className="login-card-head">
+            <div className="login-card-glyph" style={{ background: plat.color }}>{plat.icon}</div>
+            <div className="login-card-title">
+              <div className="login-card-name">{plat.name}</div>
+              <div className="login-card-sub">{plat.authMethod === 'local' ? 'Local launcher' : 'Online sign-in'}</div>
+            </div>
+            {renderStatusPill(acct, plat, pdata)}
+          </div>
+
+          <div className="login-card-meta">
+            {acct.avatarUrl
+              ? <div className="login-card-avatar"><img src={acct.avatarUrl} alt="" /></div>
+              : <div className="login-card-glyph" style={{ background: plat.color, width: 44, height: 44, fontSize: 14 }}>{plat.icon}</div>}
+            <div className="login-card-identity">
+              <div className="login-card-identity-name" title={identity}>{identity}</div>
+              <div className="login-card-identity-meta">
+                {stats.length
+                  ? stats.map((s, i) => <span key={i}>{s}</span>)
+                  : <span>Connected</span>}
+              </div>
+            </div>
+          </div>
+
+          {expired && (
+            <div className="login-card-error" role="status">
+              Your {plat.name} session has expired. Re-authenticate to refresh tokens before importing.
             </div>
           )}
-          {!p.apiKeyOnly && !p.noLogin && (connected ? (
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-                {acct.avatarUrl ? <img src={acct.avatarUrl} style={{ width: 36, height: 36, borderRadius: '50%', border: '2px solid ' + color }} /> : <div className="conn-icon" style={{ background: color, width: 36, height: 36, fontSize: 13 }}>{icon}</div>}
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{acct.displayName || acct.gamertag || name}</div>
-                  <div style={{ fontSize: 10, color: 'var(--text-3)' }}>{acct.gameCount ? acct.gameCount + ' games' : 'Connected'}{pdata?.games ? ' · ' + pdata.games + ' installed' : ''}</div>
-                  {acct.lastSync && <div style={{ fontSize: 9, color: 'var(--text-4)' }}>Synced {fmtDate(acct.lastSync)}</div>}
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button className="btn-accent" onClick={() => doImport(id)} disabled={isImporting} style={{ flex: 1 }}>{isImporting ? <><span className="spinner" style={{ marginRight: 6 }} />Importing...</> : 'Import Library'}</button>
-                <button className="btn-flat danger" onClick={() => doDisconnect(id, name)}>Disconnect</button>
-              </div>
-              {isImporting && importProgress && importProgress.provider === id && (
-                <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 8, background: 'var(--bg-2, rgba(255,255,255,0.04))', border: '1px solid var(--glass-border)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <span style={{ fontSize: 10, color: 'var(--text-3)' }}>{importProgress.message || 'Processing…'}</span>
-                    {importProgress.total ? <span style={{ fontSize: 10, color: 'var(--text-4)' }}>{importProgress.processed} / {importProgress.total}</span> : null}
-                  </div>
-                  <div style={{ height: 3, borderRadius: 2, background: 'var(--glass-border)', overflow: 'hidden' }}>
-                    <div style={{ height: '100%', borderRadius: 2, background: 'var(--accent)', width: importProgress.total ? `${Math.round(((importProgress.processed ?? 0) / importProgress.total) * 100)}%` : '100%', transition: 'width 0.3s ease', animation: importProgress.total ? 'none' : 'progress-pulse 1.5s ease-in-out infinite' }} />
-                  </div>
-                  <div style={{ display: 'flex', gap: 12, marginTop: 5 }}>
-                    <span style={{ fontSize: 10, color: 'var(--green, #4ade80)' }}>+{importProgress.imported} new</span>
-                    <span style={{ fontSize: 10, color: 'var(--accent)' }}>{importProgress.updated} updated</span>
-                  </div>
-                </div>
-              )}
-              {id === 'xbox' && <div style={{ marginTop: 10 }}><div style={{ fontSize: 10, color: 'var(--text-3)', marginBottom: 6 }}>Cloud gaming requires an active Xbox Game Pass Ultimate subscription.</div><button className="btn-sm" onClick={() => { onClose(); onOpenXcloud(); }} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}><span style={{ display: 'flex', width: 14, height: 14 }}>{I.globe}</span><span>Xbox Cloud Gaming</span></button></div>}
-              {p.note && <div style={{ marginTop: 8, fontSize: 10, color: 'var(--text-4)', lineHeight: 1.5 }}>{p.note}</div>}
-            </div>
-          ) : (
-            <div>
-              <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 10 }}>{pdata?.games ? pdata.games + ' games detected locally' : 'Not connected'}</div>
-              <button className="btn-accent" onClick={() => doAuth(id, name)} disabled={isLoading} style={{ width: '100%' }}>{isLoading ? <><span className="spinner" style={{ marginRight: 6 }} />Signing in...</> : 'Sign in with ' + name}</button>
-              {id === 'xbox' && <div style={{ marginTop: 8 }}><button className="btn-sm" onClick={() => { onClose(); onOpenXcloud(); }} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}><span style={{ display: 'flex', width: 14, height: 14 }}>{I.globe}</span><span>Xbox Cloud Gaming</span></button></div>}
-              {p.note && <div style={{ marginTop: 8, fontSize: 10, color: 'var(--text-3)', lineHeight: 1.5 }}>{p.note}</div>}
-            </div>
-          ))}
-          {p.apiKeyLabel && <ApiKeyRow id={id} label={p.apiKeyLabel} help={p.apiKeyHelp} url={p.apiKeyUrl} />}
+
+          <div className="login-card-actions">
+            {expired ? (
+              <button className="login-cta warn" disabled={isLoading} onClick={() => doAuth(plat.id, plat.name, plat.authMethod)}>
+                {isLoading ? <><span className="spinner" />Re-authenticating…</> : 'Re-authenticate'}
+              </button>
+            ) : (
+              <button className="login-cta" disabled={isImporting} onClick={() => doImport(plat.id)}>
+                {isImporting ? <><span className="spinner" />Importing…</> : 'Import library'}
+              </button>
+            )}
+            {plat.authMethod === 'oauth' && !expired && (
+              <button className="login-cta ghost" onClick={() => doAuth(plat.id, plat.name, plat.authMethod)} disabled={isLoading}>
+                {isLoading ? <><span className="spinner" />…</> : 'Re-auth'}
+              </button>
+            )}
+            <button className="login-cta danger" onClick={() => doDisconnect(plat.id, plat.name)}>Disconnect</button>
+          </div>
+
+          {renderImportProgress(plat.id)}
+
+          {plat.id === 'xbox' && (
+            <button className="login-extra-link" onClick={() => { onClose(); onOpenXcloud(); }}>
+              <span style={{ display: 'flex', width: 13, height: 13 }}>{I.globe}</span>
+              <span>Xbox Cloud Gaming · requires Game Pass Ultimate</span>
+            </button>
+          )}
+
+          {plat.apiKeyLabel && renderApiKeyPanel({ id: plat.id, label: plat.apiKeyLabel, help: plat.apiKeyHelp, url: plat.apiKeyUrl })}
+          {plat.note && <div className="login-card-note">{plat.note}</div>}
         </div>
+      );
+    }
+
+    // ── Disconnected (sign-in / connect) ────────────────────────────────
+    const detectedHint = pdata?.games
+      ? `${pdata.games} ${pdata.games === 1 ? 'game' : 'games'} detected on this PC`
+      : (plat.authMethod === 'local' ? 'No local installation found' : 'Not signed in');
+
+    return (
+      <div className={cardCls}>
+        <div className="login-card-head">
+          <div className="login-card-glyph" style={{ background: plat.color }}>{plat.icon}</div>
+          <div className="login-card-title">
+            <div className="login-card-name">{plat.name}</div>
+            <div className="login-card-sub">{detectedHint}</div>
+          </div>
+          {renderStatusPill(acct, plat, pdata)}
+        </div>
+
+        <button
+          className="login-cta"
+          onClick={() => doAuth(plat.id, plat.name, plat.authMethod)}
+          disabled={isLoading}
+        >
+          {isLoading
+            ? <><span className="spinner" />{plat.authMethod === 'local' ? 'Connecting…' : 'Signing in…'}</>
+            : (plat.authMethod === 'local' ? `Connect ${plat.name}` : `Sign in with ${plat.name}`)}
+        </button>
+
+        {plat.id === 'xbox' && (
+          <button className="login-extra-link" onClick={() => { onClose(); onOpenXcloud(); }}>
+            <span style={{ display: 'flex', width: 13, height: 13 }}>{I.globe}</span>
+            <span>Xbox Cloud Gaming</span>
+          </button>
+        )}
+
+        {plat.apiKeyLabel && renderApiKeyPanel({ id: plat.id, label: plat.apiKeyLabel, help: plat.apiKeyHelp, url: plat.apiKeyUrl })}
+        {plat.note && <div className="login-card-note">{plat.note}</div>}
       </div>
     );
   };
+
+  const renderSection = (title: string, sub: string, plats: PlatDef[]) => {
+    const visible = plats.filter(matchesFilter);
+    if (visible.length === 0) return null;
+    return (
+      <section key={title} className="login-section">
+        <header className="login-section-head">
+          <span className="login-section-title">{title}</span>
+          <span className="login-section-sub">{sub}</span>
+          <span className="login-section-count">{visible.length}</span>
+        </header>
+        {visible.map(p => <div key={p.id}>{renderPlatformCard(p)}</div>)}
+      </section>
+    );
+  };
+
+  const onlinePlats   = PLATS.filter(p => p.group === 'online');
+  const localPlats    = PLATS.filter(p => p.group === 'local');
+  const streamingPlats = PLATS.filter(p => p.group === 'streaming');
+  const anyVisible = [onlinePlats, localPlats, streamingPlats].some(g => g.some(matchesFilter));
 
   return (
     <SidePanel show={show} onClose={onClose} title="Platforms" wide>
-      <div className="field" style={{ marginBottom: 12 }}><label>Filter platforms</label><input value={platFilter} onChange={e => setPlatFilter(e.target.value)} placeholder="Filter platforms..." /></div>
-      {PLATS.filter(p => showPlat(p.name)).map(p => <PlatformSection key={p.id} plat={p} />)}
+      {summary.onlineConnected > 0 && (
+        <div className="login-summary">
+          <span style={{ display: 'flex', width: 14, height: 14 }}>{I.account}</span>
+          <span>
+            <strong>{summary.onlineConnected}</strong> of {summary.onlineTotal} online accounts connected
+            {summary.expired > 0 ? <> · <strong style={{ color: 'var(--accent)' }}>{summary.expired}</strong> need re-auth</> : null}
+          </span>
+        </div>
+      )}
+
+      <div className="field login-search">
+        <label>Search platforms</label>
+        <input value={platFilter} onChange={e => setPlatFilter(e.target.value)} placeholder="Steam, Xbox, GOG…" />
+      </div>
+
+      {renderSection('Online sign-in', 'Official OAuth/OpenID flows', onlinePlats)}
+      {renderSection('Local detection', 'No public sign-in API — reads your local launcher', localPlats)}
+      {renderSection('Streaming', 'Remote Play & cloud', streamingPlats)}
+
+      {!anyVisible && (
+        <div className="login-empty">No platforms match "{platFilter}".</div>
+      )}
     </SidePanel>
   );
 }

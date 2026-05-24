@@ -153,7 +153,11 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
       const count = Array.isArray(result?.imported) ? result.imported.length : (typeof result?.imported === 'number' ? result.imported : 0);
       setImportCounts(p => ({ ...p, [which]: count }));
       setImportStatus(p => ({ ...p, [which]: 'done' }));
-      flash(count > 0 ? count + ' games imported from ' + which : which + ' library up to date');
+      const lbl = (() => {
+        const map: Record<string, string> = { steam: 'Steam', gog: 'GOG', epic: 'Epic Games', xbox: 'Xbox' };
+        return map[which] || which;
+      })();
+      flash(count > 0 ? `${count} games imported from ${lbl}` : `${lbl} library is already up to date`);
       if ((window.api as any)?.getGames) {
         const g = await (window.api as any).getGames();
         if (typeof setGames === 'function') setGames(g || []);
@@ -164,18 +168,32 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
     }
   };
 
+  const platformLabel = (id: string) => {
+    const map: Record<string, string> = { steam: 'Steam', gog: 'GOG', epic: 'Epic Games', xbox: 'Xbox' };
+    return map[id] || id;
+  };
+
   const doAuth = async (which: string) => {
     try {
       if (!window.api) return;
+      const label = platformLabel(which);
       const authResult = await (window.api as any).platformAuth?.(which);
-      if (authResult?.error) {
-        if (authResult.error !== 'cancelled') flash(which + ' sign-in failed: ' + authResult.error);
+
+      // Always re-sync from the DB: the OAuth provider's success page may
+      // close the auth window itself (login.live.com / Epic), which makes
+      // platformAuth resolve as 'cancelled' even though credentials were
+      // persisted. Trust the DB, not the IPC return value.
+      await refreshAccounts();
+      const fresh = await (window.api as any).getAccounts?.() || {};
+      const nowConnected = !!fresh[which]?.connected;
+
+      if (authResult?.error && authResult.error !== 'cancelled' && !nowConnected) {
+        flash(`${label} sign-in failed: ${authResult.error}`);
         return;
       }
-      await refreshAccounts();
-      const fresh = await (window.api as any).getAccounts?.();
-      if (fresh && fresh[which] && fresh[which].connected) {
-        flash(which + ' connected — importing library...');
+      if (nowConnected) {
+        const who = fresh[which].displayName || fresh[which].gamertag;
+        flash(`${label} connected${who ? ` as ${who}` : ''} — importing library…`);
         await doImport(which);
       }
     } catch (e) { console.error('Auth error', e); flash('Authentication error'); }
@@ -487,71 +505,119 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
   };
 
   // ── Step 4: Connect Accounts ───────────────────────────────────────────────
-  const renderAccountCard = (platform: string, label: string) => {
+  // Visual styling shared with PlatformsPanel via .login-card classes so the
+  // wizard and the Settings → Platforms panel feel like the same screen.
+  const ACCT_PLATS: { id: string; label: string; color: string; glyph: string }[] = [
+    { id: 'steam', label: 'Steam',      color: '#1b2838', glyph: 'S' },
+    { id: 'gog',   label: 'GOG',        color: '#3a1a50', glyph: 'G' },
+    { id: 'epic',  label: 'Epic Games', color: '#2a2a2a', glyph: 'E' },
+    { id: 'xbox',  label: 'Xbox',       color: '#0e6a0e', glyph: 'X' },
+  ];
+
+  const fmtSync = (iso: string) => {
+    const ms = Date.now() - new Date(iso).getTime();
+    if (!Number.isFinite(ms) || ms < 0) return null;
+    const m = Math.floor(ms / 60000);
+    if (m < 1) return 'synced just now';
+    if (m < 60) return `synced ${m}m ago`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `synced ${h}h ago`;
+    return `synced ${Math.floor(h / 24)}d ago`;
+  };
+
+  const renderAccountCard = (def: { id: string; label: string; color: string; glyph: string }) => {
+    const { id: platform, label, color, glyph } = def;
     const acct = accounts[platform];
     const connected = acct?.connected;
     const impSt = importStatus[platform];
     const impCt = importCounts[platform];
     const impErr = importErrors[platform];
     const showApiKeyFallback = platform === 'steam' && impSt === 'error';
+    const isImporting = impSt === 'importing';
+
+    let pillCls = 'login-pill muted';
+    let pillTxt: React.ReactNode = 'Not signed in';
+    if (impSt === 'done')        { pillCls = 'login-pill ok';   pillTxt = `${impCt ?? 0} imported`; }
+    else if (impSt === 'error')  { pillCls = 'login-pill bad';  pillTxt = 'Failed'; }
+    else if (isImporting)        { pillCls = 'login-pill warn'; pillTxt = 'Importing…'; }
+    else if (connected)          { pillCls = 'login-pill ok';   pillTxt = 'Connected'; }
+
     return (
-      <div className={'acct-card' + (connected ? ' connected' : '')} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div className="acct-avatar" style={!acct?.avatarUrl && PLATFORMS[platform] ? { color: PLATFORMS[platform].color } : undefined}>
+      <div key={platform} className={'login-card' + (connected ? ' connected' : '')}>
+        <div className="login-card-head">
+          <div className="login-card-glyph" style={{ background: color }}>
             {acct?.avatarUrl
               ? <img src={acct.avatarUrl} alt="" />
-              : PLATFORMS[platform]?.icon || <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="4" stroke="rgba(255,255,255,0.06)" strokeWidth="1.2" /></svg>
-            }
+              : (PLATFORMS[platform]?.icon || glyph)}
           </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="acct-title">{label}</div>
-            <div className="acct-status">
-              {impSt === 'importing' ? <span style={{ color: 'var(--accent)' }}>Importing games...</span>
-                : impSt === 'done' ? <span className="acct-connected-badge">✓ {impCt} game{impCt !== 1 ? 's' : ''} imported</span>
-                : impSt === 'error' ? <span style={{ color: 'var(--red)', fontSize: 10, lineHeight: 1.4, display: 'block', wordBreak: 'break-word' }}>{impErr || 'Import failed'}</span>
-                : connected ? <span className="acct-connected-badge">✓ {acct.displayName || acct.gamertag || 'Connected'}</span>
-                : 'Not connected'}
+          <div className="login-card-title">
+            <div className="login-card-name">{label}</div>
+            <div className="login-card-sub">
+              {connected
+                ? <span>{acct?.displayName || acct?.gamertag || 'Signed in'}</span>
+                : <span>Sign in to import your library</span>}
+              {connected && acct?.gameCount > 0 && <><span className="dot" /><span>{acct.gameCount} {acct.gameCount === 1 ? 'game' : 'games'}</span></>}
+              {connected && acct?.lastSync && fmtSync(acct.lastSync) && <><span className="dot" /><span>{fmtSync(acct.lastSync)}</span></>}
             </div>
-            {connected && impSt !== 'importing' && impSt !== 'error' && (acct?.gameCount > 0 || acct?.lastSync) && (
-              <div style={{ fontSize: 10, color: 'var(--text-4)', marginTop: 2 }}>
-                {acct?.gameCount > 0 && <span>{acct.gameCount} game{acct.gameCount !== 1 ? 's' : ''}</span>}
-                {acct?.gameCount > 0 && acct?.lastSync && <span> · </span>}
-                {acct?.lastSync && (() => {
-                  const ms = Date.now() - new Date(acct.lastSync).getTime();
-                  if (!Number.isFinite(ms) || ms < 0) return null;
-                  const mins = Math.floor(ms / 60000);
-                  if (mins < 1) return <span>synced just now</span>;
-                  if (mins < 60) return <span>synced {mins}m ago</span>;
-                  const hrs = Math.floor(mins / 60);
-                  if (hrs < 24) return <span>synced {hrs}h ago</span>;
-                  const days = Math.floor(hrs / 24);
-                  return <span>synced {days}d ago</span>;
-                })()}
-              </div>
-            )}
           </div>
-          <button className="btn-flat" onClick={() => doAuth(platform)} disabled={impSt === 'importing'}>
-            {connected ? 'Re-auth' : 'Sign in'}
-          </button>
+          <span className={pillCls}><span className="pip" />{pillTxt}</span>
         </div>
+
+        {impSt === 'error' && impErr && (
+          <div className="login-card-error">{impErr}</div>
+        )}
+
+        <div className="login-card-actions">
+          {connected ? (
+            <button
+              className="login-cta"
+              onClick={() => doImport(platform)}
+              disabled={isImporting}
+            >
+              {isImporting ? <><span className="spinner" />Importing…</> : (impSt === 'done' ? 'Re-import' : 'Import library')}
+            </button>
+          ) : (
+            <button
+              className="login-cta"
+              onClick={() => doAuth(platform)}
+              disabled={isImporting}
+            >
+              Sign in with {label}
+            </button>
+          )}
+          {connected && (
+            <button className="login-cta ghost" onClick={() => doAuth(platform)} disabled={isImporting}>
+              Re-auth
+            </button>
+          )}
+        </div>
+
         {showApiKeyFallback && (
-          <div style={{ borderTop: '1px solid var(--glass-border)', paddingTop: 8 }}>
-            <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 6 }}>Profile private? Enter a <a href="https://steamcommunity.com/dev/apikey" style={{ color: 'var(--accent)', textDecoration: 'none', cursor: 'pointer' }} onClick={e => { e.preventDefault(); (window.api as any)?.openExternal?.('https://steamcommunity.com/dev/apikey'); }}>Steam Web API Key</a> to import anyway:</div>
-            <div style={{ display: 'flex', gap: 6 }}>
+          <div className="login-key open">
+            <div className="login-key-help">
+              Profile set to private? Enter a{' '}
+              <a onClick={e => { e.preventDefault(); (window.api as any)?.openExternal?.('https://steamcommunity.com/dev/apikey'); }}>
+                Steam Web API key
+              </a>{' '}
+              to import anyway.
+            </div>
+            <div className="login-key-input-row">
               <input
                 type="password"
-                placeholder="Steam Web API Key"
+                placeholder="Paste your Steam Web API key"
                 value={steamApiKey}
                 onChange={e => setSteamApiKey(e.target.value)}
-                style={{ flex: 1, fontSize: 11, padding: '4px 8px' }}
+                spellCheck={false}
+                autoComplete="off"
                 onKeyDown={e => { if (e.key === 'Enter' && steamApiKey.trim().length > 10) doImport('steam', steamApiKey.trim()); }}
               />
               <button
-                className="btn-accent"
-                style={{ fontSize: 11, padding: '4px 10px' }}
+                className="login-cta"
                 disabled={steamApiKey.trim().length < 10 || steamApiKeySaving}
                 onClick={() => doImport('steam', steamApiKey.trim())}
-              >{steamApiKeySaving ? 'Saving...' : 'Import'}</button>
+              >
+                {steamApiKeySaving ? <><span className="spinner" />Saving…</> : 'Import'}
+              </button>
             </div>
           </div>
         )}
@@ -568,17 +634,18 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
         aside={
           <div className="wiz-progress-pill">
             <strong>{connectedCount}</strong>
-            <span> of 4 connected</span>
+            <span> of {ACCT_PLATS.length} connected</span>
           </div>
         }
       />
 
-      <div className="wiz-acct-grid">
-        {renderAccountCard('steam', 'Steam')}
-        {renderAccountCard('gog', 'GOG')}
-        {renderAccountCard('epic', 'Epic Games')}
-        {renderAccountCard('xbox', 'Xbox')}
-      </div>
+      <section className="login-section">
+        <div className="login-section-head">
+          <span className="login-section-title">Online sign-in</span>
+          <span className="login-section-sub">Official OAuth/OpenID flows</span>
+        </div>
+        {ACCT_PLATS.map(p => renderAccountCard(p))}
+      </section>
 
       <div className="wiz-card">
         <div className="wiz-sgdb-row">
@@ -606,7 +673,7 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
 
       <div className="wiz-privacy">
         <span className="wiz-privacy-glyph">🔒</span>
-        <span>Your library data stays local. Cereal never uploads your account info or game list.</span>
+        <span>Your library data stays local. Cereal never uploads your account info or game list. The remaining storefronts (EA, Battle.net, itch.io, Ubisoft) can be connected later from <em>Settings → Platforms</em>.</span>
       </div>
     </div>
   );

@@ -1,0 +1,100 @@
+// ─── Native SMTC media info + xCloud IPC handlers ────────────────────────────
+const { ipcMain } = require('electron');
+const path = require('path');
+const { startXcloudSession, stopXcloudSession, getActiveXcloudSessions } = require('./xcloud');
+const log = require('../core/logger');
+
+// Native SMTC addon - lazy loaded
+let smtcNative = null;
+let smtcLoadAttempted = false;
+function getSmtcNative() {
+  if (smtcLoadAttempted) return smtcNative;
+  smtcLoadAttempted = true;
+  // SMTC = Windows System Media Transport Controls. The native addon spawns
+  // a Win32-only `MediaInfoTool.exe` so loading it on macOS/Linux is
+  // guaranteed to fail — short-circuit before logging a misleading warning.
+  if (process.platform !== 'win32') {
+    log.info('media', 'SMTC unavailable on', process.platform, '- media controls disabled');
+    return null;
+  }
+  try {
+    smtcNative = require(path.join(__dirname, 'native', 'smtc'));
+    log.info('media', 'native addon loaded');
+  } catch (e) {
+    log.warn('media', 'failed to load native addon:', e.message);
+  }
+  return smtcNative;
+}
+
+function registerMediaIpcHandlers() {
+  // ─── xCloud IPC handlers ────────────────────────────────────────────────────
+  ipcMain.handle('xcloud:startDirect', (_event, { url }) => {
+    try {
+      startXcloudSession('xbox:cloud', url || 'https://www.xbox.com/play');
+      return { success: true, sessionKey: 'xbox:cloud' };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+
+  ipcMain.handle('xcloud:start', (_event, { gameId, url, title }) => {
+    try {
+      startXcloudSession(gameId, url, title);
+      return { success: true };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+
+  ipcMain.handle('xcloud:stop', (_event, gameId) => {
+    return { success: stopXcloudSession(gameId) };
+  });
+
+  ipcMain.handle('xcloud:getSessions', () => {
+    return getActiveXcloudSessions();
+  });
+
+  // ─── Media IPC handlers ─────────────────────────────────────────────────────
+  ipcMain.handle('media:getInfo', async () => {
+    const smtc = getSmtcNative();
+    if (!smtc) return {};
+
+    try {
+      const info = await smtc.getMediaInfo();
+      log.debug('media', 'native result:', info);
+
+      if (info.error) {
+        log.warn('media', 'error:', info.error);
+        return {};
+      }
+
+      return {
+        title: info.title || '',
+        artist: info.artist || '',
+        album: info.album || '',
+        thumbnail: info.thumbnail || '',
+        playing: info.playing,
+        position: Math.floor(info.position || 0),
+        duration: Math.floor(info.duration || 0)
+      };
+    } catch (e) {
+      log.warn('media', 'exception:', e.message);
+      return {};
+    }
+  });
+
+  ipcMain.handle('media:control', async (_event, action) => {
+    const smtc = getSmtcNative();
+    if (!smtc) return false;
+
+    try {
+      await smtc.sendMediaKey(action);
+      return true;
+    } catch (e) {
+      log.warn('media', 'control error:', e.message);
+      return false;
+    }
+  });
+}
+
+module.exports = { registerMediaIpcHandlers };

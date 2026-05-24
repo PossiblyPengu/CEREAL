@@ -1,7 +1,16 @@
-// ─── HTTP utilities using Electron's net.fetch ─────────────────────────────────
-// net.fetch provides: redirect following, HTTP/2, proxy support, decompression.
-// Falls back to Node.js https before app.whenReady() (module load time only).
+// ─── HTTP utilities ──────────────────────────────────────────────────────────
+// Default flow uses Electron's net.fetch (redirect following, HTTP/2, proxy
+// support, decompression).
+//
+// XBL.signin and the rest of *.xboxlive.com sit behind an edge layer that
+// blocks Chromium-fingerprinted traffic with a 403 (empty body). Reference
+// libraries — xboxreplay/xboxlive-auth, OpenXBL, Heroic's nile/legendary
+// integration — all use Node's plain https module which negotiates a different
+// TLS handshake. We expose `httpPostNode` for those callers; everything else
+// keeps using net.fetch.
 const { net } = require('electron');
+const https = require('node:https');
+const { URL } = require('node:url');
 
 const UA = 'CerealLauncher/1.0';
 const DEFAULT_TIMEOUT = 15000; // 15s network timeout
@@ -49,4 +58,36 @@ async function httpPost(url, body, headers) {
   catch (_e) { return { status: res.status, data: null, raw }; }
 }
 
-module.exports = { httpGet, httpGetJson, httpPost };
+// Node-https POST. Use this for endpoints that reject Chromium's TLS/HTTP
+// fingerprint (specifically *.xboxlive.com — see module header).
+function httpPostNode(url, body, headers = {}) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url);
+    const postData = typeof body === 'string' ? body : new URLSearchParams(body).toString();
+    const req = https.request({
+      protocol: u.protocol,
+      hostname: u.hostname,
+      port: u.port || 443,
+      path: u.pathname + u.search,
+      method: 'POST',
+      headers: {
+        'Content-Length': Buffer.byteLength(postData),
+        ...headers,
+      },
+    }, (res) => {
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => {
+        const raw = Buffer.concat(chunks).toString('utf8');
+        try { resolve({ status: res.statusCode, data: JSON.parse(raw), raw }); }
+        catch (_e) { resolve({ status: res.statusCode, data: null, raw }); }
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(DEFAULT_TIMEOUT, () => { req.destroy(new Error('Request timed out')); });
+    req.write(postData);
+    req.end();
+  });
+}
+
+module.exports = { httpGet, httpGetJson, httpPost, httpPostNode };
