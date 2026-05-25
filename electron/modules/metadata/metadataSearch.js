@@ -1,57 +1,62 @@
 // ─── Metadata Art Search (IPC + Steam Store + SteamGridDB gallery) ────────────
 const { ipcMain } = require('electron');
-const { getMetadataSettings, httpGet } = require('./metadata');
+const log = require('../core/logger');
+const { getMetadataSettings } = require('./metadata');
+const { getJson } = require('./http');
 const {
   steamDefaultPortraitUrl,
   steamHeroUrl,
   searchSteamGridDBGallery,
 } = require('./gameArt');
-const log = require('../core/logger');
 
 async function searchSteamStoreArt(gameName) {
   const results = [];
   const q = encodeURIComponent(gameName);
-  const search = await httpGet(`https://store.steampowered.com/api/storesearch/?term=${q}&l=english&cc=US`);
+  const search = await getJson(
+    `https://store.steampowered.com/api/storesearch/?term=${q}&l=english&cc=US`
+  );
   if (!search?.items?.length) return results;
 
-  for (const item of search.items.slice(0, 3)) {
+  const top = search.items.slice(0, 3);
+  const detailResults = await Promise.allSettled(
+    top.map(async item => {
+      const det = await getJson(
+        `https://store.steampowered.com/api/appdetails?appids=${item.id}&l=english`
+      );
+      return { item, info: det?.[String(item.id)]?.data };
+    }),
+  );
+
+  for (const r of detailResults) {
+    if (r.status !== 'fulfilled' || !r.value.info) continue;
+    const { item, info } = r.value;
     const id = item.id;
     const name = item.name || '';
-    try {
-      const det = await httpGet(`https://store.steampowered.com/api/appdetails?appids=${id}&l=english`);
-      const info = det?.[String(id)]?.data;
-      if (!info) continue;
 
-      results.push({
-        url: steamDefaultPortraitUrl(id),
-        type: 'cover',
-        source: 'Steam',
-        label: `${name} - Portrait (HD)`,
-      });
-
-      if (info.header_image) {
-        results.push({ url: info.header_image, type: 'header', source: 'Steam', label: `${name} - Header` });
+    results.push({
+      url: steamDefaultPortraitUrl(id),
+      type: 'cover',
+      source: 'Steam',
+      label: `${name} - Portrait (HD)`,
+    });
+    if (info.header_image) {
+      results.push({ url: info.header_image, type: 'header', source: 'Steam', label: `${name} - Header` });
+    }
+    results.push({
+      url: steamHeroUrl(id),
+      type: 'header',
+      source: 'Steam',
+      label: `${name} - Hero`,
+    });
+    if (Array.isArray(info.screenshots)) {
+      for (const ss of info.screenshots.slice(0, 2)) {
+        results.push({
+          url: ss.path_full,
+          type: 'screenshot',
+          source: 'Steam',
+          label: `${name} - Screenshot`,
+        });
       }
-
-      results.push({
-        url: steamHeroUrl(id),
-        type: 'header',
-        source: 'Steam',
-        label: `${name} - Hero`,
-      });
-
-      if (info.screenshots) {
-        for (const ss of info.screenshots.slice(0, 2)) {
-          results.push({
-            url: ss.path_full,
-            type: 'screenshot',
-            source: 'Steam',
-            label: `${name} - Screenshot`,
-          });
-        }
-      }
-    } catch (_e) {
-      /* skip unavailable Steam app */
     }
   }
   return results;
@@ -84,7 +89,6 @@ async function handleSearchArt(_event, gameName, _platform) {
       images.push(img);
     }
   }
-
   if (images.length === 0) {
     for (const img of steam) {
       if (img.url && !seen.has(img.url)) {

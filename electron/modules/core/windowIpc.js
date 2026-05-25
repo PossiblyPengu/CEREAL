@@ -66,6 +66,27 @@ function registerShellIpc() {
       return { error: e && e.message ? e.message : 'open failed' };
     }
   });
+
+  /**
+   * Reveals a file in the OS file manager (Windows Explorer / Finder / Files)
+   * with the item selected. Used by the right-click context menu on game cards.
+   */
+  ipcMain.handle('shell:showInFolder', (_event, p) => {
+    if (!p || typeof p !== 'string') return { error: 'Invalid path' };
+    let normalized = p;
+    if (normalized.startsWith('file:///')) {
+      try {
+        normalized = decodeURI(normalized.replace(/^file:\/\//, ''));
+        if (process.platform === 'win32' && normalized.startsWith('/')) normalized = normalized.slice(1);
+      } catch (_e) { /* ignore */ }
+    }
+    try {
+      shell.showItemInFolder(normalized);
+      return { success: true };
+    } catch (e) {
+      return { error: e && e.message ? e.message : 'show failed' };
+    }
+  });
 }
 
 function registerWindowIpc() {

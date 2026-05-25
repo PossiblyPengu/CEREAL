@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { SidePanel } from '../SidePanel';
 import { PLATFORMS, I } from '../../constants';
-import type { Game } from '../../types';
+import type { Game, FlashFn } from '../../types';
 
 // Platforms that expose a free-form Platform ID input on the Add/Edit dialog.
 // (Streaming-only platforms like xbox/psn don't have a launcher-side id.)
@@ -32,7 +32,9 @@ interface AddPanelProps {
   onSave: (f: Partial<Game>) => Promise<Game | void>;
   categories: string[];
   editGame?: Game | null;
-  flash: (msg: React.ReactNode) => void;
+  /** Initial values when adding a new game (e.g. from drag-and-drop). Ignored if `editGame` is set. */
+  prefill?: Partial<Game> | null;
+  flash: FlashFn;
   onOpenArtPicker: (opts: ArtPickerOpts) => Promise<string | null>;
   onUpdated?: (game: Game) => void;
 }
@@ -43,7 +45,7 @@ const emptyForm = () => ({
   headerUrl: '', metacritic: '', website: '', notes: '',
 });
 
-export function AddPanel({ show, onClose, onSave, categories, editGame, flash, onOpenArtPicker, onUpdated }: AddPanelProps) {
+export function AddPanel({ show, onClose, onSave, categories, editGame, prefill, flash, onOpenArtPicker, onUpdated }: AddPanelProps) {
   const [f, setF] = useState(emptyForm());
   const [showMeta, setShowMeta] = useState(false);
   const [fetching, setFetching] = useState(false);
@@ -53,11 +55,21 @@ export function AddPanel({ show, onClose, onSave, categories, editGame, flash, o
       const g = editGame as any;
       setF({ ...emptyForm(), ...g, categories: g.categories || [], metacritic: g.metacritic != null ? String(g.metacritic) : '' });
       setShowMeta(!!(g.description || g.developer));
+    } else if (prefill) {
+      const p = prefill as any;
+      setF(prev => ({
+        ...emptyForm(),
+        ...prev,
+        ...p,
+        categories: p.categories || prev.categories,
+        metacritic: p.metacritic != null ? String(p.metacritic) : '',
+      }));
+      setShowMeta(!!(p.description || p.developer));
     } else {
       setF(emptyForm());
       setShowMeta(false);
     }
-  }, [editGame, show]);
+  }, [editGame, prefill, show]);
 
   const toggle = (c: string) => setF(p => ({ ...p, categories: p.categories.includes(c) ? p.categories.filter(x => x !== c) : [...p.categories, c] }));
 

@@ -139,6 +139,18 @@ export default defineConfig({
           },
         },
       },
+      {
+        // xCloud WebContentsView preload — injected into the Xbox Cloud Gaming
+        // page to bridge window.postMessage from the main-world WebRTC
+        // instrumentation back to the main process via ipcRenderer.
+        entry: 'electron/preload-xcloud.js',
+        vite: {
+          build: {
+            outDir: 'dist-electron',
+            lib: { entry: 'electron/preload-xcloud.js', formats: ['cjs'] },
+          },
+        },
+      },
     ]),
     renderer(),
     copyElectronSources(),

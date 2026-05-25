@@ -503,9 +503,15 @@ registerMetadataIpcHandlers();
 // ─── Launch Helpers (extracted to modules/launcher.js) ────────────────────────
 const { normalizePlatform, openInPlatformClient } = require('./modules/games/launcher');
 
-ipcMain.handle('games:launch', async (event, id) => {
+ipcMain.handle('games:launch', async (event, id, options) => {
   const game = db.games.find(g => g.id === id);
   if (!game) return { success: false, error: 'Game not found' };
+  // Optional second arg: `{ forceCloud?: boolean }`. Routes Xbox launches
+  // through xCloud even when the game is also installed locally — used by the
+  // "Stream on Xbox Cloud" buttons in the context menu / FocusView.
+  const opts = (options && typeof options === 'object') ? options : {};
+  const forceCloud = !!opts.forceCloud;
+  let launchedLocally = false;
 
   try {
     let launchPath = game.executablePath;
@@ -544,9 +550,45 @@ ipcMain.handle('games:launch', async (event, id) => {
       const args = buildChiakiArgs(effectiveGame, chiakiConfig);
       startChiakiSession(id, chiakiExe, args);
     } else if (game.platform === 'xbox') {
-      // Xbox — embed xCloud in-app or launch via Xbox app
-      const url = game.streamUrl || 'https://www.xbox.com/play';
-      startXcloudSession(id, url);
+      // Xbox — four routing options, in priority order:
+      //
+      //   1. Explicit `forceCloud: true` flag (set by the "Stream on Xbox
+      //      Cloud" UI affordances). Bypasses local even when installed.
+      //   2. Locally installed UWP / Microsoft Store package → launch
+      //      natively via `shell:AppsFolder\<AUMID>`. Detected at scan time
+      //      by `scanXboxInstalled` parsing MicrosoftGame.config and matching
+      //      `%LOCALAPPDATA%\Packages\<Identity-Name>_*`.
+      //   3. Explicit user-set streamUrl override (advanced users).
+      //   4. Persisted `xcloudProductId` (or fresh catalog lookup for legacy
+      //      rows) → deep-link into the embedded xCloud WebContentsView.
+      //   5. xbox.com/play fallback when none of the above resolve.
+      const installedLocally = !!game.xboxAumid && !!game.installPath && fs.existsSync(game.installPath);
+
+      if (!forceCloud && installedLocally) {
+        // `explorer.exe shell:AppsFolder\<AUMID>` is the canonical way to
+        // launch a UWP app from the desktop; it goes through the same shell
+        // activation path the Start menu uses, so the Xbox app's anti-cheat,
+        // PlayAnywhere sync and Game Bar overlay all initialize correctly.
+        // Detached + unref so Cereal doesn't keep Explorer pinned to its
+        // process tree.
+        try {
+          spawn('explorer.exe', ['shell:AppsFolder\\' + game.xboxAumid], { detached: true, stdio: 'ignore' }).unref();
+          launchedLocally = true;
+          log.info('xbox', `Local launch: ${game.name} (${game.xboxAumid})`);
+        } catch (e) {
+          return { success: false, error: 'Local Xbox launch failed: ' + (e && e.message || e) };
+        }
+      } else {
+        let xcloudUrl = game.streamUrl;
+        if (!xcloudUrl) {
+          try {
+            const xboxProvider = require('./providers/xbox');
+            xcloudUrl = await xboxProvider.resolveCloudLaunchUrl(game);
+          } catch (_e) { /* provider not loaded in dev */ }
+        }
+        const url = xcloudUrl || 'https://www.xbox.com/play';
+        startXcloudSession(id, url, game.name);
+      }
     } else if (['steam', 'epic', 'gog', 'ea', 'battlenet', 'ubisoft', 'itchio'].includes(normalizePlatform(game.platform))) {
       const openRes = await openInPlatformClient(game, 'play');
       if (!openRes.success) return openRes;
@@ -557,8 +599,13 @@ ipcMain.handle('games:launch', async (event, id) => {
       return { success: false, error: 'Executable not found' };
     }
 
-    // Track playtime start (skip for streaming platforms — not tracked)
-    if (!['psn', 'psremote', 'xbox'].includes(game.platform)) {
+    // Track playtime start. Skip for *streaming* sessions — chiaki / xCloud
+    // sessions update playtime via their own event channels when the session
+    // ends. Locally-launched Xbox app games go through the same desktop spawn
+    // path as Steam et al., so we DO bump lastPlayed for them here.
+    const isStreamingLaunch = (game.platform === 'psn' || game.platform === 'psremote')
+      || (game.platform === 'xbox' && !launchedLocally);
+    if (!isStreamingLaunch) {
       game.lastPlayed = new Date().toISOString();
       saveDB(db);
     }

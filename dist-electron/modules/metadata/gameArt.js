@@ -2,13 +2,15 @@
 // Single source of truth for remote image URLs used by metadata enrichment,
 // the Art Picker search, and the on-disk cover/header download queue.
 
-const { net } = require('electron');
 const log = require('../core/logger');
+const { getJson, head } = require('./http');
 
 const SGDB_API = 'https://www.steamgriddb.com/api/v2';
 const STEAM_STORE_ASSETS = 'https://shared.steamstatic.com/store_item_assets/steam/apps';
 
-/** Portrait library capsules (Steam CDN) — try 2x first, then 1x. Order matters for probes. */
+// ─── Steam CDN URL construction ──────────────────────────────────────────────
+
+/** Portrait library capsules (Steam CDN) — try 2x first, then 1x. */
 function steamPortraitProbeUrls(appId) {
   const id = String(appId);
   return [
@@ -26,25 +28,64 @@ function steamHeroUrl(appId) {
   return `${STEAM_STORE_ASSETS}/${String(appId)}/library_hero.jpg`;
 }
 
-// ─── SteamGridDB authenticated JSON GET ──────────────────────────────────────
+// Matches any Steam library asset URL — we use the capture groups to swap the
+// asset name for alternates (1x ↔ 2x portrait, hero ↔ small header).
+const STEAM_LIB_URL_RE =
+  /^(https?:\/\/[^/]+\/store_item_assets\/steam\/apps\/(\d+))\/(library_600x900(?:_2x)?|library_hero|header)\.jpg(?:\?[^#]*)?$/i;
+
+/**
+ * Expand a single Steam library URL into the ordered list of variants to try.
+ *  - Portrait → both library_600x900_2x.jpg AND library_600x900.jpg.
+ *  - Header   → library_hero.jpg first, then the smaller header.jpg.
+ *  - Anything else → just the URL itself.
+ */
+function expandSteamUrl(url, kind) {
+  if (!url) return [];
+  const m = STEAM_LIB_URL_RE.exec(url);
+  if (!m) return [url];
+  const base = m[1]; // .../apps/<appid>
+  if (kind === 'portrait') {
+    return [
+      `${base}/library_600x900_2x.jpg`,
+      `${base}/library_600x900.jpg`,
+    ];
+  }
+  return [
+    `${base}/library_hero.jpg`,
+    `${base}/header.jpg`,
+  ];
+}
+
+function expandUrls(urls, kind) {
+  const seen = new Set();
+  const out = [];
+  for (const raw of urls) {
+    if (!raw) continue;
+    for (const u of expandSteamUrl(raw, kind)) {
+      if (!seen.has(u)) { seen.add(u); out.push(u); }
+    }
+  }
+  return out;
+}
+
+/** Ordered portrait URLs to try for `game` (never includes landscape header art). */
+function portraitUrlCandidates(game) {
+  return expandUrls([game.coverUrl, game.sgdbCoverUrl], 'portrait');
+}
+
+/** Ordered header (wide) URLs to try for `game`. */
+function headerUrlCandidates(game) {
+  return expandUrls([game.headerUrl], 'header');
+}
+
+// ─── SteamGridDB ─────────────────────────────────────────────────────────────
 
 async function sgdbGetJson(apiKey, relativePath) {
   const url = relativePath.startsWith('http') ? relativePath : SGDB_API + relativePath;
-  const resp = await net.fetch(url, {
-    headers: { Authorization: 'Bearer ' + apiKey },
-  });
-  if (!resp.ok) {
-    const err = new Error('SGDB HTTP ' + resp.status);
-    err.status = resp.status;
-    throw err;
-  }
-  return resp.json();
+  return getJson(url, { headers: { Authorization: 'Bearer ' + apiKey } });
 }
 
-/**
- * Resolve the first SGDB game row from an autocomplete query.
- * @returns {{ id: number, name: string } | null}
- */
+/** Resolve the first SGDB game row from an autocomplete query. */
 async function sgdbResolveGame(apiKey, query) {
   const q = encodeURIComponent(String(query || '').trim());
   if (!q) return null;
@@ -139,12 +180,28 @@ async function searchSteamGridDBGallery(gameName, apiKey, limits = {}) {
   return results;
 }
 
+/**
+ * Probe Steam's CDN for which portrait capsule (if any) actually exists for
+ * `appId`. Returns the first 2xx URL or '' if none. The wide hero/header are
+ * never returned here — coverUrl must remain portrait.
+ */
+async function probeSteamPortrait(appId) {
+  const candidates = steamPortraitProbeUrls(appId);
+  const probes = await Promise.allSettled(candidates.map(u => head(u).then(ok => ok ? u : Promise.reject())));
+  const first = probes.find(r => r.status === 'fulfilled');
+  return first ? first.value : '';
+}
+
 module.exports = {
   SGDB_API,
   STEAM_STORE_ASSETS,
   steamPortraitProbeUrls,
   steamDefaultPortraitUrl,
   steamHeroUrl,
+  expandSteamUrl,
+  portraitUrlCandidates,
+  headerUrlCandidates,
+  probeSteamPortrait,
   sgdbGetJson,
   sgdbResolveGame,
   fetchSteamGridDBPrimaryArt,

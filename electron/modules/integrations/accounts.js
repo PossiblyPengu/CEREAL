@@ -808,6 +808,20 @@ function registerAccountIpcHandlers() {
     return importWithTokenRefresh('xbox');
   });
 
+  // Refresh which Xbox library entries are currently streamable via Xbox
+  // Cloud Gaming. Hits the public Game Pass catalog only — no XBL auth needed,
+  // so this works even if the user's MS Account token has expired.
+  ipcMain.handle('accounts:xbox:refreshCloud', async () => {
+    if (!p?.xbox?.refreshCloudAvailability) return { error: 'Xbox provider not available' };
+    try {
+      const res = await p.xbox.refreshCloudAvailability({ db: ctx.db, saveDB: ctx.saveDB });
+      if (res?.touched > 0) ctx.sendToRenderer('games:refresh', ctx.db.games);
+      return res;
+    } catch (e) {
+      return { error: 'Cloud refresh failed: ' + (e?.message || e) };
+    }
+  });
+
   // ── Local-Only Providers ──
   // None of these vendors offer a public OAuth route, so "sign in" means
   // detecting an already-signed-in launcher on disk.

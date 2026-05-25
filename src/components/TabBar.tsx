@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { PLATFORMS } from '../constants';
 import type { Platform } from '../types';
 
@@ -13,6 +14,9 @@ interface TabBarProps {
   activeTab: string;
   onSwitch: (id: string) => void;
   onClose: (id: string) => void;
+  /** Optional reorder callback. Receives the next tab order. Non-closable tabs (e.g. the
+   *  launcher) are guaranteed to keep their leading position. */
+  onReorder?: (tabs: Tab[]) => void;
 }
 
 const GLOBE_ICON = (
@@ -44,7 +48,23 @@ const WIN_ICONS = {
   close: <svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"><path d="M1 1l8 8M9 1l-8 8" /></svg>,
 };
 
-export function TabBar({ tabs, activeTab, onSwitch, onClose }: TabBarProps) {
+export function TabBar({ tabs, activeTab, onSwitch, onClose, onReorder }: TabBarProps) {
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [overId, setOverId] = useState<string | null>(null);
+
+  const reorder = (fromId: string, toId: string) => {
+    if (!onReorder || fromId === toId) return;
+    const next = tabs.slice();
+    const fromIdx = next.findIndex(t => t.id === fromId);
+    const toIdx = next.findIndex(t => t.id === toId);
+    if (fromIdx < 0 || toIdx < 0) return;
+    const [moved] = next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, moved);
+    // Keep non-closable tabs (launcher) anchored at the start, regardless of drop site.
+    next.sort((a, b) => (a.closable === b.closable ? 0 : a.closable ? 1 : -1));
+    onReorder(next);
+  };
+
   return (
     <div className="tab-bar">
       <div className="tab-list">
@@ -55,13 +75,41 @@ export function TabBar({ tabs, activeTab, onSwitch, onClose }: TabBarProps) {
           const glowColor = tab.id === 'launcher' ? 'var(--accent)' : platColor;
           const platIcon = plat?.icon ?? GLOBE_ICON;
           const icon = tab.id === 'launcher' ? CEREAL_ICON : platIcon;
+          const draggable = tab.closable && !!onReorder;
           return (
             <div
               key={tab.id}
-              className={'tab-item' + (isActive ? ' active' : '')}
+              className={'tab-item' + (isActive ? ' active' : '') + (dragId === tab.id ? ' dragging' : '') + (overId === tab.id && dragId !== tab.id ? ' drag-over' : '')}
               onClick={() => onSwitch(tab.id)}
+              onMouseDown={e => {
+                // Middle-click closes the tab — standard browser behaviour.
+                if (e.button === 1 && tab.closable) { e.preventDefault(); onClose(tab.id); }
+              }}
+              onAuxClick={e => {
+                if (e.button === 1 && tab.closable) { e.preventDefault(); onClose(tab.id); }
+              }}
               title={tab.title}
               style={isActive ? { boxShadow: 'inset 0 1.5px 0 ' + glowColor } : undefined}
+              draggable={draggable}
+              onDragStart={draggable ? e => {
+                setDragId(tab.id);
+                e.dataTransfer.effectAllowed = 'move';
+                // Setting some payload keeps Firefox/Chromium happy.
+                try { e.dataTransfer.setData('text/plain', tab.id); } catch (_e) { /* ignore */ }
+              } : undefined}
+              onDragOver={draggable ? e => {
+                if (!dragId || !tab.closable) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                if (overId !== tab.id) setOverId(tab.id);
+              } : undefined}
+              onDragLeave={() => { if (overId === tab.id) setOverId(null); }}
+              onDrop={draggable ? e => {
+                e.preventDefault();
+                if (dragId) reorder(dragId, tab.id);
+                setDragId(null); setOverId(null);
+              } : undefined}
+              onDragEnd={() => { setDragId(null); setOverId(null); }}
             >
               <span className="tab-icon-wrap">{icon}</span>
               <span className="tab-title">{tab.title}</span>

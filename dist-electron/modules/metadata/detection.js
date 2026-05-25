@@ -71,14 +71,17 @@ function scanSteamInstalled() {
 
         if (appid && name && installdir) {
           const gamePath = path.join(libFolder, 'common', installdir[1]);
+          // Intentionally no coverUrl / headerUrl here — the metadata pipeline
+          // (modules/metadata/sources/steam.js) HEAD-probes the CDN to find
+          // the actual portrait capsule (many Steam apps have no library art),
+          // and the cover queue runs a metadata-rescue pass on first fetch.
+          // Keeping detection cheap & free of network calls.
           games.push({
             name: name[1],
             platform: 'steam',
             platformId: appid[1],
             installPath: gamePath,
-            executablePath: '', // User may need to set this
-            coverUrl: `https://shared.steamstatic.com/store_item_assets/steam/apps/${appid[1]}/library_600x900_2x.jpg`,
-            headerUrl: `https://shared.steamstatic.com/store_item_assets/steam/apps/${appid[1]}/library_hero.jpg`,
+            executablePath: '',
             categories: [],
             source: 'auto-detected',
             installed: true,

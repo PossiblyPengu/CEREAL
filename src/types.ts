@@ -1,3 +1,24 @@
+// ─── Toast / flash plumbing ──────────────────────────────────────────────────
+
+import type { ReactNode } from 'react';
+
+export type ToastSeverity = 'info' | 'success' | 'warning' | 'error';
+
+export interface FlashOptions {
+  severity?: ToastSeverity;
+  /** Milliseconds before auto-dismiss. Falls back to a sane default per severity. */
+  duration?: number;
+  /** Optional action button on the toast (e.g. "Undo"). */
+  action?: { label: string; onClick: () => void };
+}
+
+/**
+ * Application-wide toast emitter. Backwards-compatible with the original
+ * `(msg) => void` signature; new call sites pass an options object for severity,
+ * an "Undo"-style action button, or a custom duration.
+ */
+export type FlashFn = (msg: ReactNode, opts?: FlashOptions) => void;
+
 // ─── Game ────────────────────────────────────────────────────────────────────
 
 export interface Game {
@@ -7,6 +28,7 @@ export interface Game {
   platformId?: string;
   coverUrl?: string;
   headerUrl?: string;
+  sgdbCoverUrl?: string;
   localCoverPath?: string;
   localHeaderPath?: string;
   _imgStamp?: number;
@@ -30,7 +52,33 @@ export interface Game {
   chiakiConsoleId?: string;
 
   // Xbox Cloud Gaming
+  /**
+   * Manual override for the launch URL — power-user / "I know what URL to open" escape hatch.
+   * If unset, the launch path consults `xcloudProductId` via the Game Pass catalog instead.
+   */
   streamUrl?: string;
+  /** True if this title appears in the Xbox Cloud Gaming catalog (set during Xbox library import / refresh). */
+  xcloudPlayable?: boolean;
+  /** Microsoft Store big-catalog product ID used to deep-link into xbox.com/play/launch. */
+  xcloudProductId?: string;
+  /** SEO slug from the Store catalog — purely decorative for the launch URL but lets shares look pretty. */
+  xcloudSlug?: string;
+  /** True if the title is currently included in Game Pass (`gamePass.isGamePass` from titlehub). */
+  gamePassIncluded?: boolean;
+
+  // Xbox local (UWP / Microsoft Store) launch metadata. Captured by
+  // scanXboxInstalled when parsing MicrosoftGame.config and matching the
+  // package against `%LOCALAPPDATA%\Packages\`. Used by main.js to launch
+  // locally-installed Xbox app games via `shell:AppsFolder\<AUMID>` instead
+  // of always streaming them through Xbox Cloud Gaming.
+  /** Application User Model ID — `<PackageFamilyName>!<ExecutableId>`. */
+  xboxAumid?: string;
+  /** Bare PFN, kept separate for diagnostics + Xbox app deep-links. */
+  xboxPfn?: string;
+  /** Microsoft Game Identity Name (without the publisher-id hash suffix). */
+  xboxIdentityName?: string;
+  /** Hex titleId from MicrosoftGame.config (e.g. `0x9DDA0000`). The decimal form lives in `platformId`. */
+  xboxTitleIdHex?: string;
 
   // Steam-specific dynamic fields
   software?: boolean;
@@ -45,6 +93,7 @@ export interface Game {
   metacritic?: number;
   notes?: string;
   screenshots?: string[];
+  videoUrl?: string;
 }
 
 // ─── Settings ────────────────────────────────────────────────────────────────
@@ -76,6 +125,8 @@ export interface Settings {
   filterShowHidden?: boolean;
   filterSortBy?: string;
   chiakiPath?: string;
+  /** Saved PSN Account ID (Base64) so users don't have to re-enter it on every console registration. */
+  psnAccountId?: string;
   // Window & tray behaviour
   minimizeToTray?: boolean;
   startMinimized?: boolean;
@@ -239,6 +290,10 @@ export interface AccountInfo {
   avatarUrl?: string;
   gameCount?: number;
   lastSync?: string;
+  /** Xbox-only: how many of the user's library titles are currently in the xCloud catalog. */
+  cloudPlayableCount?: number;
+  /** Xbox-only: how many of the user's library titles are currently included in Game Pass. */
+  gamePassCount?: number;
   [key: string]: unknown;
 }
 export type AccountsMap = Record<string, AccountInfo>;
@@ -316,7 +371,12 @@ export interface ElectronAPI {
   fetchCoverNow?(gameId: string): Promise<void>;
   deleteGame(id: string): Promise<void>;
   toggleFavorite(id: string): Promise<Game>;
-  launchGame(gameId: string): Promise<{ success: boolean; error?: string; lastPlayed?: string }>;
+  /**
+   * Launch a game.
+   * - `options.forceCloud: true` routes Xbox launches through xCloud even when
+   *   a local UWP install is available. Ignored for non-Xbox platforms.
+   */
+  launchGame(gameId: string, options?: { forceCloud?: boolean }): Promise<{ success: boolean; error?: string; lastPlayed?: string }>;
   installGame?(id: string): Promise<void>;
   openGameInClient?(id: string): Promise<void>;
 
@@ -359,6 +419,8 @@ export interface ElectronAPI {
   xcloudStart?(opts: { url?: string; gameId?: string }): Promise<{ id?: string; error?: string }>;
   xcloudStop?(gameId: string): Promise<void>;
   xcloudGetSessions?(): Promise<Record<string, { url: string }>>;
+  /** Re-evaluate which Xbox library entries are currently streamable. Hits the public Game Pass catalog only. */
+  xcloudRefreshCatalog?(): Promise<{ touched?: number; cloudPlayable?: number; total?: number; error?: string }>;
 
   // Stream events (PS + Xbox)
   onChiakiEvent?(cb: (evt: ChiakiSession) => void): () => void;

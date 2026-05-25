@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import type { Game, Settings, ChiakiSession, ImportProgress } from '../types';
+import type { Game, Settings, ChiakiSession, ImportProgress, FlashFn } from '../types';
 import { applyTheme, applyUiScale } from '../utils';
 
 interface ListenerSetters {
@@ -20,7 +20,7 @@ interface ListenerSetters {
   setAppUpdate: React.Dispatch<React.SetStateAction<{ status: string; version?: string; progress?: number } | null>>;
   setTabs: React.Dispatch<React.SetStateAction<{ id: string; title: string; closable: boolean; platform: string | null }[]>>;
   setActiveTabId: React.Dispatch<React.SetStateAction<string>>;
-  flash: (m: React.ReactNode) => void;
+  flash: FlashFn;
 }
 
 export function useInitialDataLoad(setters: Pick<ListenerSetters, 'setGames' | 'setCats' | 'setSettings' | 'setGamesLoaded' | 'setViewMode' | 'setTab' | 'setSelectedPlatforms' | 'setSelectedCategories' | 'setHideSteamSoftware' | 'setShowHidden' | 'setSortBy' | 'setShowWizard' | 'setImportProgress'>) {
@@ -80,7 +80,7 @@ export function useInitialDataLoad(setters: Pick<ListenerSetters, 'setGames' | '
 }
 
 export function useChiakiAndRefreshListeners(
-  flash: (m: React.ReactNode) => void,
+  flash: FlashFn,
   setChiakiSessions: ListenerSetters['setChiakiSessions'],
   setGames: ListenerSetters['setGames'],
 ) {

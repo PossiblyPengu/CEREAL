@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 const ipcOn = (channel, cb) => {
   const handler = (_event, data) => cb(data);
@@ -14,7 +14,17 @@ contextBridge.exposeInMainWorld('api', {
   fullscreen: () => ipcRenderer.invoke('window:fullscreen'),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
   openPath: (p) => ipcRenderer.invoke('shell:openPath', p),
+  showInFolder: (p) => ipcRenderer.invoke('shell:showInFolder', p),
   isFullscreen: () => ipcRenderer.invoke('window:isFullscreen'),
+  /**
+   * Resolves the absolute path for a dragged File. Required as of Electron 32 —
+   * the legacy `File.path` getter is gone in newer versions, so the renderer
+   * must call this from the drop handler.
+   */
+  getPathForFile: (file) => {
+    try { return webUtils.getPathForFile(file); }
+    catch (_) { return ''; }
+  },
 
   // Games
   getGames: () => ipcRenderer.invoke('games:getAll'),
@@ -23,7 +33,7 @@ contextBridge.exposeInMainWorld('api', {
   fetchCoverNow: (gameId) => ipcRenderer.invoke('covers:fetchNow', gameId),
   deleteGame: (id) => ipcRenderer.invoke('games:delete', id),
   toggleFavorite: (id) => ipcRenderer.invoke('games:toggleFavorite', id),
-  launchGame: (id) => ipcRenderer.invoke('games:launch', id),
+  launchGame: (id, options) => ipcRenderer.invoke('games:launch', id, options),
   installGame: (id) => ipcRenderer.invoke('games:install', id),
   openGameInClient: (id) => ipcRenderer.invoke('games:openInClient', id),
 
@@ -63,6 +73,7 @@ contextBridge.exposeInMainWorld('api', {
   xcloudStart: (opts) => ipcRenderer.invoke('xcloud:start', opts),
   xcloudStop: (gameId) => ipcRenderer.invoke('xcloud:stop', gameId),
   xcloudGetSessions: () => ipcRenderer.invoke('xcloud:getSessions'),
+  xcloudRefreshCatalog: () => ipcRenderer.invoke('accounts:xbox:refreshCloud'),
 
   // Unified stream events (PS + Xbox)
   onChiakiEvent:  (cb) => ipcOn('chiaki:event',  cb),

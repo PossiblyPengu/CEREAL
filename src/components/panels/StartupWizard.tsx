@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import type { Game, Settings } from '../../types';
+import type { Game, Settings, FlashFn } from '../../types';
 import { THEMES, PLATFORMS } from '../../constants';
 import { applyTheme, applyUiScale } from '../../utils';
 
 interface StartupWizardProps {
   show: boolean;
   onClose: () => void;
-  flash: (msg: React.ReactNode) => void;
+  flash: FlashFn;
   setGames: React.Dispatch<React.SetStateAction<Game[]>>;
   settings: Settings;
   onSettingsChange: (s: Partial<Settings>) => void;
@@ -14,19 +14,32 @@ interface StartupWizardProps {
 
 // Step metadata drives the stepper rail at the top of the wizard. Order matters:
 // the index here must match the step number in the render switch below.
-const STEP_DEFS: { n: number; label: string; sub: string }[] = [
-  { n: 1, label: 'Welcome',    sub: 'Get oriented'      },
-  { n: 2, label: 'Appearance', sub: 'Theme & view'      },
-  { n: 3, label: 'Performance',sub: 'Tune the renderer' },
-  { n: 4, label: 'Accounts',   sub: 'Connect platforms' },
-  { n: 5, label: 'Behavior',   sub: 'Tray & presence'   },
-  { n: 6, label: 'Streaming',  sub: 'PS Remote Play'    },
-  { n: 7, label: 'Finish',     sub: 'Review & launch'   },
+// Step 5 (Streaming) is conditional — only entered when the user opts in on
+// the Setup step. The rail shows it but it auto-skips otherwise.
+const STEP_DEFS: { n: number; label: string; sub: string; conditional?: boolean }[] = [
+  { n: 1, label: 'Welcome',    sub: 'Hi there'           },
+  { n: 2, label: 'Appearance', sub: 'Theme & view'       },
+  { n: 3, label: 'Setup',      sub: 'Performance & feel' },
+  { n: 4, label: 'Accounts',   sub: 'Sign in & import'   },
+  { n: 5, label: 'Streaming',  sub: 'PS Remote Play', conditional: true },
+  { n: 6, label: 'Finish',     sub: 'Review & launch'    },
 ];
 
+const STEP_WELCOME    = 1;
+const STEP_APPEARANCE = 2;
+const STEP_SETUP      = 3;
+const STEP_ACCOUNTS   = 4;
+const STEP_STREAMING  = 5;
+const STEP_FINISH     = 6;
+
 export function StartupWizard({ show, onClose, flash, setGames, settings, onSettingsChange }: StartupWizardProps) {
-  const TOTAL_STEPS = 7;
+  const TOTAL_STEPS = STEP_FINISH;
   const [step, setStep] = useState(1);
+  // Highest step the user has reached — enables forward-clickable stepper.
+  const [maxStep, setMaxStep] = useState(1);
+  // Whether the user wants to set up PlayStation Remote Play. Initialized
+  // from chiaki-ng presence once it's known; user can override on Setup step.
+  const [streamingEnabled, setStreamingEnabled] = useState(false);
   const [accounts, setAccounts] = useState<Record<string, any>>({});
   const [importStatus, setImportStatus] = useState<Record<string, string>>({});
   const [importErrors, setImportErrors] = useState<Record<string, string>>({});
@@ -44,9 +57,7 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
   const [steamApiKey, setSteamApiKey] = useState('');
   const [steamApiKeySaving, setSteamApiKeySaving] = useState(false);
   const [waking, setWaking] = useState<string | null>(null);
-  const [finalSgKey, setFinalSgKey] = useState('');
   const [finalSgInfo, setFinalSgInfo] = useState<{ hasSecret: boolean; fingerprint: string | null } | null>(null);
-  const [finalSgSaving, setFinalSgSaving] = useState(false);
 
   // Local wizard state mirrors settings for live preview
   const [wTheme, setWTheme] = useState(settings.theme || 'midnight');
@@ -80,6 +91,7 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
       refreshAccounts();
       refreshChiaki();
       setStep(1);
+      setMaxStep(1);
       setManualHost('');
       setWTheme(settings.theme || 'midnight');
       setWAccent(settings.accentColor || '');
@@ -96,16 +108,18 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
     }
   }, [show]);
 
+  // If chiaki-ng turns up already installed, default the streaming opt-in to
+  // on — the user has clearly used it before and would expect it to stay set up.
   useEffect(() => {
-    if (step === 6 && chiakiStatus && chiakiStatus.status !== 'missing' && consoles.length === 0 && !discovering) {
-      discoverConsoles();
+    if (show && chiakiStatus && chiakiStatus.status !== 'missing') {
+      setStreamingEnabled(true);
     }
-  }, [step, chiakiStatus]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [show, chiakiStatus]);
 
-  // Refresh persisted SGDB key info on final step so the user can see whether
-  // a key is already saved and update/replace it inline.
+  // Refresh persisted SGDB key info on the Finish step so the user sees the
+  // status of their key. Editing happens on the Accounts step.
   useEffect(() => {
-    if (step !== 7) return;
+    if (step !== STEP_FINISH) return;
     (async () => {
       try {
         const r = await (window.api as any)?.getApiKeyInfo?.('steamgriddb');
@@ -235,13 +249,70 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
     setRegistering(false);
   };
 
-  const goNext = () => { saveWizardSettings(); setStep(s => Math.min(s + 1, TOTAL_STEPS)); };
-  const goBack = () => setStep(s => Math.max(s - 1, 1));
+  // Returns the next step the user should land on — auto-skips the
+  // Streaming step when the user hasn't opted in.
+  const nextStepFrom = (s: number) => {
+    let n = Math.min(s + 1, TOTAL_STEPS);
+    if (n === STEP_STREAMING && !streamingEnabled) n = STEP_FINISH;
+    return n;
+  };
+  const prevStepFrom = (s: number) => {
+    let n = Math.max(s - 1, 1);
+    if (n === STEP_STREAMING && !streamingEnabled) n = STEP_ACCOUNTS;
+    return n;
+  };
+
+  const goNext = () => {
+    saveWizardSettings();
+    setStep(s => {
+      const n = nextStepFrom(s);
+      setMaxStep(m => Math.max(m, n));
+      return n;
+    });
+  };
+  const goBack = () => setStep(s => prevStepFrom(s));
 
   const finish = async () => {
     await saveWizardSettings({ firstRun: false });
     onClose();
   };
+
+  // Keyboard navigation. Enter / → advance, ← / Backspace go back, Esc closes,
+  // 1–6 jump to any visited step. Ignored while the user is typing in a form
+  // control (otherwise typing a PIN or API key would close the wizard).
+  useEffect(() => {
+    if (!show) return;
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      const inField =
+        t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+      if (inField) return;
+      // Don't hijack with modifiers — leaves Ctrl+K etc. for global shortcuts.
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+      if (e.key === 'Escape') { e.preventDefault(); finish(); return; }
+      if (e.key === 'ArrowRight' || e.key === 'Enter') {
+        if (step < TOTAL_STEPS) { e.preventDefault(); goNext(); }
+        else { e.preventDefault(); finish(); }
+        return;
+      }
+      if (e.key === 'ArrowLeft' || e.key === 'Backspace') {
+        if (step > 1) { e.preventDefault(); goBack(); }
+        return;
+      }
+      if (/^[1-6]$/.test(e.key)) {
+        const n = parseInt(e.key, 10);
+        if (n <= maxStep && n <= TOTAL_STEPS) {
+          // Don't allow jumping to the conditional Streaming step unless opted in.
+          if (n === STEP_STREAMING && !streamingEnabled) return;
+          e.preventDefault();
+          setStep(n);
+        }
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [show, step, maxStep, streamingEnabled]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!show) return null;
 
@@ -273,25 +344,10 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
 
   // ── Step 1: Welcome ────────────────────────────────────────────────────────
   const renderWelcome = () => {
-    // Mirror the Performance step's recommendation engine so the user sees
-    // a tailored hint up-front (matches the C# wizard's welcome card).
-    let perfRec: { tier: string; starDensity: string; uiScale: string } | null = null;
-    if (specs) {
-      const ramGb = specs.ramGb || 0;
-      const cpuCount = specs.cpuCount || 0;
-      const tier = (ramGb >= 24 && cpuCount >= 8) ? 'High' : (ramGb <= 8 || cpuCount <= 4) ? 'Low' : 'Mid';
-      const starDensity = tier === 'High' ? 'high' : tier === 'Low' ? 'low' : 'normal';
-      const sw = window.screen?.width || 1920;
-      const uiScale = sw >= 2560 ? '125%' : sw >= 1920 ? '110%' : sw < 1280 ? '90%' : '100%';
-      perfRec = { tier, starDensity, uiScale };
-    }
-    const features: { icon: string; title: string; desc: string }[] = [
-      { icon: '🌌', title: 'Orbit galaxy',   desc: 'Pan, zoom and fly through your library like a solar system.' },
-      { icon: '🎮', title: 'All platforms',  desc: 'Steam, Epic, GOG, Xbox — and your sideloaded titles too.' },
-      { icon: '📺', title: 'Remote Play',    desc: 'Stream PS4 / PS5 over the network via chiaki-ng.' },
-      { icon: '🖼️', title: 'Cover artwork',  desc: 'Auto-fetched from Steam and SteamGridDB.' },
-      { icon: '🎯', title: 'Smart filters',  desc: 'Slice by platform, category, recent or playtime.' },
-      { icon: '🟣', title: 'Discord status', desc: "Show your friends what you're playing — privately optional." },
+    const bullets: { icon: string; text: React.ReactNode }[] = [
+      { icon: '🎮', text: <>Sign in once — your <strong>Steam, Epic, GOG, Xbox</strong> libraries in one place.</> },
+      { icon: '🌌', text: <>An <strong>orbit galaxy</strong> view of your library, or a classic grid if you prefer.</> },
+      { icon: '🖼️', text: <>Cover art and metadata are <strong>fetched automatically</strong> — no manual tagging.</> },
     ];
     return (
       <div className="wiz-welcome">
@@ -299,34 +355,24 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
           <div className="wiz-welcome-glyph">🥣</div>
           <div className="wiz-welcome-eyebrow">CEREAL · First-run setup</div>
           <h2 className="wiz-welcome-title">Welcome aboard</h2>
-          <div className="wiz-welcome-sub">A unified launcher for everything you play. We'll have you set up in about a minute.</div>
+          <div className="wiz-welcome-sub">Five quick steps and you're done. Everything is reversible from Settings.</div>
         </div>
 
-        <div className="wiz-feature-grid">
-          {features.map(f => (
-            <div key={f.title} className="wiz-feature">
-              <div className="wiz-feature-icon">{f.icon}</div>
-              <div className="wiz-feature-body">
-                <div className="wiz-feature-title">{f.title}</div>
-                <div className="wiz-feature-desc">{f.desc}</div>
-              </div>
-            </div>
+        <ul className="wiz-welcome-bullets">
+          {bullets.map((b, i) => (
+            <li key={i} className="wiz-welcome-bullet">
+              <span className="wiz-welcome-bullet-icon" aria-hidden>{b.icon}</span>
+              <span>{b.text}</span>
+            </li>
           ))}
-        </div>
-
-        {perfRec && (
-          <div className="wiz-tier-card">
-            <div className="wiz-tier-badge">{perfRec.tier} TIER</div>
-            <div className="wiz-tier-text">
-              We detected your machine and will suggest{' '}
-              <strong>{perfRec.starDensity}</strong> stars at <strong>{perfRec.uiScale}</strong> UI scale on the next step.
-            </div>
-          </div>
-        )}
+        </ul>
 
         <div className="wiz-welcome-cta">
-          <button className="wiz-btn primary lg" onClick={() => setStep(2)}>Let's get started →</button>
+          <button className="wiz-btn primary lg" onClick={goNext}>Let's get started →</button>
           <button className="wiz-btn ghost" onClick={finish}>Skip setup</button>
+        </div>
+        <div className="wiz-welcome-tip">
+          Tip: press <kbd className="settings-kbd">Enter</kbd> to advance, <kbd className="settings-kbd">Esc</kbd> to skip.
         </div>
       </div>
     );
@@ -401,8 +447,8 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
     </div>
   );
 
-  // ── Step 3: Performance & Layout ───────────────────────────────────────────
-  const renderPerformance = () => {
+  // ── Step 3: Setup (merged Performance + Behavior + Streaming opt-in) ──────
+  const renderSetup = () => {
     const getRecommendation = (sp: any) => {
       const ramGb = sp.ramGb || 0;
       const cpuCount = sp.cpuCount || 0;
@@ -413,14 +459,28 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
     };
     const rec = specs ? getRecommendation(specs) : null;
     const scaleLabel: Record<string, string> = { '0.9': '90%', '1': '100%', '1.1': '110%', '1.25': '125%' };
+    // Detected-hardware summary line — keep it visible (one-liner) so the
+    // recommendation feels earned, but don't make a whole card out of it.
+    const specsLine = specs
+      ? [
+          (specs.ramGb || 0) + ' GB RAM',
+          (specs.cpuCount || 0) + ' cores',
+          window.screen.width + '×' + window.screen.height,
+        ].join(' · ')
+      : null;
+
     return (
       <div className="wiz-step">
         <Hero
-          tag="STEP 3 · PERFORMANCE"
-          title="Tune the renderer"
-          subtitle="Pick density and scale that match your hardware. Apply the recommendation if you're unsure."
+          tag="STEP 3 · SETUP"
+          title="Tune the experience"
+          subtitle="Performance, layout, and how Cereal behaves. Tap Recommended or customize."
           aside={rec && (
-            <button className="wiz-rec-pill" onClick={() => { setWDensity(rec.starDensity as any); setWScale(rec.uiScale); applyUiScale(rec.uiScale); }}>
+            <button
+              className="wiz-rec-pill"
+              onClick={() => { setWDensity(rec.starDensity as any); setWScale(rec.uiScale); applyUiScale(rec.uiScale); }}
+              title="Use the suggested settings for this machine"
+            >
               <span className="wiz-rec-pill-tag">RECOMMENDED</span>
               <span className="wiz-rec-pill-text">
                 <strong>{rec.starDensity}</strong> stars · <strong>{scaleLabel[rec.uiScale]}</strong> scale
@@ -430,29 +490,15 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
           )}
         />
 
-        <div className="wiz-card">
-          <SectionLabel>Detected hardware</SectionLabel>
-          {specs ? (
-            <div className="wiz-spec-grid">
-              {([
-                ['RAM', specs.ramGb + '\u00a0GB'],
-                ['CPU', specs.cpuCount + ' cores' + (specs.cpuModel ? ' — ' + String(specs.cpuModel).slice(0, 40) : '')],
-                specs.gpuName ? ['GPU', String(specs.gpuName).slice(0, 50)] : null,
-                ['Display', window.screen.width + '×' + window.screen.height],
-              ] as (string[] | null)[]).filter((x): x is string[] => x !== null).map(([k, v]) => (
-                <div key={k} className="wiz-spec">
-                  <div className="wiz-spec-key">{k}</div>
-                  <div className="wiz-spec-val">{v}</div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="wiz-loading"><span className="spinner" />Detecting specs…</div>
-          )}
-        </div>
+        {specsLine && (
+          <div className="wiz-specs-line">
+            <span className="wiz-specs-line-label">Detected</span>
+            <span className="wiz-specs-line-val">{specsLine}</span>
+          </div>
+        )}
 
         <div className="wiz-card">
-          <SectionLabel>Renderer & layout</SectionLabel>
+          <SectionLabel>Performance</SectionLabel>
           <div className="wizard-setting-row">
             <div>
               <div className="wizard-setting-label">Star density</div>
@@ -492,13 +538,77 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
               <div className="wizard-setting-label">Toolbar position</div>
               <div className="wizard-setting-desc">Where the navigation bar sits.</div>
             </div>
-            <div className="wizard-seg">
+            <div className="wiz-nav-picker" role="radiogroup" aria-label="Toolbar position">
               {(['top', 'bottom', 'left', 'right'] as const).map(v => (
-                <button key={v} className={'wizard-seg-btn' + (wNavPos === v ? ' active' : '')}
-                  onClick={() => setWNavPos(v)}>{v[0].toUpperCase() + v.slice(1)}</button>
+                <button
+                  key={v}
+                  role="radio"
+                  aria-checked={wNavPos === v}
+                  className={'wiz-nav-picker-cell ' + v + (wNavPos === v ? ' active' : '')}
+                  onClick={() => setWNavPos(v)}
+                  title={v[0].toUpperCase() + v.slice(1)}
+                >
+                  <span className="wiz-nav-picker-bar" />
+                </button>
               ))}
             </div>
           </div>
+        </div>
+
+        <div className="wiz-card">
+          <SectionLabel>Behavior</SectionLabel>
+          <div className="wizard-setting-row">
+            <div>
+              <div className="wizard-setting-label">Minimize on game launch</div>
+              <div className="wizard-setting-desc">Hide the launcher window when you start a game.</div>
+            </div>
+            <Toggle value={wMinimize} onChange={setWMinimize} />
+          </div>
+
+          <div className="wizard-setting-row">
+            <div>
+              <div className="wizard-setting-label">Close to system tray</div>
+              <div className="wizard-setting-desc">Keep running in the background when the window is closed.</div>
+            </div>
+            <Toggle value={wCloseTray} onChange={setWCloseTray} />
+          </div>
+
+          <div className="wizard-setting-row">
+            <div>
+              <div className="wizard-setting-label">Discord rich presence</div>
+              <div className="wizard-setting-desc">Show what you're playing on your Discord profile.</div>
+            </div>
+            <Toggle value={wDiscord} onChange={setWDiscord} />
+          </div>
+
+          <div className="wizard-setting-row">
+            <div>
+              <div className="wizard-setting-label">Auto-sync Steam playtime</div>
+              <div className="wizard-setting-desc">Refresh Steam playtime each time Cereal starts.</div>
+            </div>
+            <Toggle value={wAutoSync} onChange={setWAutoSync} />
+          </div>
+
+          <div className="wizard-setting-row">
+            <div>
+              <div className="wizard-setting-label">PlayStation Remote Play</div>
+              <div className="wizard-setting-desc">Set up chiaki-ng to stream from PS4 / PS5. Adds a setup step.</div>
+            </div>
+            <Toggle value={streamingEnabled} onChange={setStreamingEnabled} />
+          </div>
+        </div>
+
+        <div className="wiz-shortcut-strip">
+          {([
+            ['Ctrl+K', 'Quick search'],
+            ['Ctrl+,', 'Settings'],
+            ['Esc',    'Close / back'],
+          ] as [string, string][]).map(([k, v]) => (
+            <span key={k} className="wiz-shortcut">
+              <kbd className="settings-kbd">{k}</kbd>
+              <span>{v}</span>
+            </span>
+          ))}
         </div>
       </div>
     );
@@ -587,7 +697,7 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
           )}
           {connected && (
             <button className="login-cta ghost" onClick={() => doAuth(platform)} disabled={isImporting}>
-              Re-auth
+              Reconnect
             </button>
           )}
         </div>
@@ -641,8 +751,8 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
 
       <section className="login-section">
         <div className="login-section-head">
-          <span className="login-section-title">Online sign-in</span>
-          <span className="login-section-sub">Official OAuth/OpenID flows</span>
+          <span className="login-section-title">Sign in</span>
+          <span className="login-section-sub">Official OAuth flows — sign in once, libraries import automatically</span>
         </div>
         {ACCT_PLATS.map(p => renderAccountCard(p))}
       </section>
@@ -673,91 +783,28 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
 
       <div className="wiz-privacy">
         <span className="wiz-privacy-glyph">🔒</span>
-        <span>Your library data stays local. Cereal never uploads your account info or game list. The remaining storefronts (EA, Battle.net, itch.io, Ubisoft) can be connected later from <em>Settings → Platforms</em>.</span>
+        <span>Your library stays local — Cereal never uploads your account info or game list. EA, Battle.net, itch.io, and Ubisoft can be connected later from <em>Settings → Platforms</em>.</span>
       </div>
     </div>
   );
 
-  // ── Step 5: Behavior ───────────────────────────────────────────────────────
-  const renderBehavior = () => (
-    <div className="wiz-step">
-      <Hero
-        tag="STEP 5 · BEHAVIOR"
-        title="How Cereal lives in the background"
-        subtitle="Window behavior, presence, and playtime sync. All optional and reversible later."
-      />
-
-      <div className="wiz-card">
-        <div className="wizard-setting-row">
-          <div>
-            <div className="wizard-setting-label">Minimize on game launch</div>
-            <div className="wizard-setting-desc">Hide the launcher window when you start a game.</div>
-          </div>
-          <Toggle value={wMinimize} onChange={setWMinimize} />
-        </div>
-
-        <div className="wizard-setting-row">
-          <div>
-            <div className="wizard-setting-label">Close to system tray</div>
-            <div className="wizard-setting-desc">Keep running in the background when the window is closed.</div>
-          </div>
-          <Toggle value={wCloseTray} onChange={setWCloseTray} />
-        </div>
-
-        <div className="wizard-setting-row">
-          <div>
-            <div className="wizard-setting-label">Discord rich presence</div>
-            <div className="wizard-setting-desc">Show what you're playing on your Discord profile.</div>
-          </div>
-          <Toggle value={wDiscord} onChange={setWDiscord} />
-        </div>
-
-        <div className="wizard-setting-row">
-          <div>
-            <div className="wizard-setting-label">Auto-sync Steam playtime</div>
-            <div className="wizard-setting-desc">Refresh Steam playtime each time Cereal starts.</div>
-          </div>
-          <Toggle value={wAutoSync} onChange={setWAutoSync} />
-        </div>
-      </div>
-
-      <div className="wiz-card wiz-shortcuts">
-        <SectionLabel>Handy shortcuts</SectionLabel>
-        <div className="wiz-shortcut-grid">
-          {([
-            ['Ctrl+K', 'Quick search'],
-            ['Ctrl+Shift+R', 'Random game'],
-            ['Ctrl+,', 'Open Settings'],
-            ['Esc',    'Close / back'],
-            ['Scroll', 'Zoom (Orbit)'],
-          ] as [string, string][]).map(([k, v]) => (
-            <div key={k} className="wiz-shortcut">
-              <kbd className="settings-kbd">{k}</kbd>
-              <span>{v}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-
-  // ── Step 6: PlayStation Remote Play ────────────────────────────────────────
+  // ── Step 5: PlayStation Remote Play (conditional) ──────────────────────────
   const renderPlayStation = () => (
     <div className="wiz-step">
       <Hero
-        tag="STEP 6 · STREAMING (OPTIONAL)"
+        tag="STEP 5 · STREAMING"
         title="PlayStation Remote Play"
-        subtitle="Set up chiaki-ng to stream PS4 / PS5 games over your local network. Skip this step if you don't have a console."
+        subtitle="Stream PS4 / PS5 games over your local network via chiaki-ng. You can finish this later from Settings."
       />
 
       <div className="wiz-tip">
         <span className="wiz-tip-glyph">💡</span>
-        <span>Your PC and PlayStation must be on the <strong>same local network</strong>. Find the pairing code on the console under <strong>Settings → System → Remote Play → Link Device</strong>.</span>
+        <span>Your PC and PlayStation must be on the <strong>same local network</strong>. The pairing code lives on the console under <strong>Settings → System → Remote Play → Link Device</strong>.</span>
       </div>
 
       <div className="wiz-card">
         <div className="wiz-chk-status">
-          <div className="wiz-chk-glyph">PS</div>
+          <div className="wiz-chk-glyph" aria-hidden>{PLATFORMS.psn?.icon}</div>
           <div className="wiz-chk-info">
             <div className="wiz-chk-name">chiaki-ng</div>
             <div className="wiz-chk-state">
@@ -871,52 +918,62 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
       wAutoSync && 'Auto-sync playtime',
     ].filter(Boolean) as string[];
 
-    type Row = { ok: boolean; icon: string; title: string; sub: React.ReactNode };
+    type Row = { ok: boolean; icon: string; title: string; sub: React.ReactNode; jumpTo?: number };
     const rows: Row[] = [
       {
         ok: true,
         icon: '🎨',
         title: themeLabel + ' theme' + (wAccent ? ' + custom accent' : ''),
         sub: <>{wView === 'orbit' ? 'Orbit view' : 'Cards view'} · {wNavPos} toolbar</>,
+        jumpTo: STEP_APPEARANCE,
       },
       {
         ok: true,
         icon: '⚡',
         title: wDensity[0].toUpperCase() + wDensity.slice(1) + ' stars · ' + scaleLabel[wScale] + ' scale',
-        sub: <>Animations {wAnimations ? 'on' : 'off'}</>,
+        sub: (
+          <>
+            Animations {wAnimations ? 'on' : 'off'}
+            {behaviorBits.length > 0 ? ' · ' + behaviorBits.join(' · ') : ''}
+          </>
+        ),
+        jumpTo: STEP_SETUP,
       },
       {
         ok: connectedCount > 0,
         icon: connectedCount > 0 ? '🎮' : '○',
         title: connectedCount + ' account' + (connectedCount !== 1 ? 's' : '') + ' connected',
         sub: connectedCount === 0
-          ? 'You can connect them later from Settings.'
+          ? 'Sign in any time from Settings → Platforms.'
           : (['steam', 'gog', 'epic', 'xbox'] as const).filter(p => accounts[p]?.connected)
               .map(p => (p === 'epic' ? 'Epic' : p === 'gog' ? 'GOG' : p === 'xbox' ? 'Xbox' : 'Steam')
                 + (importCounts[p] != null ? ' (' + importCounts[p] + ')' : ''))
               .join(' · '),
-      },
-      {
-        ok: behaviorBits.length > 0,
-        icon: behaviorBits.length > 0 ? '⚙' : '○',
-        title: 'Behavior',
-        sub: behaviorBits.length > 0 ? behaviorBits.join(' · ') : 'Using launcher defaults.',
-      },
-      {
-        ok: chiakiReady,
-        icon: chiakiReady ? '📺' : '○',
-        title: chiakiReady ? 'PlayStation Remote Play ready' : 'PlayStation Remote Play skipped',
-        sub: chiakiReady
-          ? (chiakiStatus?.version ? 'chiaki-ng v' + chiakiStatus.version : 'chiaki-ng installed')
-          : 'You can set this up later from Settings.',
+        jumpTo: STEP_ACCOUNTS,
       },
       {
         ok: !!finalSgInfo?.hasSecret,
         icon: finalSgInfo?.hasSecret ? '🖼️' : '○',
-        title: finalSgInfo?.hasSecret ? 'High-res artwork enabled' : 'Using free-tier artwork',
+        title: finalSgInfo?.hasSecret ? 'High-res artwork enabled' : 'Standard artwork',
         sub: finalSgInfo?.hasSecret
           ? (finalSgInfo.fingerprint ? 'SteamGridDB key ' + finalSgInfo.fingerprint : 'SteamGridDB key saved')
-          : 'Add a SteamGridDB API key below for higher-resolution covers.',
+          : 'Add a SteamGridDB key from Settings → Platforms for higher-res covers.',
+        jumpTo: STEP_ACCOUNTS,
+      },
+      {
+        ok: streamingEnabled && chiakiReady,
+        icon: chiakiReady ? '📺' : '○',
+        title: streamingEnabled && chiakiReady
+          ? 'PlayStation Remote Play ready'
+          : streamingEnabled
+            ? 'PlayStation streaming pending'
+            : 'PlayStation streaming skipped',
+        sub: chiakiReady
+          ? (chiakiStatus?.version ? 'chiaki-ng v' + chiakiStatus.version : 'chiaki-ng installed')
+          : streamingEnabled
+            ? 'Finish chiaki-ng setup from Settings.'
+            : 'Enable later from Settings → Platforms.',
+        jumpTo: streamingEnabled ? STEP_STREAMING : STEP_SETUP,
       },
     ];
 
@@ -926,63 +983,27 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
           <div className="wiz-finish-glyph">✨</div>
           <div className="wiz-finish-eyebrow">SETUP COMPLETE</div>
           <h2 className="wiz-finish-title">You're all set</h2>
-          <div className="wiz-finish-sub">Here's what was configured. You can change any of this later in Settings.</div>
+          <div className="wiz-finish-sub">Tap any row to jump back and tweak it. Everything is also editable from Settings later.</div>
         </div>
 
         <div className="wiz-summary">
           {rows.map((r, i) => (
-            <div key={i} className={'wiz-summary-row' + (r.ok ? ' ok' : ' skip')}>
+            <button
+              key={i}
+              type="button"
+              className={'wiz-summary-row' + (r.ok ? ' ok' : ' skip')}
+              onClick={() => r.jumpTo && setStep(r.jumpTo)}
+              title={r.jumpTo ? 'Click to revisit' : undefined}
+            >
               <div className="wiz-summary-icon">{r.icon}</div>
               <div className="wiz-summary-body">
                 <div className="wiz-summary-title">{r.title}</div>
                 <div className="wiz-summary-sub">{r.sub}</div>
               </div>
               <div className="wiz-summary-badge">{r.ok ? '✓' : 'skip'}</div>
-            </div>
+            </button>
           ))}
         </div>
-
-        {!finalSgInfo?.hasSecret && (
-          <div className="wiz-card">
-            <SectionLabel>Add SteamGridDB API key (optional)</SectionLabel>
-            <div className="wiz-sgdb-input">
-              <input
-                type="password"
-                placeholder="Paste your SteamGridDB API key"
-                value={finalSgKey}
-                onChange={e => setFinalSgKey(e.target.value)}
-              />
-              <button
-                className="wiz-btn ghost"
-                onClick={async () => {
-                  try {
-                    if (!(window.api as any)?.readClipboard) return flash('Clipboard not available');
-                    const txt = await (window.api as any).readClipboard();
-                    if (!txt) return flash('Clipboard empty');
-                    setFinalSgKey(txt.trim());
-                  } catch { flash('Could not read clipboard'); }
-                }}
-              >Paste</button>
-              <button
-                className="wiz-btn primary"
-                disabled={finalSgKey.trim().length < 10 || finalSgSaving}
-                onClick={async () => {
-                  setFinalSgSaving(true);
-                  try {
-                    const vr = await (window.api as any)?.validateApiKey?.('steamgriddb', finalSgKey.trim());
-                    if (!vr?.ok) { flash('Key is invalid'); return; }
-                    const sr = await (window.api as any)?.saveApiKey?.('steamgriddb', finalSgKey.trim());
-                    if (sr?.ok) {
-                      setFinalSgInfo({ hasSecret: true, fingerprint: sr.fingerprint || null });
-                      setFinalSgKey('');
-                      flash('SteamGridDB key saved');
-                    } else flash('Could not save key');
-                  } finally { setFinalSgSaving(false); }
-                }}
-              >{finalSgSaving ? 'Saving…' : 'Save'}</button>
-            </div>
-          </div>
-        )}
 
         <div className="wiz-finish-cta">
           <p className="wiz-finish-tip">
@@ -994,24 +1015,46 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
     );
   };
 
+  // Linear progress: counts only the steps the user will actually visit
+  // (excludes the conditional Streaming step when not opted in).
+  const visibleStepCount = TOTAL_STEPS - (streamingEnabled ? 0 : 1);
+  const visibleStepIndex = step <= STEP_STREAMING
+    ? step
+    : (streamingEnabled ? step : step - 1);
+  const progressPct = Math.round((visibleStepIndex / visibleStepCount) * 100);
+
   return (
     <div className="modal-overlay wiz-overlay">
       <div className="wiz-frame">
-        {/* Header — brand, step counter, and stepper rail. */}
+        {/* Header — brand and step counter. */}
         <div className="wiz-frame-head">
           <div className="wiz-brand">
             <div className="wiz-brand-mark">CEREAL</div>
             <div className="wiz-brand-tag">Setup</div>
           </div>
           <div className="wiz-progress-ind">
-            Step <strong>{step}</strong> of {TOTAL_STEPS}
+            <strong>{visibleStepIndex}</strong> · {visibleStepCount}
           </div>
+        </div>
+
+        {/* Progress bar — sits flush against the stepper rail. */}
+        <div className="wiz-progress-bar" aria-hidden>
+          <div className="wiz-progress-bar-fill" style={{ width: progressPct + '%' }} />
         </div>
 
         <div className="wiz-stepper" role="tablist" aria-label="Setup steps">
           {STEP_DEFS.map(sd => {
-            const state = sd.n === step ? 'active' : sd.n < step ? 'done' : 'todo';
-            const clickable = sd.n < step; // allow stepping back to completed steps
+            const conditional = !!sd.conditional && !streamingEnabled;
+            const state = sd.n === step
+              ? 'active'
+              : sd.n < step ? 'done' : 'todo';
+            // Forward-clickable for any previously-visited step. Conditional
+            // (Streaming) step is never clickable when the user hasn't opted in.
+            const clickable = sd.n !== step && sd.n <= maxStep && !conditional;
+            const cls =
+              'wiz-step-pip ' + state +
+              (clickable ? ' clickable' : '') +
+              (conditional ? ' skipped' : '');
             return (
               <button
                 key={sd.n}
@@ -1020,14 +1063,15 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
                 aria-selected={sd.n === step}
                 disabled={!clickable && sd.n !== step}
                 onClick={() => clickable && setStep(sd.n)}
-                className={'wiz-step-pip ' + state + (clickable ? ' clickable' : '')}
+                className={cls}
+                title={conditional ? 'Optional — enable on Setup step' : undefined}
               >
                 <div className="wiz-step-bullet">
-                  {state === 'done' ? '✓' : sd.n}
+                  {state === 'done' ? '✓' : conditional ? '–' : sd.n}
                 </div>
                 <div className="wiz-step-meta">
                   <div className="wiz-step-label">{sd.label}</div>
-                  <div className="wiz-step-sub">{sd.sub}</div>
+                  <div className="wiz-step-sub">{conditional ? 'Skipped' : sd.sub}</div>
                 </div>
               </button>
             );
@@ -1036,23 +1080,22 @@ export function StartupWizard({ show, onClose, flash, setGames, settings, onSett
 
         {/* Body — animates per-step swap. */}
         <div className="wiz-frame-body" key={step}>
-          {step === 1 && renderWelcome()}
-          {step === 2 && renderAppearance()}
-          {step === 3 && renderPerformance()}
-          {step === 4 && renderAccounts()}
-          {step === 5 && renderBehavior()}
-          {step === 6 && renderPlayStation()}
-          {step === 7 && renderSummary()}
+          {step === STEP_WELCOME    && renderWelcome()}
+          {step === STEP_APPEARANCE && renderAppearance()}
+          {step === STEP_SETUP      && renderSetup()}
+          {step === STEP_ACCOUNTS   && renderAccounts()}
+          {step === STEP_STREAMING  && renderPlayStation()}
+          {step === STEP_FINISH     && renderSummary()}
         </div>
 
         {/* Footer nav — hidden on Welcome (its own CTA) and Finish (its own
             "Launch Cereal" button). */}
-        {step > 1 && step < TOTAL_STEPS && (
+        {step > STEP_WELCOME && step < STEP_FINISH && (
           <div className="wiz-frame-foot">
-            <button className="wiz-btn ghost" onClick={goBack}>← Back</button>
+            <button className="wiz-btn ghost" onClick={goBack} title="← (or Backspace)">← Back</button>
             <div className="wiz-foot-spacer" />
-            <button className="wiz-btn ghost" onClick={goNext}>Skip</button>
-            <button className="wiz-btn primary" onClick={goNext}>Continue →</button>
+            <button className="wiz-btn link" onClick={goNext} title="Skip this step">Skip</button>
+            <button className="wiz-btn primary" onClick={goNext} title="Continue (Enter)">Continue →</button>
           </div>
         )}
       </div>

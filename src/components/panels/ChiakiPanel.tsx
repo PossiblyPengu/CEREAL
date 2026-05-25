@@ -1,12 +1,15 @@
-import { useState, useEffect, useMemo } from 'react';
-import type { Game, ChiakiSession } from '../../types';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import type { Game, ChiakiSession, FlashFn } from '../../types';
 import { SidePanel } from '../SidePanel';
-import { I } from '../../constants';
+import { I, PLATFORMS } from '../../constants';
+
+/** PlayStation logo, sized to fit any chk-*-glyph. */
+const PS_LOGO = PLATFORMS.psn?.icon ?? null;
 
 interface ChiakiPanelProps {
   show: boolean;
   onClose: () => void;
-  flash: (msg: React.ReactNode) => void;
+  flash: FlashFn;
   games: Game[];
   setGames: React.Dispatch<React.SetStateAction<Game[]>>;
   chiakiSessions: Record<string, ChiakiSession>;
@@ -49,6 +52,16 @@ interface ChiakiRegisterResult {
   error?: string;
 }
 
+interface ChiakiUpdateResult {
+  ok?: boolean;
+  version?: string;
+  error?: string;
+  output?: string;
+}
+
+/** A few common Base64 alphabets — PSN IDs are usually 12 chars of std/URL-safe Base64. */
+const PSN_ID_RE = /^[A-Za-z0-9+/_-]{8,32}={0,2}$/;
+
 type ChiakiQuality = {
   bitrate?: number;
   fpsActual?: number;
@@ -82,17 +95,122 @@ export function ChiakiPanel({ show, onClose, flash, chiakiSessions, mode = 'over
   const [regForm, setRegForm] = useState({ host: '', psnAccountId: '', pin: '' });
   const [regResult, setRegResult] = useState<ChiakiRegisterResult | null>(null);
 
+  // ─── Install state (Bucket A) ───────────────────────────────────────────
+  const [installing, setInstalling] = useState(false);
+  const [installError, setInstallError] = useState<string | null>(null);
+
+  // ─── Live-state cache (Bucket B) ────────────────────────────────────────
+  /** Discovered consoles keyed by host — used to enrich the saved-consoles list. */
+  const [discoveredByHost, setDiscoveredByHost] = useState<Record<string, DiscoveredConsole>>({});
+  const [lastScanAt, setLastScanAt] = useState<number | null>(null);
+
+  // ─── Smart Connect state (Bucket C) ─────────────────────────────────────
+  /** Per-host transient state shown on the Connect button. */
+  const [connectStates, setConnectStates] = useState<Record<string, 'waking' | 'connecting'>>({});
+  /** Cancellation flag so wake-polls don't keep running after the panel closes. */
+  const cancelRef = useRef(false);
+
+  // ─── Register polish (Bucket D) ─────────────────────────────────────────
+  /** True once we've populated psnAccountId from settings (so users only re-enter on demand). */
+  const [psnIdPrefilled, setPsnIdPrefilled] = useState(false);
+
+  // ─── Top-level load ─────────────────────────────────────────────────────
+  const refreshStatus = useCallback(async () => {
+    if (!window.api) return null;
+    const st = (await window.api.getChiakiStatus?.()) as ChiakiStatus | null;
+    setChiakiStatus(st);
+    return st;
+  }, []);
+
+  const runDiscover = useCallback(async (opts: { silent?: boolean } = {}) => {
+    if (!window.api) return [] as DiscoveredConsole[];
+    if (!opts.silent) setDiscovering(true);
+    try {
+      const r = (await window.api.chiakiDiscoverConsoles?.()) as { consoles?: DiscoveredConsole[] } | undefined;
+      const found = r?.consoles || [];
+      setDiscovered(found);
+      const byHost: Record<string, DiscoveredConsole> = {};
+      for (const c of found) if (c.host) byHost[c.host] = c;
+      setDiscoveredByHost(byHost);
+      setLastScanAt(Date.now());
+      return found;
+    } finally {
+      if (!opts.silent) setDiscovering(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!show) return;
+    cancelRef.current = false;
     (async () => {
-      if (window.api) {
-        const st = await window.api.getChiakiStatus?.() as ChiakiStatus | null;
-        const cfg = await window.api.getChiakiConfig?.() as ChiakiConfig | null;
-        setChiakiStatus(st);
-        setChiakiConfig(cfg || { executablePath: '', consoles: [] });
+      if (!window.api) return;
+      const st = (await window.api.getChiakiStatus?.()) as ChiakiStatus | null;
+      const cfg = (await window.api.getChiakiConfig?.()) as ChiakiConfig | null;
+      setChiakiStatus(st);
+      setChiakiConfig(cfg || { executablePath: '', consoles: [] });
+
+      // Pre-fill PSN Account ID from settings if we have one saved.
+      try {
+        const settings = (await window.api.getSettings?.()) as { psnAccountId?: string } | undefined;
+        if (settings?.psnAccountId && !psnIdPrefilled) {
+          setRegForm(p => ({ ...p, psnAccountId: settings.psnAccountId || '' }));
+          setPsnIdPrefilled(true);
+        }
+      } catch (_e) { /* settings IPC is optional */ }
+
+      // Background-scan in the background so console cards get enriched on first paint.
+      if (st && st.status !== 'missing') {
+        void runDiscover({ silent: true });
       }
     })();
+    return () => { cancelRef.current = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [show]);
+
+  // Auto-scan when the user opens the Discover tab — that's why they're there.
+  useEffect(() => {
+    if (!show) return;
+    if (activeTab !== 'discover') return;
+    if (chiakiStatus?.status === 'missing') return;
+    // If we have a fresh result (<15s old) skip — avoids hammering the network.
+    if (lastScanAt && Date.now() - lastScanAt < 15_000 && discovered.length > 0) return;
+    void runDiscover();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, show, chiakiStatus?.status]);
+
+  // ─── Install chiaki-ng (Bucket A) ───────────────────────────────────────
+  const installChiaki = async () => {
+    if (!window.api?.chiakiUpdate) {
+      flash('Install IPC unavailable — please restart Cereal');
+      return;
+    }
+    setInstalling(true);
+    setInstallError(null);
+    try {
+      const r = (await window.api.chiakiUpdate()) as ChiakiUpdateResult;
+      if (r?.ok) {
+        flash('chiaki-ng installed (v' + (r.version || '?') + ')');
+        await refreshStatus();
+        // Kick off a discover now that we can actually talk to consoles.
+        void runDiscover({ silent: true });
+      } else {
+        const lines = r?.output ? String(r.output).split('\n') : [];
+        const errLine =
+          lines.find(l => l.trimStart().startsWith('ERROR:')) ||
+          lines.filter(l => l.trim()).pop() ||
+          '';
+        const msg = (r?.error || 'Install failed') + (errLine ? ': ' + errLine.replace(/^ERROR:\s*/i, '').trim() : '');
+        setInstallError(msg);
+        flash(msg);
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Install failed';
+      setInstallError(msg);
+      flash(msg);
+    } finally {
+      setInstalling(false);
+    }
+  };
 
   const addConsole = async () => {
     if (!newConsole.nickname?.trim() || !newConsole.host?.trim()) return;
@@ -111,15 +229,7 @@ export function ChiakiPanel({ show, onClose, flash, chiakiSessions, mode = 'over
     flash('Console removed');
   };
 
-  const doDiscover = async () => {
-    setDiscovering(true);
-    setDiscovered([]);
-    if (window.api) {
-      const r = await window.api.chiakiDiscoverConsoles?.() as { consoles?: DiscoveredConsole[] } | undefined;
-      setDiscovered(r?.consoles || []);
-    }
-    setDiscovering(false);
-  };
+  const doDiscover = () => runDiscover();
 
   const doRegister = async () => {
     if (!regForm.host || !regForm.pin) return;
@@ -139,6 +249,12 @@ export function ChiakiPanel({ show, onClose, flash, chiakiSessions, mode = 'over
         const upd: ChiakiConfig = { ...chiakiConfig, consoles: updatedConsoles };
         await window.api.saveChiakiConfig?.(upd);
         setChiakiConfig(upd);
+
+        // Save the PSN Account ID so the user never has to type it again.
+        if (regForm.psnAccountId) {
+          try { await window.api.saveSettings?.({ psnAccountId: regForm.psnAccountId }); } catch (_e) { /* best-effort */ }
+        }
+
         flash('Console registered!');
       }
     }
@@ -176,13 +292,70 @@ export function ChiakiPanel({ show, onClose, flash, chiakiSessions, mode = 'over
     return { sessionKey, session: sess, isLive };
   };
 
+  /** Poll discover every `intervalMs` until the target host reports `ready`, or until we time out. */
+  const pollUntilReady = async (host: string, timeoutMs = 30_000, intervalMs = 2_500): Promise<boolean> => {
+    const startedAt = Date.now();
+    while (!cancelRef.current && Date.now() - startedAt < timeoutMs) {
+      await new Promise(r => setTimeout(r, intervalMs));
+      if (cancelRef.current) return false;
+      try {
+        const found = await runDiscover({ silent: true });
+        const hit = found.find(d => d.host === host);
+        if (hit && (hit.state === 'ready' || hit.state === 'on')) return true;
+      } catch (_e) { /* keep polling */ }
+    }
+    return false;
+  };
+
+  /**
+   * Smart connect:
+   *  - If the console is already known to be ready → start the stream immediately.
+   *  - If it's in standby (or we don't know) and we have wake credentials → send wake, poll until ready, then stream.
+   *  - Otherwise try direct connect (chiaki-ng can sometimes handle it).
+   */
   const connectConsole = async (c: ChiakiConsole) => {
     if (!window.api) return;
-    const r = await window.api.chiakiStartStreamDirect?.({
-      host: c.host, nickname: c.nickname || '', profile: c.profile || '',
-      registKey: c.registKey || '', morning: c.morning || '',
-    }) as { success?: boolean; error?: string } | undefined;
-    flash(r?.success ? 'Connecting to ' + (c.nickname || c.host) + '...' : 'Error: ' + r?.error);
+    const host = c.host;
+    const disc = discoveredByHost[host];
+    const isStandby = disc?.state === 'standby';
+    const hasWakeCreds = !!c.registKey;
+
+    const startStream = async () => {
+      setConnectStates(prev => ({ ...prev, [host]: 'connecting' }));
+      const r = (await window.api?.chiakiStartStreamDirect?.({
+        host, nickname: c.nickname || '', profile: c.profile || '',
+        registKey: c.registKey || '', morning: c.morning || '',
+      })) as { success?: boolean; error?: string } | undefined;
+      flash(r?.success ? 'Connecting to ' + (c.nickname || host) + '…' : 'Error: ' + r?.error);
+    };
+
+    try {
+      if (isStandby && hasWakeCreds) {
+        setConnectStates(prev => ({ ...prev, [host]: 'waking' }));
+        flash('Waking ' + (c.nickname || host) + '…');
+        const wake = (await window.api.chiakiWakeConsole?.({
+          host, credentials: { registKey: c.registKey },
+        })) as { success?: boolean; error?: string } | undefined;
+        if (!wake?.success) {
+          flash('Wake failed: ' + (wake?.error || 'unknown'));
+          return;
+        }
+        const ready = await pollUntilReady(host);
+        if (!ready) {
+          flash('Console didn’t respond after waking. Try again, or wake it manually.');
+          return;
+        }
+        await startStream();
+      } else {
+        await startStream();
+      }
+    } finally {
+      setConnectStates(prev => {
+        const next = { ...prev };
+        delete next[host];
+        return next;
+      });
+    }
   };
 
   // ─── Derived state ────────────────────────────────────────────────────────
@@ -205,17 +378,50 @@ export function ChiakiPanel({ show, onClose, flash, chiakiSessions, mode = 'over
     const quality = cs?.quality;
     const streamInfo = cs?.streamInfo;
 
+    // Cross-reference live network state (Bucket B)
+    const disc = discoveredByHost[c.host];
+    const consoleType = (disc?.type || '').toUpperCase();
+    const isPS5 = consoleType.includes('PS5') || consoleType.includes('5');
+    const isPS4 = consoleType.includes('PS4') || consoleType.includes('4');
+    const glyphClass = isPS5 ? 'ps5' : isPS4 ? 'ps4' : '';
+    const typePip = isPS5 ? 'PS5' : isPS4 ? 'PS4' : null;
+    const isOnline = !!disc && disc.state !== 'unknown' && disc.state !== undefined;
+    const isStandby = disc?.state === 'standby';
+    const isReady = disc?.state === 'ready' || disc?.state === 'on';
+    const isReachable = !!disc;
+    // Once we have a fresh scan and the console isn't in it, treat it as offline.
+    const scanFresh = lastScanAt && Date.now() - lastScanAt < 60_000;
+    const isOfflineConfident = !isReachable && !!scanFresh;
+
+    // Smart-connect transient feedback
+    const connState = connectStates[c.host];
+    const connLabel =
+      connState === 'waking' ? 'Waking…' :
+      connState === 'connecting' ? 'Connecting…' :
+      'Connect';
+
     return (
       <div key={i} className={'chk-console' + (isLive ? ' live' : '') + (!hasKeys ? ' unreg' : '')}>
         <div className="chk-console-head">
-          <div className="chk-ps-glyph">PS</div>
+          <div className={'chk-ps-glyph' + (glyphClass ? ' ' + glyphClass : '')} aria-label={typePip || 'PlayStation'}>
+            {PS_LOGO}
+            {typePip && <span className="chk-ps-glyph-type">{typePip}</span>}
+          </div>
           <div className="chk-console-meta">
             <div className="chk-console-name">{c.nickname || 'PlayStation'}</div>
-            <div className="chk-console-host">{c.host}{c.profile ? ' • ' + c.profile : ''}</div>
+            <div className="chk-console-host">
+              {c.host}
+              {c.profile ? ' • ' + c.profile : ''}
+              {disc?.runningTitle && <span className="chk-console-running"> • {disc.runningTitle}</span>}
+            </div>
           </div>
           <div className="chk-console-tags">
             {isLive && <span className="chk-tag live"><span className="chk-tag-dot" />LIVE</span>}
-            {!isLive && hasKeys && <span className="chk-tag ok">Paired</span>}
+            {!isLive && isReady && hasKeys && <span className="chk-tag ok">Online</span>}
+            {!isLive && isStandby && hasKeys && <span className="chk-tag idle">Standby</span>}
+            {!isLive && isOnline && !isReady && !isStandby && hasKeys && <span className="chk-tag ok">Reachable</span>}
+            {!isLive && isOfflineConfident && hasKeys && <span className="chk-tag idle">Offline</span>}
+            {!isLive && !isReachable && !isOfflineConfident && hasKeys && <span className="chk-tag ok">Paired</span>}
             {!isLive && !hasKeys && <span className="chk-tag warn">Not paired</span>}
           </div>
         </div>
@@ -263,21 +469,27 @@ export function ChiakiPanel({ show, onClose, flash, chiakiSessions, mode = 'over
               <button
                 className="chk-btn primary"
                 onClick={() => connectConsole(c)}
-                disabled={chiakiMissing || !hasKeys}
-                title={!hasKeys ? 'Register the console before connecting' : 'Start Remote Play session'}
+                disabled={chiakiMissing || !hasKeys || !!connState}
+                title={
+                  !hasKeys ? 'Register the console before connecting' :
+                  isStandby ? 'Wake the console and start streaming' :
+                  'Start Remote Play session'
+                }
               >
-                Connect
+                {connState ? <><span className="spinner" style={{ marginRight: 6 }} />{connLabel}</> : connLabel}
               </button>
               {hasKeys ? (
                 <button
                   className="chk-btn"
-                  title="Wake console from rest mode"
+                  title="Send a wake signal without starting a stream"
                   onClick={async () => {
-                    flash('Sending wake signal...');
+                    flash('Sending wake signal…');
                     const r = await window.api?.chiakiWakeConsole?.({ host: c.host, credentials: { registKey: c.registKey } }) as { success?: boolean; error?: string } | undefined;
-                    flash(r?.success ? 'Wake signal sent to ' + c.nickname : 'Wake failed: ' + (r?.error || 'unknown'));
+                    flash(r?.success ? 'Wake signal sent to ' + (c.nickname || c.host) : 'Wake failed: ' + (r?.error || 'unknown'));
+                    // Refresh discover shortly after so the card reflects the new state.
+                    setTimeout(() => { void runDiscover({ silent: true }); }, 4_000);
                   }}
-                  disabled={chiakiMissing}
+                  disabled={chiakiMissing || !!connState}
                 >
                   Wake
                 </button>
@@ -296,6 +508,7 @@ export function ChiakiPanel({ show, onClose, flash, chiakiSessions, mode = 'over
             onClick={() => removeConsole(i)}
             title="Remove this console"
             aria-label="Remove console"
+            disabled={!!connState || isLive}
           >
             <span style={{ display: 'flex', width: 12, height: 12 }}>{I.trash}</span>
           </button>
@@ -312,8 +525,9 @@ export function ChiakiPanel({ show, onClose, flash, chiakiSessions, mode = 'over
 
     return (
       <div key={i} className="chk-disc">
-        <div className={'chk-disc-glyph ' + (isPS5 ? 'ps5' : isPS4 ? 'ps4' : 'ps')}>
-          {isPS5 ? 'PS5' : isPS4 ? 'PS4' : 'PS'}
+        <div className={'chk-disc-glyph ' + (isPS5 ? 'ps5' : isPS4 ? 'ps4' : 'ps')} aria-label={isPS5 ? 'PS5' : isPS4 ? 'PS4' : 'PlayStation'}>
+          {PS_LOGO}
+          {(isPS5 || isPS4) && <span className="chk-disc-glyph-type">{isPS5 ? 'PS5' : 'PS4'}</span>}
         </div>
         <div className="chk-disc-meta">
           <div className="chk-disc-name">{c.name || 'PlayStation'}</div>
@@ -343,23 +557,39 @@ export function ChiakiPanel({ show, onClose, flash, chiakiSessions, mode = 'over
 
   // ─── Sections ─────────────────────────────────────────────────────────────
 
-  const renderConsoles = () => (
+  const renderConsoles = () => {
+    const reachableCount = consoles.filter(c => !!discoveredByHost[c.host]).length;
+    const sub =
+      consoles.length === 0
+        ? 'No consoles yet — discover or add manually.'
+        : lastScanAt
+          ? `${registeredCount} of ${consoles.length} paired • ${reachableCount} reachable on network`
+          : `${registeredCount} of ${consoles.length} paired.`;
+    return (
     <>
       <div className="chk-section-head">
         <div>
           <div className="chk-section-title">My Consoles</div>
-          <div className="chk-section-sub">{consoles.length === 0 ? 'No consoles yet — discover or add manually.' : `${registeredCount} of ${consoles.length} paired and ready.`}</div>
+          <div className="chk-section-sub">{sub}</div>
         </div>
         <div className="chk-section-actions">
-          <button className="chk-btn" onClick={() => setActiveTab('discover')}>Scan</button>
-          <button className="chk-btn primary" onClick={() => setShowAddConsole(v => !v)}>
+          <button
+            className="chk-btn"
+            onClick={() => runDiscover()}
+            disabled={discovering || chiakiMissing}
+            title="Re-scan the network to refresh console state"
+          >
+            {discovering ? <><span className="spinner" style={{ marginRight: 6 }} />Refreshing…</> : 'Refresh'}
+          </button>
+          <button className="chk-btn" onClick={() => setActiveTab('discover')} disabled={chiakiMissing}>Scan</button>
+          <button className="chk-btn primary" onClick={() => setShowAddConsole(v => !v)} disabled={chiakiMissing}>
             {showAddConsole ? 'Cancel' : '+ Add manually'}
           </button>
         </div>
       </div>
 
       {showAddConsole && (
-        <div className="chk-add">
+        <form className="chk-add" onSubmit={e => { e.preventDefault(); void addConsole(); }}>
           <div className="chk-add-title">Add a console manually</div>
           <div className="chk-add-grid">
             <div className="chk-field">
@@ -368,6 +598,7 @@ export function ChiakiPanel({ show, onClose, flash, chiakiSessions, mode = 'over
                 value={newConsole.nickname}
                 onChange={e => setNewConsole(p => ({ ...p, nickname: e.target.value }))}
                 placeholder="PS5 — Living Room"
+                autoFocus
               />
             </div>
             <div className="chk-field">
@@ -379,24 +610,33 @@ export function ChiakiPanel({ show, onClose, flash, chiakiSessions, mode = 'over
               />
             </div>
             <div className="chk-field">
-              <label>Profile (optional)</label>
+              <label title="chiaki-ng controller mapping profile — leave blank to use the default">
+                Profile (optional)
+              </label>
               <input
                 value={newConsole.profile}
                 onChange={e => setNewConsole(p => ({ ...p, profile: e.target.value }))}
                 placeholder="default"
+                title="chiaki-ng controller mapping profile — leave blank to use the default"
               />
             </div>
           </div>
           <div className="chk-add-actions">
-            <button className="chk-btn" onClick={() => setShowAddConsole(false)}>Cancel</button>
-            <button className="chk-btn accent" onClick={addConsole}>Add console</button>
+            <button type="button" className="chk-btn" onClick={() => setShowAddConsole(false)}>Cancel</button>
+            <button
+              type="submit"
+              className="chk-btn accent"
+              disabled={!newConsole.nickname.trim() || !newConsole.host.trim()}
+            >
+              Add console
+            </button>
           </div>
-        </div>
+        </form>
       )}
 
       {consoles.length === 0 && !showAddConsole ? (
         <div className="chk-empty">
-          <div className="chk-empty-glyph">PS</div>
+          <div className="chk-empty-glyph">{PS_LOGO}</div>
           <div className="chk-empty-title">No consoles registered yet</div>
           <div className="chk-empty-sub">
             Use <strong>Discover</strong> to find consoles on your network, or <strong>Add manually</strong> if you know the IP.
@@ -412,14 +652,24 @@ export function ChiakiPanel({ show, onClose, flash, chiakiSessions, mode = 'over
         </div>
       )}
     </>
-  );
+    );
+  };
 
-  const renderDiscover = () => (
+  const renderDiscover = () => {
+    const scanAgo = lastScanAt ? Math.floor((Date.now() - lastScanAt) / 1000) : null;
+    const scanLabel = scanAgo == null
+      ? 'Send a UDP probe to your local subnet. Make sure your console is on or in standby.'
+      : scanAgo < 5
+        ? 'Scanned just now.'
+        : scanAgo < 60
+          ? `Last scan: ${scanAgo}s ago.`
+          : `Last scan: ${Math.floor(scanAgo / 60)}m ago.`;
+    return (
     <>
       <div className="chk-section-head">
         <div>
           <div className="chk-section-title">Discover consoles</div>
-          <div className="chk-section-sub">Send a UDP probe to your local subnet. Make sure your console is on or in standby.</div>
+          <div className="chk-section-sub">{scanLabel}</div>
         </div>
         <div className="chk-section-actions">
           <button
@@ -427,7 +677,7 @@ export function ChiakiPanel({ show, onClose, flash, chiakiSessions, mode = 'over
             onClick={doDiscover}
             disabled={discovering || chiakiMissing}
           >
-            {discovering ? <><span className="spinner" style={{ marginRight: 6 }} />Scanning…</> : 'Scan network'}
+            {discovering ? <><span className="spinner" style={{ marginRight: 6 }} />Scanning…</> : (lastScanAt ? 'Scan again' : 'Scan network')}
           </button>
         </div>
       </div>
@@ -442,10 +692,10 @@ export function ChiakiPanel({ show, onClose, flash, chiakiSessions, mode = 'over
 
       {!discovering && discovered.length === 0 && (
         <div className="chk-empty">
-          <div className="chk-empty-glyph">⌖</div>
+          <div className="chk-empty-glyph scan">{I.scan}</div>
           <div className="chk-empty-title">No consoles found yet</div>
           <div className="chk-empty-sub">
-            Click <strong>Scan network</strong> to look for PlayStation consoles. They must be on the same network.
+            Click <strong>Scan again</strong> to look for PlayStation consoles. They must be on the same Wi-Fi or LAN. If a console is off (not standby), it won't reply.
           </div>
         </div>
       )}
@@ -456,7 +706,8 @@ export function ChiakiPanel({ show, onClose, flash, chiakiSessions, mode = 'over
         </div>
       )}
     </>
-  );
+    );
+  };
 
   const renderRegister = () => (
     <>
@@ -484,19 +735,52 @@ export function ChiakiPanel({ show, onClose, flash, chiakiSessions, mode = 'over
         ))}
       </div>
 
-      <div className="chk-form">
+      <form
+        className="chk-form"
+        onSubmit={e => {
+          e.preventDefault();
+          if (registering === 'working' || chiakiMissing || !regForm.host || !regForm.pin) return;
+          void doRegister();
+        }}
+      >
         <div className="chk-form-grid">
           <div className="chk-field">
             <label>Console IP</label>
-            <input value={regForm.host} onChange={e => setRegForm(p => ({ ...p, host: e.target.value }))} placeholder="192.168.1.42" />
+            <input
+              value={regForm.host}
+              onChange={e => setRegForm(p => ({ ...p, host: e.target.value }))}
+              placeholder="192.168.1.42"
+              inputMode="numeric"
+            />
           </div>
           <div className="chk-field">
-            <label>PSN Account ID (Base64)</label>
-            <input value={regForm.psnAccountId} onChange={e => setRegForm(p => ({ ...p, psnAccountId: e.target.value }))} placeholder="ab12CDef3ghIjk…" />
+            <label>
+              PSN Account ID (Base64)
+              {psnIdPrefilled && regForm.psnAccountId && (
+                <span className="chk-field-hint"> · remembered</span>
+              )}
+            </label>
+            <input
+              value={regForm.psnAccountId}
+              onChange={e => setRegForm(p => ({ ...p, psnAccountId: e.target.value }))}
+              placeholder="ab12CDef3ghIjk…"
+              autoComplete="off"
+              spellCheck={false}
+            />
+            {regForm.psnAccountId && !PSN_ID_RE.test(regForm.psnAccountId.trim()) && (
+              <div className="chk-field-warn">Doesn't look like a Base64 PSN ID — double-check before submitting.</div>
+            )}
           </div>
           <div className="chk-field">
             <label>Link code (8 digits)</label>
-            <input value={regForm.pin} onChange={e => setRegForm(p => ({ ...p, pin: e.target.value }))} placeholder="00000000" maxLength={8} />
+            <input
+              value={regForm.pin}
+              onChange={e => setRegForm(p => ({ ...p, pin: e.target.value.replace(/\D/g, '').slice(0, 8) }))}
+              placeholder="00000000"
+              maxLength={8}
+              inputMode="numeric"
+              pattern="[0-9]{8}"
+            />
           </div>
         </div>
 
@@ -511,16 +795,22 @@ export function ChiakiPanel({ show, onClose, flash, chiakiSessions, mode = 'over
         )}
 
         <div className="chk-form-actions">
-          <button className="chk-btn" onClick={() => { setRegistering(null); setRegResult(null); }}>Reset</button>
           <button
+            type="button"
+            className="chk-btn"
+            onClick={() => { setRegistering(null); setRegResult(null); }}
+          >
+            Reset
+          </button>
+          <button
+            type="submit"
             className="chk-btn accent"
-            onClick={doRegister}
             disabled={registering === 'working' || chiakiMissing || !regForm.host || !regForm.pin}
           >
             Register console
           </button>
         </div>
-      </div>
+      </form>
     </>
   );
 
@@ -532,7 +822,7 @@ export function ChiakiPanel({ show, onClose, flash, chiakiSessions, mode = 'over
         {/* HERO */}
         <div className={'chk-hero ' + statusClass}>
           <div className="chk-hero-left">
-            <div className="chk-hero-glyph" aria-hidden>PS</div>
+            <div className="chk-hero-glyph" aria-hidden>{PS_LOGO}</div>
             <div className="chk-hero-text">
               <div className="chk-hero-tag">Remote Play</div>
               <h2 className="chk-hero-title">PlayStation</h2>
@@ -558,11 +848,36 @@ export function ChiakiPanel({ show, onClose, flash, chiakiSessions, mode = 'over
         </div>
 
         {chiakiMissing && (
-          <div className="chk-alert">
-            <div className="chk-alert-title">chiaki-ng is required</div>
-            <div className="chk-alert-text">
-              Run <strong>scripts/setup-chiaki.ps1</strong> to download and install it automatically, or set the path in
-              {' '}<strong>Settings → Integrations → Chiaki path</strong>.
+          <div className="chk-install">
+            <div className="chk-install-icon" aria-hidden>
+              <span style={{ display: 'flex', width: 22, height: 22 }}>{I.download}</span>
+            </div>
+            <div className="chk-install-text">
+              <div className="chk-install-title">Install chiaki-ng to get started</div>
+              <div className="chk-install-sub">
+                chiaki-ng is the open-source PlayStation Remote Play client Cereal uses to stream. We'll download it
+                from the official GitHub release and install it locally.
+              </div>
+              {installError && <div className="chk-install-err">{installError}</div>}
+            </div>
+            <div className="chk-install-actions">
+              <button
+                className="chk-btn primary"
+                onClick={installChiaki}
+                disabled={installing}
+                title="Downloads the latest chiaki-ng release into Cereal's app data (~30 MB). Usually finishes in under a minute."
+              >
+                {installing
+                  ? <><span className="spinner" style={{ marginRight: 6 }} />Installing…</>
+                  : 'Download chiaki-ng'}
+              </button>
+              <button
+                className="chk-btn link"
+                onClick={() => window.api?.openExternal?.('https://github.com/streetpea/chiaki-ng')}
+                title="Open the chiaki-ng project on GitHub"
+              >
+                What is chiaki-ng?
+              </button>
             </div>
           </div>
         )}

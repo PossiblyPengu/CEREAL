@@ -1,12 +1,12 @@
 import { useState, useEffect, useMemo } from 'react';
 import { SidePanel } from '../SidePanel';
 import { I } from '../../constants';
-import type { Game, ImportProgress } from '../../types';
+import type { Game, ImportProgress, FlashFn } from '../../types';
 
 interface PlatformsPanelProps {
   show: boolean;
   onClose: () => void;
-  flash: (msg: React.ReactNode) => void;
+  flash: FlashFn;
   setGames: React.Dispatch<React.SetStateAction<Game[]>>;
   onOpenChiaki: () => void;
   onOpenXcloud: () => void;
@@ -99,6 +99,7 @@ export function PlatformsPanel({ show, onClose, flash, setGames, onOpenChiaki, o
   const [apiKeys, setApiKeys] = useState<Record<string, ApiKeyState>>({});
   const [keyOpen, setKeyOpen] = useState<Record<string, boolean>>({});
   const [platFilter, setPlatFilter] = useState('');
+  const [xcloudRefreshing, setXcloudRefreshing] = useState(false);
 
   useEffect(() => {
     if (!show) return;
@@ -348,6 +349,53 @@ export function PlatformsPanel({ show, onClose, flash, setGames, onOpenChiaki, o
     );
   };
 
+  // Xbox-specific row: replaces the old "Xbox Cloud Gaming · requires Game
+  // Pass" link with two real actions — open the embedded xCloud session and
+  // refresh which library titles are currently streamable. The latter hits
+  // the public Game Pass catalog and re-tags `xcloudPlayable` on Xbox games
+  // without re-importing from Xbox Live.
+  const renderXcloudActions = () => {
+    const api = window.api as any;
+    return (
+      <div className="login-xcloud-actions">
+        <button
+          className="login-cta"
+          onClick={() => { onClose(); onOpenXcloud(); }}
+          title="Open the embedded Xbox Cloud Gaming session (sign in with the Microsoft account that has Game Pass Ultimate)"
+        >
+          <span style={{ display: 'flex', width: 13, height: 13 }}>{I.globe}</span>
+          <span>Stream via Xbox Cloud</span>
+        </button>
+        {api?.xcloudRefreshCatalog && (
+          <button
+            className="login-cta ghost"
+            disabled={xcloudRefreshing}
+            onClick={async () => {
+              setXcloudRefreshing(true);
+              try {
+                const r = await api.xcloudRefreshCatalog();
+                if (r?.error) {
+                  flash?.('Couldn’t refresh xCloud catalog: ' + r.error);
+                } else {
+                  flash?.(`xCloud catalog: ${r?.cloudPlayable ?? 0} of your titles are streamable.`);
+                  // Refresh account stats so the new counts show up.
+                  if (api.getAccounts) { const a = await api.getAccounts(); setAccounts(a || {}); }
+                  if (setGames && api.getGames) { const g = await api.getGames(); setGames(g || []); }
+                }
+              } catch (e: any) {
+                flash?.('xCloud catalog refresh failed: ' + (e?.message || e));
+              } finally { setXcloudRefreshing(false); }
+            }}
+            title="Cross-reference your Xbox library against the public Xbox Cloud Gaming catalog. Doesn't re-import or touch your Xbox Live tokens."
+          >
+            {xcloudRefreshing ? <><span className="spinner" />Refreshing catalog…</> : 'Refresh cloud catalog'}
+          </button>
+        )}
+        <div className="login-card-note" style={{ width: '100%', marginTop: 4 }}>Streaming via Xbox Cloud requires Game Pass Ultimate.</div>
+      </div>
+    );
+  };
+
   const renderPlatformCard = (plat: PlatDef) => {
     const acct = accounts[plat.id] || {};
     const connected = !!acct.connected;
@@ -389,6 +437,15 @@ export function PlatformsPanel({ show, onClose, flash, setGames, onOpenChiaki, o
       const stats: string[] = [];
       if (acct.gameCount) stats.push(`${acct.gameCount} ${acct.gameCount === 1 ? 'game' : 'games'}`);
       if (pdata?.games) stats.push(`${pdata.games} installed`);
+      // Xbox-specific: surface how many library titles are streamable right now
+      // and how many are currently included in Game Pass. These come from the
+      // last import (provider stores them on the account record).
+      if (plat.id === 'xbox' && typeof acct.cloudPlayableCount === 'number' && acct.cloudPlayableCount > 0) {
+        stats.push(`${acct.cloudPlayableCount} cloud-playable`);
+      }
+      if (plat.id === 'xbox' && typeof acct.gamePassCount === 'number' && acct.gamePassCount > 0) {
+        stats.push(`${acct.gamePassCount} on Game Pass`);
+      }
       const synced = relTime(acct.lastSync);
       if (synced) stats.push(`synced ${synced}`);
 
@@ -443,12 +500,7 @@ export function PlatformsPanel({ show, onClose, flash, setGames, onOpenChiaki, o
 
           {renderImportProgress(plat.id)}
 
-          {plat.id === 'xbox' && (
-            <button className="login-extra-link" onClick={() => { onClose(); onOpenXcloud(); }}>
-              <span style={{ display: 'flex', width: 13, height: 13 }}>{I.globe}</span>
-              <span>Xbox Cloud Gaming · requires Game Pass Ultimate</span>
-            </button>
-          )}
+          {plat.id === 'xbox' && renderXcloudActions()}
 
           {plat.apiKeyLabel && renderApiKeyPanel({ id: plat.id, label: plat.apiKeyLabel, help: plat.apiKeyHelp, url: plat.apiKeyUrl })}
           {plat.note && <div className="login-card-note">{plat.note}</div>}
@@ -482,12 +534,7 @@ export function PlatformsPanel({ show, onClose, flash, setGames, onOpenChiaki, o
             : (plat.authMethod === 'local' ? `Connect ${plat.name}` : `Sign in with ${plat.name}`)}
         </button>
 
-        {plat.id === 'xbox' && (
-          <button className="login-extra-link" onClick={() => { onClose(); onOpenXcloud(); }}>
-            <span style={{ display: 'flex', width: 13, height: 13 }}>{I.globe}</span>
-            <span>Xbox Cloud Gaming</span>
-          </button>
-        )}
+        {plat.id === 'xbox' && renderXcloudActions()}
 
         {plat.apiKeyLabel && renderApiKeyPanel({ id: plat.id, label: plat.apiKeyLabel, help: plat.apiKeyHelp, url: plat.apiKeyUrl })}
         {plat.note && <div className="login-card-note">{plat.note}</div>}

@@ -71,14 +71,17 @@ function scanSteamInstalled() {
 
         if (appid && name && installdir) {
           const gamePath = path.join(libFolder, 'common', installdir[1]);
+          // Intentionally no coverUrl / headerUrl here — the metadata pipeline
+          // (modules/metadata/sources/steam.js) HEAD-probes the CDN to find
+          // the actual portrait capsule (many Steam apps have no library art),
+          // and the cover queue runs a metadata-rescue pass on first fetch.
+          // Keeping detection cheap & free of network calls.
           games.push({
             name: name[1],
             platform: 'steam',
             platformId: appid[1],
             installPath: gamePath,
-            executablePath: '', // User may need to set this
-            coverUrl: `https://shared.steamstatic.com/store_item_assets/steam/apps/${appid[1]}/library_600x900_2x.jpg`,
-            headerUrl: `https://shared.steamstatic.com/store_item_assets/steam/apps/${appid[1]}/library_hero.jpg`,
+            executablePath: '',
             categories: [],
             source: 'auto-detected',
             installed: true,
@@ -181,6 +184,73 @@ function scanGogInstalled() {
 }
 
 // ─── Xbox Game Pass / Xbox App Detection ──────────────────────────────────────
+// Each game installed via the Xbox app drops a `MicrosoftGame.config` XML into
+// its top-level folder. The file is shallow, predictable, and authored by
+// Microsoft's gaming-services build tool — we can probe a handful of well-
+// known tags with regex and skip pulling in a full XML parser dep.
+//
+// What we want out of it:
+//   • Identity/@Name   — the package's bare identity (e.g. "Microsoft.HaloInfinite").
+//                        Combined with the publisher-id hash from `%LOCALAPPDATA%\Packages\`
+//                        this yields the Package Family Name (PFN).
+//   • ShellVisuals/@DefaultDisplayName — better display name than the folder.
+//   • Executable/@Id   — the AUMID suffix; AUMID = "<PFN>!<Id>".
+//   • TitleId          — hex (e.g. 0x9DDA0000). Convert to decimal so we can
+//                        dedup against the decimal titleId XBL's titlehub API
+//                        returns for the same game.
+//   • StoreId          — 12-char Microsoft Store product ID. Same identifier
+//                        Xbox Cloud Gaming uses for deep-linking, so we can
+//                        stamp `xcloudProductId` directly and avoid round-
+//                        tripping through the Game Pass catalog match.
+function parseMicrosoftGameConfig(installPath) {
+  const cfgPath = path.join(installPath, 'MicrosoftGame.config');
+  if (!fs.existsSync(cfgPath)) return null;
+  let xml;
+  try { xml = fs.readFileSync(cfgPath, 'utf8'); } catch (_e) { return null; }
+  const attr = (tag, attrName) => {
+    const re = new RegExp('<' + tag + '\\b[^>]*\\b' + attrName + '\\s*=\\s*"([^"]*)"', 'i');
+    const m = xml.match(re);
+    return m ? m[1] : '';
+  };
+  const text = (tag) => {
+    const re = new RegExp('<' + tag + '\\s*>([^<]+)<\\/' + tag + '>', 'i');
+    const m = xml.match(re);
+    return m ? m[1].trim() : '';
+  };
+  const identityName = attr('Identity', 'Name');
+  const displayName = attr('ShellVisuals', 'DefaultDisplayName');
+  const executableId = attr('Executable', 'Id') || 'App';
+  const titleIdHex = text('TitleId');
+  const storeId = text('StoreId');
+  // Normalize the titleId to decimal — XBL's titlehub returns the same id in
+  // decimal string form, so converting here lets `findExisting` dedup the
+  // local-scan row and the XBL-import row into a single entry.
+  let titleIdDec = '';
+  if (titleIdHex) {
+    try {
+      const v = titleIdHex.startsWith('0x') ? BigInt(titleIdHex) : BigInt('0x' + titleIdHex);
+      titleIdDec = v.toString(10);
+    } catch (_e) { /* malformed — leave blank, fall back to name-canonical match */ }
+  }
+  return { identityName, displayName, executableId, titleIdHex, titleIdDec, storeId };
+}
+
+// Resolve the full Package Family Name by matching `<IdentityName>_*` against
+// the per-user package state dir Windows creates on install. Returns '' if we
+// can't find one (e.g. the game's package dir was renamed or the user is on
+// an unusual MS Store profile).
+function resolveXboxPackageFamilyName(identityName) {
+  if (!identityName) return '';
+  const packagesDir = path.join(localAppDataDir(), 'Packages');
+  let entries;
+  try { entries = fs.existsSync(packagesDir) ? fs.readdirSync(packagesDir, { withFileTypes: true }) : null; }
+  catch (_e) { return ''; }
+  if (!entries) return '';
+  const prefix = identityName + '_';
+  const match = entries.find(e => e.isDirectory() && e.name.startsWith(prefix));
+  return match ? match.name : '';
+}
+
 function scanXboxInstalled() {
   const games = [];
 
@@ -200,18 +270,40 @@ function scanXboxInstalled() {
     catch (_e) { continue; }
     if (!entries) continue;
     for (const entry of entries) {
-      if (entry.isDirectory() && entry.name !== 'Content') {
-        games.push({
-          name: entry.name.replace(/([A-Z])/g, ' $1').trim(), // CamelCase to spaces
-          platform: 'xbox',
-          platformId: '',
-          installPath: path.join(xboxGamesDir, entry.name),
-          executablePath: '',
-          coverUrl: '',
-          categories: [],
-          source: 'auto-detected',
-        });
-      }
+      if (!entry.isDirectory() || entry.name === 'Content') continue;
+      const installPath = path.join(xboxGamesDir, entry.name);
+      const cfg = parseMicrosoftGameConfig(installPath);
+      const pfn = cfg ? resolveXboxPackageFamilyName(cfg.identityName) : '';
+      // AUMID = "<PackageFamilyName>!<ExecutableId>". Used by Explorer's
+      // shell:AppsFolder protocol to launch the game natively without
+      // bouncing through the Xbox app's home screen.
+      const aumid = (pfn && cfg) ? `${pfn}!${cfg.executableId}` : '';
+      const niceName = (cfg && cfg.displayName)
+        ? cfg.displayName
+        : entry.name.replace(/([A-Z])/g, ' $1').trim();
+      games.push({
+        name: niceName,
+        platform: 'xbox',
+        // platformId follows XBL's decimal-titleId convention so the Xbox
+        // library importer can merge this entry with its remote counterpart.
+        platformId: cfg ? cfg.titleIdDec || '' : '',
+        installPath,
+        installed: true,
+        executablePath: '',
+        coverUrl: '',
+        categories: [],
+        source: 'auto-detected',
+        // Local-launch metadata (used by main.js launch routing).
+        xboxAumid: aumid,
+        xboxPfn: pfn,
+        xboxTitleIdHex: cfg ? cfg.titleIdHex : '',
+        xboxIdentityName: cfg ? cfg.identityName : '',
+        // The StoreId in MicrosoftGame.config IS the Microsoft Store big-
+        // catalog product ID — same value used by xCloud deep-links. We can
+        // surface "Stream on Xbox Cloud" without waiting for the next catalog
+        // refresh.
+        xcloudProductId: cfg ? cfg.storeId : '',
+      });
     }
     // If we successfully read one of the candidates, prefer those results and
     // don't keep scanning lower-priority paths (avoids duplicates if the user

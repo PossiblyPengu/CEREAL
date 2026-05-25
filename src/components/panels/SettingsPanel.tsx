@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import type { Game, Settings } from '../../types';
+import type { Game, Settings, FlashFn } from '../../types';
 import { SidePanel } from '../SidePanel';
 import { THEMES, PLATFORMS } from '../../constants';
 import { applyTheme, applyUiScale, fmtTime } from '../../utils';
@@ -55,7 +55,7 @@ const Toggle = ({ value, onChange }: { value: boolean; onChange: (v: boolean) =>
 interface SettingsPanelProps {
   show: boolean;
   onClose: () => void;
-  flash: (msg: React.ReactNode) => void;
+  flash: FlashFn;
   settings: Settings;
   onSettingsChange: (s: Settings) => void;
   games: Game[];
@@ -96,12 +96,46 @@ const NAV_GROUPS: { label: string; danger?: boolean; items: { id: string; label:
   ]},
 ];
 
-const PLATFORM_PATHS: ReadonlyArray<{ key: keyof Settings; label: string; letter: string; color: string; desc: string }> = [
-  { key: 'steamPath',  label: 'Steam',      letter: 'S', color: '#1b6dff', desc: 'Steam install folder' },
-  { key: 'epicPath',   label: 'Epic Games', letter: 'E', color: '#777',    desc: 'Epic Games path'      },
-  { key: 'gogPath',    label: 'GOG Galaxy', letter: 'G', color: '#86328a', desc: 'GOG Galaxy path'      },
-  { key: 'xboxPath',   label: 'Xbox',       letter: 'X', color: '#107c10', desc: 'XboxGames root'       },
-  { key: 'chiakiPath', label: 'chiaki-ng',  letter: 'P', color: '#0072d1', desc: 'Custom Remote Play exe' },
+/**
+ * Keyword index for the sidebar search field. Each row resolves to a section,
+ * so typing "theme" or "tray" surfaces a clickable shortcut that jumps to the
+ * relevant pane. Keep this in rough sync with the actual settings UI; missing
+ * keywords just means a term won't be discoverable via search.
+ */
+const SETTINGS_SEARCH_INDEX: { section: string; label: string; keywords: string[] }[] = [
+  { section: 'appearance', label: 'Theme',                    keywords: ['theme', 'color', 'palette', 'midnight', 'aurora', 'ember', 'arctic', 'rose', 'carbon', 'obsidian', 'sakura', 'contrast', 'dark mode'] },
+  { section: 'appearance', label: 'Accent color',             keywords: ['accent', 'highlight color', 'hue', 'tint'] },
+  { section: 'appearance', label: 'Default view',             keywords: ['default view', 'view mode', 'orbit', 'cards', 'galaxy', 'list'] },
+  { section: 'appearance', label: 'UI scale',                 keywords: ['ui scale', 'zoom', 'font size', 'text size', 'dpi', 'large text'] },
+  { section: 'appearance', label: 'Animations',               keywords: ['animation', 'animations', 'motion', 'reduce motion', 'fps', 'particles', 'stars', 'galaxy density'] },
+  { section: 'appearance', label: 'Toolbar position',         keywords: ['toolbar', 'navbar', 'position', 'top', 'bottom'] },
+  { section: 'behavior',   label: 'Minimize on launch',       keywords: ['minimize', 'hide on launch', 'fullscreen launch'] },
+  { section: 'behavior',   label: 'Close to tray',            keywords: ['tray', 'close to tray', 'background', 'system tray', 'notification area'] },
+  { section: 'behavior',   label: 'Default tab',              keywords: ['default tab', 'startup tab', 'initial tab', 'home'] },
+  { section: 'behavior',   label: 'Discord Rich Presence',    keywords: ['discord', 'presence', 'status', 'rich presence', 'now playing'] },
+  { section: 'behavior',   label: 'Auto-sync playtime',       keywords: ['playtime', 'sync', 'steam playtime', 'tracking', 'hours'] },
+  { section: 'library',    label: 'Metadata source',          keywords: ['metadata', 'art', 'cover', 'covers', 'images', 'sgdb', 'steamgriddb', 'wikipedia'] },
+  { section: 'library',    label: 'SteamGridDB API key',      keywords: ['sgdb', 'api key', 'token', 'steamgriddb', 'cover', 'art'] },
+  { section: 'library',    label: 'Rescan covers',            keywords: ['rescan', 'rebuild', 'cache', 'covers', 'art'] },
+  { section: 'platforms',  label: 'Steam install path',       keywords: ['steam', 'install path', 'steamapps', 'library folder'] },
+  { section: 'platforms',  label: 'Epic Games path',          keywords: ['epic', 'egs', 'launcher path'] },
+  { section: 'platforms',  label: 'GOG Galaxy path',          keywords: ['gog', 'galaxy', 'install'] },
+  { section: 'platforms',  label: 'Xbox install path',        keywords: ['xbox', 'xboxgames', 'store'] },
+  { section: 'platforms',  label: 'chiaki-ng path',           keywords: ['chiaki', 'chiaki-ng', 'remote play', 'playstation', 'ps4', 'ps5'] },
+  { section: 'system',     label: 'Auto-update',              keywords: ['update', 'updater', 'check for updates', 'release', 'version'] },
+  { section: 'system',     label: 'System information',       keywords: ['system', 'cpu', 'gpu', 'ram', 'specs', 'hardware'] },
+  { section: 'about',      label: 'About / version',          keywords: ['about', 'version', 'credits', 'license', 'cereal'] },
+  { section: 'about',      label: 'Re-run setup wizard',      keywords: ['wizard', 'setup', 'first run', 'onboarding'] },
+  { section: 'danger',     label: 'Clear library',            keywords: ['clear', 'delete all', 'remove all', 'wipe', 'reset library'] },
+  { section: 'danger',     label: 'Reset settings',           keywords: ['reset', 'factory', 'defaults', 'restore'] },
+];
+
+const PLATFORM_PATHS: ReadonlyArray<{ key: keyof Settings; label: string; icon: React.ReactNode; color: string; desc: string }> = [
+  { key: 'steamPath',  label: 'Steam',      icon: PLATFORMS.steam?.icon, color: '#1b6dff', desc: 'Steam install folder' },
+  { key: 'epicPath',   label: 'Epic Games', icon: PLATFORMS.epic?.icon,  color: '#777',    desc: 'Epic Games path'      },
+  { key: 'gogPath',    label: 'GOG Galaxy', icon: PLATFORMS.gog?.icon,   color: '#86328a', desc: 'GOG Galaxy path'      },
+  { key: 'xboxPath',   label: 'Xbox',       icon: PLATFORMS.xbox?.icon,  color: '#107c10', desc: 'XboxGames root'       },
+  { key: 'chiakiPath', label: 'chiaki-ng',  icon: PLATFORMS.psn?.icon,   color: '#0072d1', desc: 'Custom Remote Play exe' },
 ];
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -191,6 +225,36 @@ export function SettingsPanel({
   const [specsLoading, setSpecsLoading] = useState(false);
   const [activeSection, setActiveSection] = useState('appearance');
   const [accounts, setAccounts] = useState<Record<string, any>>({});
+  const [searchQ, setSearchQ] = useState('');
+  // Two-click confirm flags. Replaces native `confirm()` dialogs with an inline
+  // "click again to confirm" pattern that matches the rest of the app.
+  const [chiakiUninstallArm, setChiakiUninstallArm] = useState(false);
+  const [reRunWizardArm, setReRunWizardArm] = useState(false);
+
+  // Reset query when the panel closes so it doesn't persist between sessions.
+  useEffect(() => { if (!show) setSearchQ(''); }, [show]);
+
+  const sectionLabelMap: Record<string, string> = (() => {
+    const out: Record<string, string> = {};
+    for (const grp of NAV_GROUPS) for (const it of grp.items) out[it.id] = it.label;
+    return out;
+  })();
+
+  const searchResults = (() => {
+    const q = searchQ.trim().toLowerCase();
+    if (!q) return null;
+    return SETTINGS_SEARCH_INDEX
+      .map(row => {
+        const label = row.label.toLowerCase();
+        const hitInLabel = label.includes(q);
+        const hitInKw = row.keywords.some(k => k.toLowerCase().includes(q));
+        if (!hitInLabel && !hitInKw) return null;
+        const score = label === q ? 100 : label.startsWith(q) ? 80 : hitInLabel ? 60 : 30;
+        return { ...row, score };
+      })
+      .filter((r): r is { section: string; label: string; keywords: string[]; score: number } => !!r)
+      .sort((a, b) => b.score - a.score);
+  })();
 
   async function checkChiaki() {
     setChiakiUpd({ checking: true });
@@ -654,9 +718,9 @@ export function SettingsPanel({
           subtitle="Override auto-detection. Leave blank to let Cereal find them."
         >
           <div className="set-paths">
-            {PLATFORM_PATHS.map(({ key, label, letter, color, desc }) => (
+            {PLATFORM_PATHS.map(({ key, label, icon, color, desc }) => (
               <div key={String(key)} className="set-path-row">
-                <div className="set-path-badge" style={{ background: color + '22', color, borderColor: color + '55' }}>{letter}</div>
+                <div className="set-path-badge" style={{ background: color + '22', color, borderColor: color + '55' }} aria-label={label}>{icon}</div>
                 <div className="set-path-info">
                   <div className="set-path-label">{label}</div>
                   <div className="set-path-desc">{desc}</div>
@@ -755,14 +819,22 @@ export function SettingsPanel({
               {chiakiUpd?.installed && (
                 <button className="btn-sm danger" disabled={chiakiUpd?.updating || chiakiUpd?.checking}
                   onClick={async () => {
-                    if (!confirm('Uninstall chiaki-ng and remove downloaded files?')) return;
+                    if (!chiakiUninstallArm) {
+                      setChiakiUninstallArm(true);
+                      setTimeout(() => setChiakiUninstallArm(false), 4000);
+                      return;
+                    }
+                    setChiakiUninstallArm(false);
                     setChiakiUpd((prev: any) => ({ ...prev, uninstalling: true }));
                     try {
                       const r = await (window.api as any)?.chiakiUninstall?.();
-                      if (r?.ok) { setChiakiUpd(null); if (typeof flash === 'function') flash('chiaki-ng uninstalled'); }
-                      else setChiakiUpd({ error: r?.error || 'Uninstall failed' });
-                    } catch (e: any) { setChiakiUpd({ error: e.message }); }
-                  }}>Uninstall</button>
+                      if (r?.ok) { setChiakiUpd(null); flash('chiaki-ng uninstalled', { severity: 'success' }); }
+                      else { setChiakiUpd({ error: r?.error || 'Uninstall failed' }); flash('Uninstall failed: ' + (r?.error || 'unknown'), { severity: 'error' }); }
+                    } catch (e: any) {
+                      setChiakiUpd({ error: e.message });
+                      flash('Uninstall failed: ' + e.message, { severity: 'error' });
+                    }
+                  }}>{chiakiUninstallArm ? 'Click again to confirm' : 'Uninstall'}</button>
               )}
             </div>
           </div>
@@ -929,11 +1001,16 @@ export function SettingsPanel({
         <div className="set-danger-actions">
           <button className="btn-sm danger" onClick={doReset}>Reset all</button>
           <button className="btn-sm" onClick={async () => {
-            if (!confirm('Re-run the first-time setup wizard?')) return;
+            if (!reRunWizardArm) {
+              setReRunWizardArm(true);
+              setTimeout(() => setReRunWizardArm(false), 4000);
+              return;
+            }
+            setReRunWizardArm(false);
             if ((window.api as any)?.saveSettings) await (window.api as any).saveSettings({ firstRun: true });
             if (typeof onRunWizard === 'function') onRunWizard(true);
-            flash('Setup wizard will run');
-          }}>Re-run wizard</button>
+            flash('Setup wizard will run', { severity: 'info' });
+          }}>{reRunWizardArm ? 'Click again to confirm' : 'Re-run wizard'}</button>
         </div>
       </Card>
     </>
@@ -948,25 +1025,56 @@ export function SettingsPanel({
             <div className="set-rail-brand-logo">CEREAL</div>
             <div className="set-rail-brand-ver">v{appVersion}</div>
           </div>
-          <div className="set-rail-groups">
-            {NAV_GROUPS.map((grp, gi) => (
-              <div key={gi} className={'set-rail-group' + (grp.danger ? ' danger' : '')}>
-                {grp.label && <div className="set-rail-group-label">{grp.label}</div>}
-                {grp.items.map(item => (
-                  <button key={item.id}
-                    role="tab"
-                    aria-selected={item.id === activeSection}
-                    className={'set-rail-btn' + (item.id === activeSection ? ' active' : '')}
-                    onClick={() => setActiveSection(item.id)}
-                  >
-                    <span className="set-rail-btn-ic">{item.icon}</span>
-                    <span className="set-rail-btn-lbl">{item.label}</span>
-                    <span className="set-rail-btn-tick" />
-                  </button>
-                ))}
-              </div>
-            ))}
+          <div className="set-rail-search">
+            <input
+              type="text"
+              value={searchQ}
+              onChange={e => setSearchQ(e.target.value)}
+              placeholder="Search settings…"
+              aria-label="Search settings"
+            />
+            {searchQ && (
+              <button className="set-rail-search-clear" onClick={() => setSearchQ('')} aria-label="Clear">×</button>
+            )}
           </div>
+          {searchResults ? (
+            <div className="set-rail-results" role="listbox">
+              {searchResults.length === 0 && (
+                <div className="set-rail-empty">No matches</div>
+              )}
+              {searchResults.map((r, i) => (
+                <button
+                  key={i}
+                  className="set-rail-result"
+                  onClick={() => { setActiveSection(r.section); setSearchQ(''); }}
+                  role="option"
+                >
+                  <span className="set-rail-result-label">{r.label}</span>
+                  <span className="set-rail-result-section">{sectionLabelMap[r.section] || r.section}</span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="set-rail-groups">
+              {NAV_GROUPS.map((grp, gi) => (
+                <div key={gi} className={'set-rail-group' + (grp.danger ? ' danger' : '')}>
+                  {grp.label && <div className="set-rail-group-label">{grp.label}</div>}
+                  {grp.items.map(item => (
+                    <button key={item.id}
+                      role="tab"
+                      aria-selected={item.id === activeSection}
+                      className={'set-rail-btn' + (item.id === activeSection ? ' active' : '')}
+                      onClick={() => setActiveSection(item.id)}
+                    >
+                      <span className="set-rail-btn-ic">{item.icon}</span>
+                      <span className="set-rail-btn-lbl">{item.label}</span>
+                      <span className="set-rail-btn-tick" />
+                    </button>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
           <div className="set-rail-foot">
             <span>Made with cereal</span>
           </div>

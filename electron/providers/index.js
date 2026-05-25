@@ -6,6 +6,7 @@ const steam = require('./steam');
 const gog = require('./gog');
 const epic = require('./epic');
 const xbox = require('./xbox');
+const xcloudCatalog = require('./xcloudCatalog');
 const ea = require('./ea');
 const battlenet = require('./battlenet');
 const itchio = require('./itchio');
@@ -20,6 +21,7 @@ module.exports = {
   gog,
   epic,
   xbox,
+  xcloudCatalog,
   ea,
   battlenet,
   itchio,

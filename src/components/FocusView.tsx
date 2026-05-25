@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { PLATFORMS } from '../constants';
 import { I } from '../constants';
 import { platformLabel, fmtTime, fmtDate, resolveGameImage, steamImgFallback } from '../utils';
-import type { Game } from '../types';
+import type { Game, FlashFn } from '../types';
 
 interface FocusViewProps {
   game: Game | null;
@@ -13,10 +13,11 @@ interface FocusViewProps {
   onDelete: (id: string) => void;
   onToggleHidden?: (game: Game) => void;
   onRefreshGame?: (game: Game) => void;
+  flash?: FlashFn;
   gpFocusIdx?: number;
 }
 
-export function FocusView({ game: gameProp, onClose, onLaunch, onFav, onEdit, onDelete, onToggleHidden, onRefreshGame, gpFocusIdx }: FocusViewProps) {
+export function FocusView({ game: gameProp, onClose, onLaunch, onFav, onEdit, onDelete, onToggleHidden, onRefreshGame, flash, gpFocusIdx }: FocusViewProps) {
   const [closing, setClosing] = useState(false);
   const [renderedGame, setRenderedGame] = useState<Game | null>(gameProp);
   const [refreshing, setRefreshing] = useState(false);
@@ -76,14 +77,21 @@ export function FocusView({ game: gameProp, onClose, onLaunch, onFav, onEdit, on
     const h = (e: KeyboardEvent) => {
       if (zoomSrc) return;
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onLaunch(renderedGame); }
-      else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); if (window.confirm('Remove "' + renderedGame.name + '" from library?')) onDelete(renderedGame.id); }
+      else if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault();
+        // Mirror the click-twice-to-confirm pattern already used by the Remove button
+        // below — replaces the old `window.confirm()` native dialog.
+        if (confirmingDelete) { onDelete(renderedGame.id); return; }
+        setConfirmingDelete(true);
+        setTimeout(() => setConfirmingDelete(false), 4000);
+      }
       else if (e.key === 'e' || e.key === 'E') { e.preventDefault(); onEdit(renderedGame); }
       else if (e.key === 'f' || e.key === 'F') { e.preventDefault(); onFav(renderedGame.id); }
       else if ((e.key === 'h' || e.key === 'H') && onToggleHidden) { e.preventDefault(); onToggleHidden(renderedGame); }
     };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
-  }, [renderedGame, zoomSrc, onLaunch, onDelete, onEdit, onFav, onToggleHidden]);
+  }, [renderedGame, zoomSrc, onLaunch, onDelete, onEdit, onFav, onToggleHidden, confirmingDelete]);
 
   if (!renderedGame) return null;
 
@@ -147,6 +155,17 @@ export function FocusView({ game: gameProp, onClose, onLaunch, onFav, onEdit, on
               <span style={{ width: 6, height: 6, borderRadius: '50%', background: p?.color, display: 'inline-block' }} />
               {platformLabel(game.platform)}
             </div>
+            {game.gamePassIncluded && (
+              <span className="focus-chip focus-chip-gp" title="Currently included in Xbox Game Pass">
+                Game Pass
+              </span>
+            )}
+            {game.xcloudPlayable && (
+              <span className="focus-chip focus-chip-cloud" title="Streamable via Xbox Cloud Gaming">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="11" height="11"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>
+                Cloud
+              </span>
+            )}
             <button className="focus-refresh" onClick={doRefresh} disabled={refreshing} title="Refresh metadata from online sources">
               {refreshing ? 'Fetching...' : 'Refresh Info'}
             </button>
@@ -211,6 +230,36 @@ export function FocusView({ game: gameProp, onClose, onLaunch, onFav, onEdit, on
               {confirmingDelete && <span style={{ marginLeft: 6, fontSize: 11 }}>Confirm</span>}
             </button>
           </div>
+          {/* "Stream on Xbox Cloud" — explicit cloud-launch alternative.
+              Surfaces whenever the default Play button does NOT already go
+              to xCloud, i.e. either:
+                • Xbox-platform game with a local UWP install (Play = local)
+                • Non-Xbox game that also lives in the Game Pass catalog
+                  (Play = native client). */}
+          {(game.xcloudPlayable || game.xcloudProductId)
+            && !(game.platform === 'xbox' && !game.xboxAumid) && (
+            <div className="focus-actions" style={{ marginTop: 8 }}>
+              <button
+                className="btn-ghost"
+                onClick={async () => {
+                  // Route through launchGame with forceCloud so the main
+                  // process owns the URL construction + DRY paths with the
+                  // standard launch (streamUrl override, catalog lookup,
+                  // Discord presence, lastPlayed bookkeeping).
+                  const r = await window.api.launchGame(game.id, { forceCloud: true });
+                  if (r && r.success === false && r.error) {
+                    flash?.('xCloud launch failed: ' + r.error, { severity: 'error' });
+                  } else {
+                    flash?.(`Streaming ${game.name} on Xbox Cloud Gaming…`, { severity: 'info' });
+                  }
+                }}
+                title="Open this title in Xbox Cloud Gaming (requires Game Pass Ultimate)"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>
+                Stream on Xbox Cloud
+              </button>
+            </div>
+          )}
           {/* Secondary actions: install / open in client (non-streaming, non-custom only) */}
           {!isStreaming && !isCustom && clientName && (installApi || openInClientApi) && (
             <div className="focus-actions" style={{ marginTop: 8 }}>
@@ -222,7 +271,11 @@ export function FocusView({ game: gameProp, onClose, onLaunch, onFav, onEdit, on
                     setMoreActionsBusy('install');
                     try {
                       const r = await installApi(game.id);
-                      if (r && r.success === false && r.error) window.alert(r.error);
+                      if (r && r.success === false && r.error) {
+                        flash?.('Install failed: ' + r.error, { severity: 'error' });
+                      } else if (r && r.success) {
+                        flash?.('Opening installer for ' + game.name + '…', { severity: 'info' });
+                      }
                     } finally { setMoreActionsBusy(null); }
                   }}
                 >
@@ -238,7 +291,9 @@ export function FocusView({ game: gameProp, onClose, onLaunch, onFav, onEdit, on
                     setMoreActionsBusy('client');
                     try {
                       const r = await openInClientApi(game.id);
-                      if (r && r.success === false && r.error) window.alert(r.error);
+                      if (r && r.success === false && r.error) {
+                        flash?.('Couldn’t open ' + clientName + ': ' + r.error, { severity: 'error' });
+                      }
                     } finally { setMoreActionsBusy(null); }
                   }}
                 >

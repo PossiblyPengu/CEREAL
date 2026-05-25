@@ -1,14 +1,21 @@
 // ─── Cover / header download queue & on-disk cache ─────────────────────────────
 // Downloads remote portrait `coverUrl` / wide `headerUrl` into userData/covers.
-// Portrait tries coverUrl then sgdbCoverUrl; if still missing, pulls metadata.
-//
-// See also: modules/metadata/gameArt.js (Steam CDN + SteamGridDB URLs).
+// Steam-specific URL knowledge lives in modules/metadata/gameArt.js — this file
+// stays platform-agnostic and just walks whichever candidate list it's handed.
 
-const { app, net } = require('electron');
+const { app } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const ctx = require('../core/context');
-const { fetchGameMetadata, applyMetadataToGame, getMetadataSettings } = require('../metadata/metadata');
+const {
+  fetchGameMetadata,
+  applyMetadataToGame,
+} = require('../metadata/metadata');
+const {
+  portraitUrlCandidates,
+  headerUrlCandidates,
+} = require('../metadata/gameArt');
+const { downloadToFile } = require('../metadata/http');
 const log = require('../core/logger');
 
 let _coversDir = null;
@@ -47,22 +54,16 @@ async function evictOldCovers({ force = false } = {}) {
   try {
     const dir = getCoversDir();
     let entries;
-    try {
-      entries = fs.readdirSync(dir);
-    } catch (e) {
-      return { error: e.message };
-    }
+    try { entries = fs.readdirSync(dir); }
+    catch (e) { return { error: e.message }; }
+
     const referenced = getReferencedCoverPaths();
     const items = [];
     let totalBytes = 0;
     for (const name of entries) {
       const full = path.join(dir, name);
       let st;
-      try {
-        st = fs.statSync(full);
-      } catch {
-        continue;
-      }
+      try { st = fs.statSync(full); } catch { continue; }
       if (!st.isFile()) continue;
       totalBytes += st.size;
       items.push({
@@ -87,13 +88,11 @@ async function evictOldCovers({ force = false } = {}) {
         totalBytes -= it.size;
         freed += it.size;
         evicted++;
-      } catch (_e) {
-        /* skip */
-      }
+      } catch (_e) { /* skip */ }
     }
     log.info(
       'covers',
-      `LRU eviction: removed ${evicted} files (${(freed / 1024 / 1024).toFixed(1)} MB), now ${(totalBytes / 1024 / 1024).toFixed(1)} MB`
+      `LRU eviction: removed ${evicted} files (${(freed / 1024 / 1024).toFixed(1)} MB), now ${(totalBytes / 1024 / 1024).toFixed(1)} MB`,
     );
     return {
       totalBytes,
@@ -108,87 +107,13 @@ async function evictOldCovers({ force = false } = {}) {
 }
 
 function cleanupFile(p) {
-  try {
-    if (fs.existsSync(p)) fs.unlinkSync(p);
-  } catch (_e) {
-    /* best-effort */
-  }
+  try { if (fs.existsSync(p)) fs.unlinkSync(p); }
+  catch (_e) { /* best-effort */ }
 }
 
 function isValidLocalFile(p) {
-  try {
-    return !!p && fs.existsSync(p) && fs.statSync(p).size >= 1024;
-  } catch (_e) {
-    return false;
-  }
-}
-
-async function downloadUrlToFile(url, destPath) {
-  const resp = await net.fetch(url);
-  if (!resp.ok) {
-    const err = new Error('HTTP ' + resp.status);
-    err.status = resp.status;
-    err.url = url;
-    throw err;
-  }
-  const buf = Buffer.from(await resp.arrayBuffer());
-  if (buf.length < 1024) {
-    const err = new Error('File too small (' + buf.length + ' bytes)');
-    err.url = url;
-    throw err;
-  }
-  fs.writeFileSync(destPath, buf);
-  return true;
-}
-
-// Steam CDN library asset URL — captures base + asset name so we can
-// generate alternates without the caller knowing the exact variant.
-const STEAM_LIB_URL_RE =
-  /^(https?:\/\/[^/]+\/store_item_assets\/steam\/apps\/(\d+))\/(library_600x900(?:_2x)?|library_hero|header)\.jpg(?:\?[^#]*)?$/i;
-
-/**
- * Expand a single image URL into the ordered list of variants we should try.
- *  - Steam portrait URLs → both library_600x900_2x.jpg AND library_600x900.jpg.
- *  - Steam header URLs   → library_hero.jpg first, then header.jpg as fallback.
- *  - Anything else       → just the URL itself.
- */
-function expandSteamUrl(url, kind) {
-  const m = STEAM_LIB_URL_RE.exec(url);
-  if (!m) return [url];
-  const base = m[1]; // .../apps/<appid>
-  if (kind === 'portrait') {
-    return [
-      `${base}/library_600x900_2x.jpg`,
-      `${base}/library_600x900.jpg`,
-    ];
-  }
-  // header / hero
-  return [
-    `${base}/library_hero.jpg`,
-    `${base}/header.jpg`,
-  ];
-}
-
-function expandUrls(urls, kind) {
-  const seen = new Set();
-  const out = [];
-  for (const raw of urls) {
-    if (!raw) continue;
-    for (const u of expandSteamUrl(raw, kind)) {
-      if (!seen.has(u)) { seen.add(u); out.push(u); }
-    }
-  }
-  return out;
-}
-
-/** Ordered portrait URLs for the grid tile — never use headerUrl here. */
-function portraitUrlCandidates(game) {
-  return expandUrls([game.coverUrl, game.sgdbCoverUrl], 'portrait');
-}
-
-/** Ordered header (wide) URLs — used by ensureLocalHeader. */
-function headerUrlCandidates(game) {
-  return expandUrls([game.headerUrl], 'header');
+  try { return !!p && fs.existsSync(p) && fs.statSync(p).size >= 1024; }
+  catch (_e) { return false; }
 }
 
 function extensionFromUrl(url) {
@@ -200,11 +125,11 @@ function extensionFromUrl(url) {
 }
 
 // ─── Persistent-failure backoff ─────────────────────────────────────────────
-// Many Steam appids (delisted apps, software, dedicated servers, very old
-// titles) simply have no library art on the CDN — every download will 404
-// forever. Marking the game's last-failure timestamp lets us stop hammering
-// the CDN on every startup. The flag is auto-cleared whenever a new URL gets
-// assigned (manual edit, art picker, fresh metadata fetch, or clearCovers).
+// Some games (delisted Steam apps, software entries, dedicated servers, very
+// old titles) genuinely have no library art on any CDN. Marking the failure
+// timestamp stops us re-fetching their metadata and re-trying 404 URLs every
+// startup. The flag is auto-cleared whenever a new URL gets assigned (manual
+// edit, art picker, fresh metadata fetch, or clearCovers).
 const COVER_FAIL_RETRY_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
 
 function shouldSkipDueToPriorFailure(game) {
@@ -220,8 +145,31 @@ function clearCoverFailure(game) {
   return changed;
 }
 
+async function tryDownloadCandidates(candidates, coversDir, gameId, prefix) {
+  let lastErr = null;
+  for (const url of candidates) {
+    try {
+      const dest = path.join(coversDir, `${prefix}_${gameId}${extensionFromUrl(url)}`);
+      await downloadToFile(url, dest);
+      return { dest, url };
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  return { dest: null, lastErr };
+}
+
 /**
- * Try each portrait URL until one downloads successfully.
+ * Try each portrait URL until one downloads. If direct candidates fail (or
+ * there were none), run one metadata-rescue pass: fetchGameMetadata
+ * HEAD-probes Steam's CDN and pulls a SteamGridDB grid (when configured),
+ * which may yield URLs the game's record didn't have. Then try those.
+ *
+ * Throws when no portrait could be downloaded for any reason — caller marks
+ * the failure timestamp so we don't re-try this game on every startup. The
+ * `changed` return flag indicates whether the game record was mutated (e.g.
+ * metadata was applied even when no portrait was available).
+ *
  * @returns {{ changed: boolean, triedMeta: boolean }}
  */
 async function ensureLocalPortrait(game, coversDir, gameId) {
@@ -232,65 +180,56 @@ async function ensureLocalPortrait(game, coversDir, gameId) {
     game.localCoverPath = null;
   }
 
-  const tried = portraitUrlCandidates(game);
-  let lastErr = null;
-  for (const coverUrl of tried) {
-    try {
-      const dest = path.join(coversDir, 'cover_' + gameId + extensionFromUrl(coverUrl));
-      await downloadUrlToFile(coverUrl, dest);
-      game.localCoverPath = dest;
-      game._imgStamp = Date.now();
-      clearCoverFailure(game);
-      return { changed: true, triedMeta: false };
-    } catch (e) {
-      lastErr = e;
-    }
+  const triedDirect = portraitUrlCandidates(game);
+  const direct = await tryDownloadCandidates(triedDirect, coversDir, gameId, 'cover');
+  if (direct.dest) {
+    game.localCoverPath = direct.dest;
+    game._imgStamp = Date.now();
+    clearCoverFailure(game);
+    return { changed: true, triedMeta: false };
   }
 
-  // Direct portrait URLs all failed. Try one more pass via the metadata
-  // pipeline — for old Steam titles with no library_600x900 capsule, this is
-  // where SteamGridDB kicks in and supplies an alternate cover URL.
-  // Conditions: SGDB key configured AND we don't already have a SGDB url
-  // we just tried. Without a key, fetchGameMetadata can't add new URLs we
-  // haven't already attempted, so skip the network round-trip.
-  const ms = (() => { try { return getMetadataSettings(); } catch { return null; } })();
-  const sgdbConfigured = !!(ms && ms.steamGridDbKey);
-  const alreadyHasSgdb = !!game.sgdbCoverUrl;
-  if (sgdbConfigured && !alreadyHasSgdb) {
-    try {
-      const meta = await fetchGameMetadata(game);
-      if (meta) {
-        const merged = applyMetadataToGame(game, meta);
-        const after = portraitUrlCandidates(game).filter(u => !tried.includes(u));
-        for (const coverUrl of after) {
-          try {
-            const dest = path.join(coversDir, 'cover_' + gameId + extensionFromUrl(coverUrl));
-            await downloadUrlToFile(coverUrl, dest);
-            game.localCoverPath = dest;
-            game._imgStamp = Date.now();
-            clearCoverFailure(game);
-            return { changed: true, triedMeta: true };
-          } catch (e) {
-            lastErr = e;
-          }
+  // Direct candidates exhausted (or never existed). Always run metadata rescue
+  // — this is what discovers Steam portraits via HEAD probe and SGDB fallback
+  // for games that have no coverUrl yet.
+  let lastErr = direct.lastErr;
+  let merged = false;
+  let triedMeta = false;
+  try {
+    const meta = await fetchGameMetadata(game);
+    if (meta) {
+      triedMeta = true;
+      merged = applyMetadataToGame(game, meta);
+      const after = portraitUrlCandidates(game).filter(u => !triedDirect.includes(u));
+      if (after.length > 0) {
+        const rescued = await tryDownloadCandidates(after, coversDir, gameId, 'cover');
+        if (rescued.dest) {
+          game.localCoverPath = rescued.dest;
+          game._imgStamp = Date.now();
+          clearCoverFailure(game);
+          return { changed: true, triedMeta: true };
         }
-        if (merged) return { changed: true, triedMeta: true };
+        lastErr = rescued.lastErr || lastErr;
       }
-    } catch (e) {
-      lastErr = e;
     }
+  } catch (e) {
+    lastErr = e;
+    triedMeta = true;
   }
 
-  const total = portraitUrlCandidates(game).length;
-  if (total > 0) {
-    const reason = (lastErr && lastErr.message) || 'unknown';
-    const suffix = sgdbConfigured ? '' : ' (no SteamGridDB key — set one in Settings)';
-    const err = new Error(`No portrait (tried ${total}, last: ${reason})${suffix}`);
-    err.permanent = !!lastErr && (lastErr.status >= 400 && lastErr.status < 500);
-    err.lastUrl = lastErr && lastErr.url;
-    throw err;
-  }
-  return { changed: false, triedMeta: false };
+  // Nothing worked. Always throw so the caller marks _coverFailedAt — even
+  // when there were never any candidates to try (no portrait found anywhere).
+  const reason = (lastErr && lastErr.message) || 'no portrait available';
+  const err = new Error(`No portrait (${reason})`);
+  // 4xx is permanent (URL doesn't exist); a no-candidates outcome is also
+  // permanent (rescue ran and found nothing). Network errors get retried.
+  err.permanent =
+    !lastErr ||
+    !!(lastErr.status >= 400 && lastErr.status < 500);
+  err.lastUrl = lastErr && lastErr.url;
+  err._metaMerged = merged;
+  err._triedMeta = triedMeta;
+  throw err;
 }
 
 /** @returns {boolean} true if a new header file was written */
@@ -305,19 +244,13 @@ async function ensureLocalHeader(game, coversDir, gameId) {
   const candidates = headerUrlCandidates(game);
   if (candidates.length === 0) return false;
 
-  let lastErr = null;
-  for (const url of candidates) {
-    try {
-      const dest = path.join(coversDir, 'header_' + gameId + extensionFromUrl(url));
-      await downloadUrlToFile(url, dest);
-      game.localHeaderPath = dest;
-      game._imgStamp = Date.now();
-      return true;
-    } catch (e) {
-      lastErr = e;
-    }
+  const r = await tryDownloadCandidates(candidates, coversDir, gameId, 'header');
+  if (r.dest) {
+    game.localHeaderPath = r.dest;
+    game._imgStamp = Date.now();
+    return true;
   }
-  if (lastErr) throw lastErr;
+  if (r.lastErr) throw r.lastErr;
   return false;
 }
 
@@ -326,26 +259,11 @@ const coverRetries = new Map();
 const MAX_COVER_RETRIES = 2;
 let coverWorkerRunning = false;
 
-// Per-session log dedup. Avoids the wall-of-warnings on startup when 1500+
-// games re-enqueue and 200+ permanently 404. Each unique (gid, message) pair
-// is logged once; a summary line is printed when the queue drains.
-const _loggedFailures = new Set();
+// Per-session failure counters — we never log per-game cover 404s anymore.
+// They flooded the console on first run with a Steam library. A single
+// summary line goes out when the queue drains.
 let _sessionFailCount = 0;
 let _sessionPermanentCount = 0;
-
-function logCoverFailure(gid, err) {
-  _sessionFailCount++;
-  if (err && err.permanent) _sessionPermanentCount++;
-  const key = gid + '|' + ((err && err.message) || 'unknown');
-  if (_loggedFailures.has(key)) return;
-  _loggedFailures.add(key);
-  // First ~20 unique failures get full detail, then we go quiet until summary.
-  if (_loggedFailures.size <= 20) {
-    log.warn('covers', 'download failed for', gid, '-', (err && err.message) || 'unknown');
-  } else if (_loggedFailures.size === 21) {
-    log.warn('covers', '(further per-game failures suppressed; summary at end)');
-  }
-}
 
 function enqueueCoverFetch(gameId) {
   if (!gameId) return;
@@ -372,32 +290,52 @@ async function processCoverQueue() {
       batch.map(async gid => {
         const game = db.games.find(g => g.id === gid);
         if (!game) return;
+
+        // Portrait — runs first so its metadata-rescue pass can populate
+        // headerUrl in time for the header fetch below.
+        let portraitErr = null;
+        let portraitChanged = false;
         try {
           const portrait = await ensureLocalPortrait(game, coversDir, gid);
-          const headerDone = await ensureLocalHeader(game, coversDir, gid);
-          if (portrait.changed || portrait.triedMeta || headerDone) anyChanged = true;
-          coverRetries.delete(gid);
+          if (portrait.changed || portrait.triedMeta) portraitChanged = true;
         } catch (e) {
-          logCoverFailure(gid, e);
-          // Permanent failures (HTTP 4xx) skip retries entirely — re-trying a
-          // 404 from the same URL has zero chance of success.
-          const isPermanent =
-            !!(e && (e.permanent || (e.status >= 400 && e.status < 500)));
-          const retries = (coverRetries.get(gid) || 0) + 1;
-          if (!isPermanent && retries <= MAX_COVER_RETRIES) {
-            coverRetries.set(gid, retries);
-            coverQueue.add(gid);
-          } else {
-            coverRetries.delete(gid);
-            // Persist the failure marker so we don't re-enqueue this game on
-            // every startup. Auto-clears whenever coverUrl/sgdbCoverUrl change
-            // or the user runs "Reset Covers" / "Fetch Metadata".
-            game._coverFailedAt = Date.now();
-            game._coverFailReason = (e && e.message) || 'unknown';
-            anyChanged = true;
-          }
+          portraitErr = e;
+          // Metadata that came in via the failed rescue still counts as a
+          // mutation we should persist (description, developer, headerUrl…).
+          if (e && e._metaMerged) portraitChanged = true;
         }
-      })
+
+        // Header — independent of portrait outcome.
+        let headerDone = false;
+        try {
+          headerDone = await ensureLocalHeader(game, coversDir, gid);
+        } catch (_e) {
+          /* header is best-effort; the portrait already drove the rescue */
+        }
+
+        if (portraitChanged || headerDone) anyChanged = true;
+
+        if (!portraitErr) {
+          coverRetries.delete(gid);
+          return;
+        }
+
+        _sessionFailCount++;
+        const isPermanent = !!(portraitErr.permanent ||
+          (portraitErr.status >= 400 && portraitErr.status < 500));
+        if (isPermanent) _sessionPermanentCount++;
+
+        const retries = (coverRetries.get(gid) || 0) + 1;
+        if (!isPermanent && retries <= MAX_COVER_RETRIES) {
+          coverRetries.set(gid, retries);
+          coverQueue.add(gid);
+        } else {
+          coverRetries.delete(gid);
+          game._coverFailedAt = Date.now();
+          game._coverFailReason = portraitErr.message || 'unknown';
+          anyChanged = true;
+        }
+      }),
     );
 
     if (anyChanged) {
@@ -414,9 +352,8 @@ async function processCoverQueue() {
   if (_sessionFailCount > 0) {
     log.info(
       'covers',
-      `queue drained — ${_sessionFailCount} download failures (${_sessionPermanentCount} permanent / 4xx); marked games will skip the next 7 days`,
+      `queue drained — ${_sessionFailCount} games had no available art (${_sessionPermanentCount} permanent / 4xx); those will skip the next 7 days`,
     );
-    _loggedFailures.clear();
     _sessionFailCount = 0;
     _sessionPermanentCount = 0;
   }

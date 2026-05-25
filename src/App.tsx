@@ -1,13 +1,17 @@
 ﻿import React, { useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense } from 'react';
 import ReactDOM from 'react-dom';
-import type { Game, Settings, ChiakiSession, ImportProgress, MetaProgress, ArtPickerOpts } from './types';
+import type { Game, Settings, ChiakiSession, ImportProgress, MetaProgress, ArtPickerOpts, FlashFn, ToastSeverity } from './types';
 import { PLATFORMS, STREAMING_PLATFORMS, CLUSTER_CENTERS, GALAXY_W, GALAXY_H, THEMES, I } from './constants';
 import { applyTheme, applyUiScale, resolveGameImage, steamImgFallback, fmtTime, useGamepad } from './utils';
 import { useGalaxyCamera } from './hooks/useGalaxyCamera';
 import { useParallax } from './hooks/useParallax';
 import { useInitialDataLoad, useChiakiAndRefreshListeners, useTabListeners, useAutoUpdateListener } from './hooks/useAppListeners';
 import { TabBar } from './components/TabBar';
-import { Toast } from './components/Toast';
+import { ToastStack } from './components/Toast';
+import type { ToastItem } from './components/Toast';
+import { ShortcutsHelp } from './components/ShortcutsHelp';
+import { ContextMenu } from './components/ContextMenu';
+import type { ContextMenuItem } from './components/ContextMenu';
 import { SearchOverlay } from './components/SearchOverlay';
 import { DetectPanel } from './components/panels/DetectPanel';
 import { ContinueBanner } from './components/ContinueBanner';
@@ -35,12 +39,14 @@ interface PlatformCardSectionProps {
   gpArea: string;
   gpIdx: number;
   isDimmed: (g: Game) => boolean;
-  onOpen: (g: Game) => void;
+  selectedIds: ReadonlySet<string>;
+  onOpen: (g: Game, event?: React.MouseEvent | React.KeyboardEvent) => void;
   onLaunch: (g: Game) => void;
   onFav: (id: string) => void;
+  onContext?: (g: Game, x: number, y: number) => void;
 }
 
-const PlatformCardSection = React.memo(function PlatformCardSection({ plat, games: sortedGms, cardIdxStart, gpActive, gpArea, gpIdx, isDimmed, onOpen, onLaunch, onFav }: PlatformCardSectionProps) {
+const PlatformCardSection = React.memo(function PlatformCardSection({ plat, games: sortedGms, cardIdxStart, gpActive, gpArea, gpIdx, isDimmed, selectedIds, onOpen, onLaunch, onFav, onContext }: PlatformCardSectionProps) {
   const p = PLATFORMS[plat];
   const [prevGamesLen, setPrevGamesLen] = useState(sortedGms.length);
   const [visibleCount, setVisibleCount] = useState(Math.min(sortedGms.length, INITIAL_CARDS));
@@ -83,13 +89,15 @@ const PlatformCardSection = React.memo(function PlatformCardSection({ plat, game
               game={g}
               dim={dim}
               isFocused={isFocused}
+              isSelected={selectedIds.has(g.id)}
               platColor={p.color}
-              platLetter={p.letter}
+              platIcon={p.icon}
               animDelay={Math.min(gi, 15) * 0.04 + 's'}
               noAnim={gi >= INITIAL_CARDS}
               onOpen={onOpen}
               onLaunch={onLaunch}
               onFav={onFav}
+              onContext={onContext}
             />
           );
         })}
@@ -105,27 +113,31 @@ interface GameCardProps {
   game: Game;
   dim: boolean;
   isFocused: boolean;
+  isSelected?: boolean;
   platColor: string;
-  platLetter: string;
+  platIcon: React.ReactNode;
   animDelay: string;
   noAnim?: boolean;
-  onOpen: (g: Game) => void;
+  onOpen: (g: Game, event?: React.MouseEvent | React.KeyboardEvent) => void;
   onLaunch: (g: Game) => void;
   onFav: (id: string) => void;
+  onContext?: (g: Game, x: number, y: number) => void;
 }
-const GameCard = React.memo(function GameCard({ game: g, dim, isFocused, platColor, platLetter, animDelay, noAnim, onOpen, onLaunch, onFav }: GameCardProps) {
+const GameCard = React.memo(function GameCard({ game: g, dim, isFocused, isSelected, platColor, platIcon, animDelay, noAnim, onOpen, onLaunch, onFav, onContext }: GameCardProps) {
   const covSrc = resolveGameImage(g, 'coverUrl');
   return (
     <div
-      className={'game-card' + (noAnim ? ' no-anim' : '') + (dim ? ' dimmed' : '') + (isFocused ? ' gp-focus' : '') + (g.installed === false ? ' not-installed' : '')}
+      className={'game-card' + (noAnim ? ' no-anim' : '') + (dim ? ' dimmed' : '') + (isFocused ? ' gp-focus' : '') + (isSelected ? ' multi-selected' : '') + (g.installed === false ? ' not-installed' : '')}
       style={noAnim ? undefined : { animationDelay: animDelay }}
       role="button"
       tabIndex={dim ? -1 : 0}
       aria-label={g.name}
-      onClick={() => onOpen(g)}
+      aria-selected={isSelected}
+      onClick={e => onOpen(g, e)}
+      onContextMenu={onContext ? e => { e.preventDefault(); onContext(g, e.clientX, e.clientY); } : undefined}
       onDoubleClick={e => { e.preventDefault(); e.stopPropagation(); onLaunch(g); }}
       onKeyDown={e => {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(g); return; }
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(g, e); return; }
         if (e.key === 'ArrowRight' || e.key === 'ArrowLeft' || e.key === 'ArrowDown' || e.key === 'ArrowUp') {
           e.preventDefault();
           const cards = Array.from(document.querySelectorAll<HTMLElement>('.game-card[tabindex="0"]'));
@@ -141,9 +153,10 @@ const GameCard = React.memo(function GameCard({ game: g, dim, isFocused, platCol
       <div className="card-cover">
         {covSrc && <img src={covSrc} alt="" loading="lazy" decoding="async" onLoad={e => { (e.target as HTMLImageElement).style.display = ''; const sib = (e.target as HTMLImageElement).nextSibling as HTMLElement; if (sib) sib.style.display = 'none'; }} onError={e => { steamImgFallback(g, e as React.SyntheticEvent<HTMLImageElement>); const img = e.target as HTMLImageElement; const sib = img.nextSibling as HTMLElement; if (img.style.display === 'none' && sib) sib.style.display = 'flex'; }} />}
         <div className="card-cover-fallback" style={covSrc ? { display: 'none' } : {}}>{g.name.charAt(0)}</div>
-        <div className="card-plat-badge" style={{ background: 'rgba(0,0,0,0.55)', color: platColor }}>{platLetter}</div>
+        <div className="card-plat-badge" style={{ color: platColor }} aria-label={g.platform}>{platIcon}</div>
         {g.favorite && <div className="card-fav"><svg viewBox="0 0 24 24" fill="currentColor" width="10" height="10"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg></div>}
         {g.installed === false && <div className="card-not-installed-badge" title="Not installed"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="10" height="10"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.88 18.09A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.29"/></svg></div>}
+        {g.xcloudPlayable && <div className={'card-cloud-badge' + (g.gamePassIncluded ? ' gp' : '')} title={g.gamePassIncluded ? 'Game Pass · Cloud-playable' : 'Cloud-playable via Xbox Cloud Gaming'} aria-label={g.gamePassIncluded ? 'Included in Game Pass and streamable via Xbox Cloud Gaming' : 'Streamable via Xbox Cloud Gaming'}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="10" height="10"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg></div>}
         <div className="card-hover-actions">
           <button className="card-hover-btn play" onClick={e => { e.stopPropagation(); onLaunch(g); }}>Play</button>
           <button className="card-hover-btn ghost" onClick={e => { e.stopPropagation(); onFav(g.id); }}>{g.favorite ? 'Unfav' : 'Fav'}</button>
@@ -182,6 +195,11 @@ export default function App() {
   const [focusGame, setFocusGame] = useState<Game | null>(null);
   const [showSearch, setShowSearch] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
+  const [gameMenu, setGameMenu] = useState<{ game: Game; x: number; y: number } | null>(null);
+  const [dropPrefill, setDropPrefill] = useState<Partial<Game> | null>(null);
+  const [dropHint, setDropHint] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(() => new Set());
   const [showDetect, setShowDetect] = useState(false);
   const [showPlatforms, setShowPlatforms] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -193,13 +211,18 @@ export default function App() {
   });
   const [editGame, setEditGame] = useState<Game | null>(null);
   const [chiakiSessions, setChiakiSessions] = useState<Record<string, ChiakiSession>>({});
-  const [toast, setToast] = useState<React.ReactNode>('');
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const toastIdRef = useRef(0);
   const [entered, setEntered] = useState(false);
   const [ready, setReady] = useState(false);
   const [viewMode, setViewMode] = useState('orbit');
   const [viewTransition, setViewTransition] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState('default');
-  const [continueBannerDismissed, setContinueBannerDismissed] = useState(false);
+  // Per-entry dismiss for the "Continue Playing" banner. Storing the set of
+  // dismissed game IDs (rather than a single boolean) means that if the user
+  // dismisses the banner for game A and then plays game B, B's banner appears
+  // — which matches the user's expectation that the dismiss is per-entry.
+  const [continueDismissedIds, setContinueDismissedIds] = useState<ReadonlySet<string>>(() => new Set());
   const [gpIdx, setGpIdx] = useState(-1);
   const [gpArea, setGpArea] = useState('cards');
   const [gpActive, setGpActive] = useState(false);
@@ -280,7 +303,10 @@ export default function App() {
     showChiaki: false,
     showPlatforms: false,
     showWizard: false,
+    showShortcuts: false,
     artPickerOpen: false,
+    tabs: [] as { id: string; title: string; closable: boolean; platform: string | null }[],
+    activeTabId: 'launcher',
   });
   const pickRandomGameRef = useRef<() => void>(() => {});
   const tryPickRandomRef = useRef<() => void>(() => {});
@@ -301,7 +327,20 @@ export default function App() {
     return () => window.removeEventListener('resize', upd);
   }, []);
 
-  const flash = useCallback((m: React.ReactNode) => { setToast(''); setTimeout(() => setToast(m), 30); }, []);
+  const dismissToast = useCallback((id: number) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
+
+  const flash: FlashFn = useCallback((m, opts) => {
+    const severity: ToastSeverity = opts?.severity ?? 'info';
+    const duration = opts?.duration ?? (opts?.action ? 6500 : severity === 'error' ? 5500 : 3500);
+    const id = ++toastIdRef.current;
+    setToasts(prev => {
+      // Keep at most 4 visible at once; drop the oldest if we exceed.
+      const next = prev.length >= 4 ? prev.slice(prev.length - 3) : prev;
+      return [...next, { id, msg: m, severity, duration, action: opts?.action }];
+    });
+  }, []);
 
   const switchView = useCallback((mode: string) => {
     if (mode === viewMode || viewTransition) return;
@@ -402,9 +441,17 @@ export default function App() {
       showChiaki,
       showPlatforms,
       showWizard,
+      showShortcuts,
       artPickerOpen: !!globalArtPicker,
+      tabs,
+      activeTabId,
     };
-  }, [focusGame, showThemePicker, showLayoutPicker, showFilters, showSearch, showSettings, showAdd, showDetect, showChiaki, showPlatforms, showWizard, globalArtPicker]);
+  }, [focusGame, showThemePicker, showLayoutPicker, showFilters, showSearch, showSettings, showAdd, showDetect, showChiaki, showPlatforms, showWizard, showShortcuts, globalArtPicker, tabs, activeTabId]);
+
+  // Refs for handlers used by the global key dispatcher so we don't re-create the listener.
+  const setActiveTabIdRef = useRef(setActiveTabId);
+  setActiveTabIdRef.current = setActiveTabId;
+  const handleCloseTabRef = useRef<(id: string) => void>(() => {});
 
   // Keyboard shortcuts — registered once, reads state via ref
   useEffect(() => {
@@ -415,15 +462,47 @@ export default function App() {
       return t.isContentEditable;
     };
     const handler = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); setShowSearch(true); }
-      if ((e.ctrlKey || e.metaKey) && e.key === ',') { e.preventDefault(); setShowSettings(true); }
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'r' || e.key === 'R')) {
+      const ctrl = e.ctrlKey || e.metaKey;
+
+      if (ctrl && e.key === 'k') { e.preventDefault(); setShowSearch(true); return; }
+      if (ctrl && e.key === 'f') { e.preventDefault(); setShowSearch(true); return; }
+      if (ctrl && e.key === ',') { e.preventDefault(); setShowSettings(true); return; }
+      if (ctrl && (e.key === 'n' || e.key === 'N') && !e.shiftKey) {
+        e.preventDefault();
+        if (typingTarget(e.target)) return;
+        setShowAdd(true); setEditGame(null);
+        return;
+      }
+      if (ctrl && e.shiftKey && (e.key === 'r' || e.key === 'R')) {
         e.preventDefault();
         if (typingTarget(e.target)) return;
         tryPickRandomRef.current();
+        return;
+      }
+      if (ctrl && (e.key === 'w' || e.key === 'W')) {
+        e.preventDefault();
+        const id = kbStateRef.current.activeTabId;
+        const tab = kbStateRef.current.tabs.find(t => t.id === id);
+        if (tab?.closable) handleCloseTabRef.current(id);
+        return;
+      }
+      // Ctrl+1..9 → jump to tab N. Treats launcher as 1, then the rest in order.
+      if (ctrl && !e.shiftKey && /^[1-9]$/.test(e.key)) {
+        const idx = parseInt(e.key, 10) - 1;
+        const target = kbStateRef.current.tabs[idx];
+        if (target) { e.preventDefault(); setActiveTabIdRef.current(target.id); }
+        return;
+      }
+      // `?` or Ctrl+/ → keyboard shortcuts overlay
+      if ((!ctrl && e.shiftKey && e.key === '?') || (ctrl && e.key === '/')) {
+        if (typingTarget(e.target)) return;
+        e.preventDefault();
+        setShowShortcuts(true);
+        return;
       }
       if (e.key === 'Escape') {
         const { focusGame: fg, showThemePicker: stp, showLayoutPicker: slp, showFilters: sf } = kbStateRef.current;
+        if (kbStateRef.current.showShortcuts) { setShowShortcuts(false); return; }
         if (fg) { setFocusGame(null); return; }
         if (stp) { setShowThemePicker(false); return; }
         if (slp) { setShowLayoutPicker(false); return; }
@@ -466,13 +545,14 @@ export default function App() {
 
   const doLaunch = useCallback(async (game: Game) => {
     if (window.api) {
+      flash('Launching ' + game.name + '…');
       const r = await window.api.launchGame(game.id);
       if (r.success) {
-        flash('Launching ' + game.name);
+        flash('Launched ' + game.name, { severity: 'success' });
         if (r.lastPlayed) _updateGameInState({ ...game, lastPlayed: r.lastPlayed });
         if (settings.minimizeOnLaunch) window.api?.minimize?.();
-      } else flash('Error: ' + r.error);
-    } else flash('Launching ' + game.name + '...');
+      } else flash('Couldn’t launch ' + game.name + (r.error ? ': ' + r.error : ''), { severity: 'error' });
+    } else flash('Launching ' + game.name + '…');
   }, [flash, settings.minimizeOnLaunch, _updateGameInState]);
 
   const doFav = useCallback(async (id: string) => {
@@ -482,14 +562,23 @@ export default function App() {
 
   const doToggleHidden = useCallback(async (game: Game) => {
     const willHide = !game.hidden;
-    if (window.api) {
-      const u = await window.api.updateGame({ id: game.id, hidden: willHide });
-      if (u) _updateGameInState(u);
-    } else {
-      setGames(g => g.map(x => x.id === game.id ? { ...x, hidden: willHide } : x));
-    }
-    flash(willHide ? 'Hidden — enable "Show hidden" in filters to see it' : 'Shown in library again');
+    const apply = async (hidden: boolean) => {
+      if (window.api) {
+        const u = await window.api.updateGame({ id: game.id, hidden });
+        if (u) _updateGameInState(u);
+      } else {
+        setGames(g => g.map(x => x.id === game.id ? { ...x, hidden } : x));
+      }
+    };
+    await apply(willHide);
     if (willHide) setFocusGame(fg => (fg?.id === game.id ? null : fg));
+    flash(
+      willHide ? 'Hidden — enable "Show hidden" in filters to see it' : 'Shown in library again',
+      {
+        severity: 'info',
+        action: { label: 'Undo', onClick: () => { void apply(!willHide); } },
+      },
+    );
   }, [_updateGameInState, setGames, flash]);
 
   const doAdd = async (f: Partial<Game>) => {
@@ -501,7 +590,7 @@ export default function App() {
       const g: Game = { ...f, id: Date.now() + '', addedAt: new Date().toISOString(), playtimeMinutes: 0, favorite: false } as Game;
       setGames(prev => [...prev, g]); created = g;
     }
-    setShowAdd(false); setEditGame(null); flash('Game added');
+    setShowAdd(false); setEditGame(null); setDropPrefill(null); flash('Game added', { severity: 'success' });
     return created;
   };
 
@@ -509,13 +598,235 @@ export default function App() {
     let updated: Game | null = null;
     if (window.api) { const u = await window.api.updateGame(f); if (u) { _updateGameInState(u); updated = u; } }
     else { setGames(g => g.map(x => x.id === f.id ? { ...x, ...f, _imgStamp: f.coverUrl ? Date.now() : x._imgStamp } as Game : x)); updated = f; }
-    setShowAdd(false); setEditGame(null); flash('Game updated');
+    setShowAdd(false); setEditGame(null); setDropPrefill(null); flash('Game updated', { severity: 'success' });
     return updated;
   };
 
   const doDelete = useCallback(async (id: string) => {
+    // Snapshot the game so the Undo action can re-add it.
+    const snapshot = (() => {
+      let found: Game | null = null;
+      setGames(g => {
+        found = g.find(x => x.id === id) || null;
+        return g.filter(x => x.id !== id);
+      });
+      return found;
+    })();
     if (window.api) await window.api.deleteGame(id);
-    setGames(g => g.filter(x => x.id !== id)); setFocusGame(null); flash('Game removed');
+    setFocusGame(null);
+    const name = snapshot ? snapshot.name : 'Game';
+    flash('Removed ' + name, {
+      severity: 'info',
+      action: snapshot ? {
+        label: 'Undo',
+        onClick: async () => {
+          if (!snapshot) return;
+          if (window.api) {
+            const restored = await window.api.addGame(snapshot as Game);
+            if (restored) setGames(g => [...g, restored]);
+          } else {
+            setGames(g => [...g, snapshot as Game]);
+          }
+          flash('Restored ' + name, { severity: 'success' });
+        },
+      } : undefined,
+    });
+  }, [flash, setGames]);
+
+  const openGameContextMenu = useCallback((g: Game, x: number, y: number) => {
+    setGameMenu({ game: g, x, y });
+  }, []);
+
+  /**
+   * Card click router. Honors modifier keys for multi-select; otherwise falls
+   * through to the regular "open in FocusView" behaviour.
+   *   - Ctrl/Cmd-click: toggle selection (entering multi-select mode if needed).
+   *   - Plain click while items are selected: toggle that card too (keeps selection alive).
+   *   - Plain click otherwise: open the game.
+   */
+  const handleCardOpen = useCallback((g: Game, event?: React.MouseEvent | React.KeyboardEvent) => {
+    const mod = !!event && ((event as React.MouseEvent).ctrlKey || (event as React.MouseEvent).metaKey);
+    setSelectedIds(prev => {
+      if (mod) {
+        const next = new Set(prev);
+        if (next.has(g.id)) next.delete(g.id); else next.add(g.id);
+        return next;
+      }
+      if (prev.size > 0) {
+        const next = new Set(prev);
+        if (next.has(g.id)) next.delete(g.id); else next.add(g.id);
+        return next;
+      }
+      return prev;
+    });
+    if (!mod && selectedIds.size === 0) setFocusGame(g);
+  }, [selectedIds]);
+
+  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
+
+  // Esc clears any multi-selection.
+  useEffect(() => {
+    if (selectedIds.size === 0) return;
+    const h = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        const t = e.target as HTMLElement | null;
+        if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+        clearSelection();
+      }
+    };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [selectedIds.size, clearSelection]);
+
+  /** Apply a one-shot mutator to every selected game; surfaces a single toast on completion. */
+  const bulkApply = useCallback(async (
+    mutator: (g: Game) => Promise<Game | null | void> | Game | null | void,
+    label: string,
+  ) => {
+    if (selectedIds.size === 0) return;
+    const ids = Array.from(selectedIds);
+    const targets = games.filter(g => ids.includes(g.id));
+    let ok = 0;
+    for (const g of targets) {
+      try {
+        const r = await mutator(g);
+        if (r && typeof r === 'object') _updateGameInState(r as Game);
+        ok++;
+      } catch (_e) { /* keep going */ }
+    }
+    flash(label + ' ' + ok + ' game' + (ok === 1 ? '' : 's'), { severity: 'success' });
+    clearSelection();
+  }, [selectedIds, games, _updateGameInState, flash, clearSelection]);
+
+  const bulkFavorite = useCallback(() => {
+    const ids = Array.from(selectedIds);
+    const allFav = games.filter(g => ids.includes(g.id)).every(g => g.favorite);
+    const target = !allFav; // if all are already favourited, the action becomes "unfavorite all"
+    return bulkApply(async g => {
+      if (g.favorite === target) return;
+      if (window.api) return await window.api.toggleFavorite(g.id) as Game;
+      return { ...g, favorite: target };
+    }, target ? 'Favorited' : 'Unfavorited');
+  }, [selectedIds, games, bulkApply]);
+
+  const bulkHide = useCallback(() => {
+    const ids = Array.from(selectedIds);
+    const anyVisible = games.filter(g => ids.includes(g.id)).some(g => !g.hidden);
+    const target = anyVisible;
+    return bulkApply(async g => {
+      if (g.hidden === target) return;
+      if (window.api) return await window.api.updateGame({ id: g.id, hidden: target }) as Game;
+      return { ...g, hidden: target };
+    }, target ? 'Hid' : 'Unhid');
+  }, [selectedIds, games, bulkApply]);
+
+  const bulkRemove = useCallback(async () => {
+    if (selectedIds.size === 0) return;
+    const ids = Array.from(selectedIds);
+    const snapshots = games.filter(g => ids.includes(g.id));
+    setGames(g => g.filter(x => !ids.includes(x.id)));
+    if (window.api) {
+      for (const id of ids) { try { await window.api.deleteGame(id); } catch (_e) { /* ignore */ } }
+    }
+    clearSelection();
+    flash('Removed ' + snapshots.length + ' game' + (snapshots.length === 1 ? '' : 's'), {
+      severity: 'info',
+      action: {
+        label: 'Undo',
+        onClick: async () => {
+          const restored: Game[] = [];
+          if (window.api) {
+            for (const snap of snapshots) {
+              try { const r = await window.api.addGame(snap); if (r) restored.push(r); } catch (_e) { /* ignore */ }
+            }
+          }
+          setGames(g => [...g, ...(restored.length ? restored : snapshots)]);
+          flash('Restored ' + (restored.length || snapshots.length) + ' game' + (snapshots.length === 1 ? '' : 's'), { severity: 'success' });
+        },
+      },
+    });
+  }, [selectedIds, games, setGames, clearSelection, flash]);
+
+  // ─── Drag and drop: drop an executable, .lnk, or Steam URL onto the window to add a game.
+  useEffect(() => {
+    const isDragWithPayload = (e: DragEvent) => {
+      const types = e.dataTransfer?.types;
+      if (!types) return false;
+      // `Files` covers OS file drops; `text/uri-list` and `text/plain` cover URL drags.
+      return Array.from(types).some(t => t === 'Files' || t === 'text/uri-list' || t === 'text/plain');
+    };
+    const onOver = (e: DragEvent) => {
+      if (!isDragWithPayload(e)) return;
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+      setDropHint(true);
+    };
+    const onLeave = (e: DragEvent) => {
+      // The drop hint flickers if we toggle on every child leave; only clear when the
+      // pointer is genuinely outside the window.
+      if (e.relatedTarget === null || (e.clientX <= 0 && e.clientY <= 0)) setDropHint(false);
+    };
+    const onDrop = async (e: DragEvent) => {
+      if (!isDragWithPayload(e)) return;
+      e.preventDefault();
+      setDropHint(false);
+
+      // 1) Plain text / URL drop → handle Steam app URLs (steam://, store.steampowered.com).
+      const txt = e.dataTransfer?.getData('text/uri-list') || e.dataTransfer?.getData('text/plain') || '';
+      if (txt) {
+        const url = txt.trim();
+        const steamApp = url.match(/(?:store\.steampowered\.com\/app|steam:\/\/(?:run\/|rungameid\/))\s*\/?(\d+)/i)?.[1]
+          || url.match(/steamcommunity\.com\/app\/(\d+)/i)?.[1];
+        if (steamApp) {
+          setDropPrefill({ platform: 'steam', platformId: steamApp, name: '' });
+          setEditGame(null);
+          setShowAdd(true);
+          flash('Steam app ' + steamApp + ' — fill out the details', { severity: 'info' });
+          return;
+        }
+        if (/^https?:\/\//i.test(url)) {
+          setDropPrefill({ platform: 'custom', website: url });
+          setEditGame(null);
+          setShowAdd(true);
+          flash('Dropped URL — fill in name and path', { severity: 'info' });
+          return;
+        }
+      }
+
+      // 2) File drop → must extract path via Electron's webUtils.getPathForFile.
+      const files = e.dataTransfer?.files;
+      if (files && files.length > 0) {
+        const getPath = (window.api as unknown as { getPathForFile?: (f: File) => string }).getPathForFile;
+        if (!getPath) {
+          flash('File drop requires a newer build of Cereal — restart the app', { severity: 'warning' });
+          return;
+        }
+        const dropped: { path: string; name: string }[] = [];
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          const path = getPath(file);
+          if (path) dropped.push({ path, name: file.name });
+        }
+        const exe = dropped.find(d => /\.(exe|lnk|bat|cmd|appimage|app|sh)$/i.test(d.path)) || dropped[0];
+        if (!exe) { flash('Couldn’t read dropped file', { severity: 'error' }); return; }
+
+        const friendly = exe.name.replace(/\.(exe|lnk|bat|cmd|appimage|app|sh)$/i, '').replace(/[-_.]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+        setDropPrefill({ platform: 'custom', executablePath: exe.path, name: friendly });
+        setEditGame(null);
+        setShowAdd(true);
+        flash('Added details for ' + friendly + ' — review and save', { severity: 'info' });
+        return;
+      }
+    };
+
+    window.addEventListener('dragover', onOver);
+    window.addEventListener('dragleave', onLeave);
+    window.addEventListener('drop', onDrop);
+    return () => {
+      window.removeEventListener('dragover', onOver);
+      window.removeEventListener('dragleave', onLeave);
+      window.removeEventListener('drop', onDrop);
+    };
   }, [flash]);
 
   const doImport = async (list: Game[]) => {
@@ -906,10 +1217,11 @@ export default function App() {
       (window.api as unknown as Record<string, (id: string) => void>)?.closeTab?.(id);
     }
   };
+  handleCloseTabRef.current = handleCloseTab;
 
   return (
     <div className={'pos-' + tbPos + '-layout' + (showChiaki ? ' panel-tab-active' : '')} style={{ width: '100%', height: '100%', position: 'relative' }}>
-      <TabBar tabs={tabs} activeTab={activeTabId} onSwitch={id => { setActiveTabId(id); (window.api as unknown as Record<string, (id: string) => void>)?.switchTab?.(id); }} onClose={handleCloseTab} />
+      <TabBar tabs={tabs} activeTab={activeTabId} onSwitch={id => { setActiveTabId(id); (window.api as unknown as Record<string, (id: string) => void>)?.switchTab?.(id); }} onClose={handleCloseTab} onReorder={setTabs} />
 
       {/* Panel-tab pages (rendered only when their tab is active) */}
       {showChiaki && (
@@ -1042,9 +1354,11 @@ export default function App() {
                   gpArea={gpArea}
                   gpIdx={gpIdx}
                   isDimmed={isDimmed}
-                  onOpen={setFocusGame}
+                  selectedIds={selectedIds}
+                  onOpen={handleCardOpen}
                   onLaunch={doLaunch}
                   onFav={doFav}
+                  onContext={openGameContextMenu}
                 />
               );
             });
@@ -1323,12 +1637,21 @@ export default function App() {
         </div>
       )}
 
-      {mostRecentGame && !continueBannerDismissed && !focusGame && !anyPanelOpen && (
-        <ContinueBanner game={mostRecentGame} onPlay={() => doLaunch(mostRecentGame)} onDismiss={() => setContinueBannerDismissed(true)} />
+      {mostRecentGame && !continueDismissedIds.has(mostRecentGame.id) && !focusGame && !anyPanelOpen && (
+        <ContinueBanner
+          game={mostRecentGame}
+          onPlay={() => doLaunch(mostRecentGame)}
+          onDismiss={() => setContinueDismissedIds(prev => {
+            const next = new Set(prev);
+            next.add(mostRecentGame.id);
+            return next;
+          })}
+        />
       )}
 
       {liveFocus && <Suspense fallback={null}><FocusView game={liveFocus} onClose={() => setFocusGame(null)} onLaunch={doLaunch} onFav={doFav} onEdit={doEditFromFocus} onDelete={doDelete} onToggleHidden={doToggleHidden}
-        onRefreshGame={(g: Game) => { _updateGameInState(g); setFocusGame(g); flash('Metadata updated'); }}
+        onRefreshGame={(g: Game) => { _updateGameInState(g); setFocusGame(g); flash('Metadata updated', { severity: 'success' }); }}
+        flash={flash}
         gpFocusIdx={gpActive && gpArea === 'focus' ? gpIdx : -1} /></Suspense>}
 
       {Object.entries(chiakiSessions).filter(([, s]) => s.state === 'gui').map(([gid]) => {
@@ -1358,9 +1681,9 @@ export default function App() {
       }} />
 
       <SearchOverlay show={showSearch} onClose={() => setShowSearch(false)} games={games} onSelect={g => setFocusGame(g)} onLaunch={doLaunch} />
-      {showAdd && <Suspense fallback={null}><AddPanel show={showAdd} onClose={() => { setShowAdd(false); setEditGame(null); }} onSave={editGame ? (f: Partial<Game>) => doEdit(f as Game).then(r => r ?? undefined) : (f: Partial<Game>) => doAdd(f).then(r => r ?? undefined)}
-        onUpdated={(g: Game) => { _updateGameInState(g); setShowAdd(false); setEditGame(null); }}
-        categories={cats} editGame={editGame} flash={flash} onOpenArtPicker={openArtPicker} /></Suspense>}
+      {showAdd && <Suspense fallback={null}><AddPanel show={showAdd} onClose={() => { setShowAdd(false); setEditGame(null); setDropPrefill(null); }} onSave={editGame ? (f: Partial<Game>) => doEdit(f as Game).then(r => r ?? undefined) : (f: Partial<Game>) => doAdd(f).then(r => r ?? undefined)}
+        onUpdated={(g: Game) => { _updateGameInState(g); setShowAdd(false); setEditGame(null); setDropPrefill(null); }}
+        categories={cats} editGame={editGame} prefill={dropPrefill} flash={flash} onOpenArtPicker={openArtPicker} /></Suspense>}
       <DetectPanel show={showDetect} onClose={() => setShowDetect(false)} onImport={doImport} />
       {showPlatforms && <Suspense fallback={null}><PlatformsPanel show={showPlatforms} onClose={() => setShowPlatforms(false)} flash={flash} setGames={setGames} onOpenChiaki={() => openPanelTab('chiaki')} onOpenXcloud={() => launchXcloud()} /></Suspense>}
       {showSettings && <Suspense fallback={null}><SettingsPanel show={showSettings} onClose={() => setShowSettings(false)} flash={flash} settings={settings} onSettingsChange={(s: Settings) => onSettingsChange(s)}
@@ -1381,8 +1704,130 @@ export default function App() {
         </div>
       )}
 
-      <div role="status" aria-live="polite" aria-atomic="true" style={{ position:'fixed', width:1, height:1, overflow:'hidden', clip:'rect(0,0,0,0)', whiteSpace:'nowrap', pointerEvents:'none' }}>{typeof toast === 'string' ? toast : ''}</div>
-      {toast !== '' && <Toast msg={toast} onDone={() => setToast('')} />}
+      <div role="status" aria-live="polite" aria-atomic="true" style={{ position:'fixed', width:1, height:1, overflow:'hidden', clip:'rect(0,0,0,0)', whiteSpace:'nowrap', pointerEvents:'none' }}>
+        {toasts.map(t => (typeof t.msg === 'string' ? t.msg : '')).filter(Boolean).join(' · ')}
+      </div>
+      <ToastStack toasts={toasts} onDismiss={dismissToast} />
+      <ShortcutsHelp show={showShortcuts} onClose={() => setShowShortcuts(false)} />
+      {dropHint && (
+        <div className="drop-hint" aria-hidden>
+          <div className="drop-hint-inner">
+            <div className="drop-hint-glyph">{I.download}</div>
+            <div className="drop-hint-title">Drop to add</div>
+            <div className="drop-hint-sub">Executable, shortcut, or Steam URL</div>
+          </div>
+        </div>
+      )}
+      {selectedIds.size > 0 && (
+        <div className="bulk-bar" role="toolbar" aria-label="Bulk actions">
+          <span className="bulk-bar-count">{selectedIds.size} selected</span>
+          <span className="bulk-bar-sep" />
+          <button className="bulk-bar-btn" onClick={() => void bulkFavorite()}>
+            <span className="bulk-bar-ic">{I.star}</span>Favorite
+          </button>
+          <button className="bulk-bar-btn" onClick={() => void bulkHide()}>
+            <span className="bulk-bar-ic">{I.eyeOff}</span>Hide
+          </button>
+          <button className="bulk-bar-btn danger" onClick={() => void bulkRemove()}>
+            <span className="bulk-bar-ic">{I.trash}</span>Remove
+          </button>
+          <span className="bulk-bar-sep" />
+          <button className="bulk-bar-btn ghost" onClick={clearSelection} aria-label="Clear selection" title="Clear (Esc)">Clear</button>
+        </div>
+      )}
+      {gameMenu && (() => {
+        const g = gameMenu.game;
+        const platClient: Record<string, string> = {
+          steam: 'Steam', epic: 'Epic Games', gog: 'GOG Galaxy',
+          ea: 'EA App', battlenet: 'Battle.net', ubisoft: 'Ubisoft Connect',
+          itchio: 'itch.io',
+        };
+        const clientName = platClient[g.platform];
+        const isStreaming = g.platform === 'psn' || g.platform === 'psremote' || g.platform === 'xbox';
+        const isCustom = g.platform === 'custom';
+        const localPath = g.executablePath;
+        const api = window.api as unknown as {
+          openGameInClient?: (id: string) => Promise<{ success?: boolean; error?: string }>;
+          showInFolder?: (p: string) => Promise<{ success?: boolean; error?: string }>;
+        };
+        const items: ContextMenuItem[] = [
+          { label: 'Play',           icon: I.play,       hint: 'Enter', onClick: () => doLaunch(g) },
+          { label: g.favorite ? 'Unfavorite' : 'Favorite',
+                                     icon: g.favorite ? I.starFill : I.star,
+                                     hint: 'F',                onClick: () => doFav(g.id) },
+          { label: 'Open details',   icon: I.info,                       onClick: () => setFocusGame(g) },
+          { label: 'Edit…',          icon: I.edit,       hint: 'E',      onClick: () => { setEditGame(g); setShowAdd(true); } },
+          { label: g.hidden ? 'Unhide' : 'Hide',
+                                     icon: g.hidden ? I.eye : I.eyeOff,
+                                     hint: 'H',                onClick: () => doToggleHidden(g) },
+          { divider: true, label: '' },
+        ];
+        if (localPath && api.showInFolder) {
+          items.push({
+            label: 'Show in folder',
+            icon: I.folder,
+            onClick: async () => {
+              const r = await api.showInFolder!(localPath);
+              if (r && r.success === false && r.error) flash('Couldn’t open folder: ' + r.error, { severity: 'error' });
+            },
+          });
+        }
+        if (!isStreaming && !isCustom && clientName && api.openGameInClient) {
+          items.push({
+            label: 'Open in ' + clientName,
+            icon: I.externalLink,
+            onClick: async () => {
+              const r = await api.openGameInClient!(g.id);
+              if (r && r.success === false && r.error) flash('Couldn’t open ' + clientName + ': ' + r.error, { severity: 'error' });
+            },
+          });
+        }
+        // Show "Stream on Xbox Cloud" when the default Play action doesn't
+        // already do that — i.e. non-Xbox cross-platform games, or Xbox games
+        // that have a local UWP install (Play = local launch). Cloud-only
+        // Xbox games already route to xCloud on Play, so skip the duplicate.
+        const defaultPlayIsCloud = g.platform === 'xbox' && !g.xboxAumid;
+        if ((g.xcloudPlayable || g.xcloudProductId) && !defaultPlayIsCloud) {
+          items.push({
+            label: 'Stream on Xbox Cloud',
+            icon: I.externalLink,
+            onClick: async () => {
+              const r = await window.api.launchGame(g.id, { forceCloud: true });
+              if (r && r.success === false && r.error) {
+                flash('xCloud launch failed: ' + r.error, { severity: 'error' });
+              } else {
+                flash(`Streaming ${g.name} on Xbox Cloud Gaming…`, { severity: 'info' });
+              }
+            },
+          });
+        }
+        items.push({
+          label: 'Copy name',
+          icon: I.copy,
+          onClick: () => {
+            navigator.clipboard?.writeText(g.name).then(
+              () => flash('Copied name', { severity: 'success' }),
+              () => flash('Couldn’t copy to clipboard', { severity: 'error' }),
+            );
+          },
+        });
+        items.push({ divider: true, label: '' });
+        items.push({
+          label: 'Remove from library',
+          icon: I.trash,
+          danger: true,
+          hint: 'Del',
+          onClick: () => doDelete(g.id),
+        });
+        return (
+          <ContextMenu
+            x={gameMenu.x}
+            y={gameMenu.y}
+            items={items}
+            onClose={() => setGameMenu(null)}
+          />
+        );
+      })()}
 
       <div style={{ position: 'fixed', ...toastAnchor, zIndex: 10100, display: 'flex', flexDirection: 'column', gap: 8 }}>
         {importProgress && importProgress.status && (
